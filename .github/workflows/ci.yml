@@ -1,0 +1,28 @@
+# This workflow will load Python and Pixi, then run test based on a Pixi task.
+
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Load Pixi
+      uses: prefix-dev/setup-pixi@v0.9.4
+      with:
+        pixi-version: v0.65.0
+        cache: true
+        environments: test
+    - run: pixi run test
