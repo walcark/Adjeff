@@ -6,12 +6,8 @@ an older version of xarray used in Smart-G.A
 See: https://github.com/hygeos/luts.
 """
 
-from collections.abc import Sequence
-from typing import Any, Union
 import xarray as xr
-import pandas as pd
 import numpy as np
-import math
 
 
 def square_grid(n: int, res: float) -> xr.Coordinates:
@@ -60,10 +56,3 @@ def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
     y = np.linspace(-halfy + res * 0.5, halfy - res * 0.5, ny)
     coords = xr.Coordinates(dict(x=x, y=y))
     return coords
-
-
-if __name__ == "__main__":
-    g = square_grid(n=3, res=5.0)
-    print(g)
-    gp = xr.Coordinates(dict(x=[-5.0, 0.0, 5.0], y=[-5.0, 0.0, 5.0]))
-    xr.testing.assert_equal(g, gp)
