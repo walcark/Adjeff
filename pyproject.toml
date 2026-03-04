@@ -48,7 +48,7 @@ pre-commit = ">=4.2"
 [tool.pixi.feature.dev.tasks]
 fmt = { cmd = "ruff format ." }
 lint = { cmd = "ruff check" }
-test = { cmd = "pytest" }
+test = { cmd = "pytest --cov" }
 all = { depends-on = ["fmt", "lint", "test"] }
 
 [tool.ruff]
