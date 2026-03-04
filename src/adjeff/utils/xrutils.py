@@ -1,20 +1,18 @@
-"""
-Methods to operate transformation of xr.Dataset and xr.DataArray objects.
+"""Operate transformation of xr.Dataset and xr.DataArray objects.
+
 Also implements method to with LUT / MLUT and the luts package, that is
-an older version of xarray used in Smart-G.A
+an older version of xarray used in Smart-G. See: https://github.com/hygeos/luts.
 
-See: https://github.com/hygeos/luts.
 """
 
-import xarray as xr
 import numpy as np
+import xarray as xr
 
 
 def square_grid(n: int, res: float) -> xr.Coordinates:
-    """
-    Creates the coordinates for a 2D square grid. The grid
-    is assumed to have the same number of pixel for each
-    dimensions.
+    """Create the coordinates for a 2D square grid.
+
+    The grid is assumed to have the same number of pixel for each dimensions.
 
     Parameters
     ----------
@@ -27,14 +25,15 @@ def square_grid(n: int, res: float) -> xr.Coordinates:
     -------
     xr.Coordinates
         The xarray coordinates associated to the grid.
+
     """
     return grid(nx=n, ny=n, res=res)
 
 
 def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
-    """
-    Creates the coordinates for a 2D symmetric grid. The grid
-    can have a different number of pixels on each dimensions.
+    """Create the coordinates for a 2D rectangular grid.
+
+    The grid can have a different number of pixels on each dimensions.
 
     Parameters
     ----------
@@ -49,6 +48,7 @@ def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
     -------
     xr.Coordinates
         The xarray coordinates associated to the grid.
+
     """
     halfx = nx * res * 0.5
     halfy = ny * res * 0.5

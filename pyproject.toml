@@ -30,7 +30,7 @@ colorlog = "*"
 [tool.pixi.environments]
 cpu = ["cpu"]
 default = ["gpu"]
-test = ["test"]
+dev = ["dev"]
 
 [tool.pixi.feature.gpu]
 system-requirements = { cuda = "12.6" }
@@ -39,9 +39,30 @@ dependencies = { cuda-version = "12.6.*", pytorch-gpu = "*" }
 [tool.pixi.feature.cpu]
 dependencies = { pytorch-cpu = "*" }
 
-[tool.pixi.feature.test]
-dependencies = { pytest = ">=9.0.2,<10" }
-tasks = { test = { cmd = "pytest" } }
+[tool.pixi.feature.dev.dependencies]
+pytest = ">=8.3"
+pytest-cov = ">=6.0"
+ruff = ">=0.11"
+pre-commit = ">=4.2"
+
+[tool.pixi.feature.dev.tasks]
+fmt = { cmd = "ruff format ." }
+lint = { cmd = "ruff check" }
+test = { cmd = "pytest" }
+all = { depends-on = ["fmt", "lint", "test"] }
 
 [tool.ruff]
 line-length = 79
+indent-width = 4
+exclude = ["tests/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "D"]
+fixable = ["ALL"]
+unfixable = []
+pydocstyle = { convention = "numpy" }
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
