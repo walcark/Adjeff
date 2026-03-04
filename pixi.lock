@@ -1173,7 +1173,7 @@ packages:
 - pypi: ./
   name: adjeff
   version: 0.1.0
-  sha256: a4cd39589c52f90b2c3c31a30ba930f410b867c5b743781bbaab1df7cabc9286
+  sha256: 1cca4befefab25df7d42606f0f1279f086751efa40674de2ce491225d363fb49
   requires_python: '>=3.11,<3.13'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.15.3-hb03c661_0.conda
