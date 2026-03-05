@@ -55,8 +55,9 @@ scipy = "*"
 
 [tool.pixi.environments]
 cpu = ["cpu"]
-default = ["gpu"]
-dev = ["dev", "gpu"]
+gpu = ["gpu"]
+dev = ["dev", "cpu"]
+dev-gpu = ["dev", "gpu"]
 
 [tool.pixi.feature.dev.tasks]
 fmt = { cmd = "ruff format ." }
