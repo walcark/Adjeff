@@ -34,3 +34,6 @@ jobs:
 
     - name: Test
       run: pixi run test
+
+    - name: Type check with mypy
+      run: pixi run type-check
