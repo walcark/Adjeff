@@ -132,4 +132,10 @@ def test_fft_various(conv_type, padding):
     """Test fft_convolve_2D with various padding and output modes."""
     arr = np.random.rand(8, 8)
     kernel = np.random.rand(3, 3)
-    fft_convolve_2D(arr, kernel, conv_type=conv_type, padding=padding)
+    fft_convolve_2D(
+        arr, 
+        kernel, 
+        conv_type=conv_type, 
+        padding=padding, 
+        device="cpu",
+    )
