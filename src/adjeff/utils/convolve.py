@@ -6,7 +6,7 @@ convolution on either a numpy.ndarray or xarray.DataArray.
 
 """
 
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import torch
@@ -51,8 +51,12 @@ def fft_convolve_2D(
         The convolved array, same type as input.
     """
     # Save metadata if input is xarray
-    is_xarray = isinstance(in1, xr.DataArray)
-    dims, coords = (in1.dims, in1.coords) if is_xarray else (None, None)
+    if isinstance(in1, xr.DataArray):
+        dims, coords = (in1.dims, in1.coords)
+    elif isinstance(in1, np.ndarray):
+        dims, coords = (None, None)
+    else:
+        raise ValueError(f"Wrong input type: {type(in1)}.")
 
     # Convert input to PyTorch tensor
     in1_tensor = torch.tensor(
@@ -77,9 +81,10 @@ def fft_convolve_2D(
     )
 
     # Return as xarray if needed
-    if is_xarray:
+    if isinstance(in1, xr.DataArray):
         return xr.DataArray(result, dims=dims, coords=coords)
-    return result
+    else:
+        return result
 
 
 def fft_convolve_2D_torch(
@@ -180,4 +185,5 @@ def fft_convolve_2D_torch(
     else:
         raise ValueError("Mode should either be 'same' or 'valid'.")
 
-    return Y[top : top + out_n, top : top + out_n].contiguous()
+    out = Y[top : top + out_n, top : top + out_n].contiguous()
+    return cast(torch.Tensor, out)
