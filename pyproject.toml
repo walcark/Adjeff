@@ -76,7 +76,7 @@ upload-testpypi = { cmd = "python -m twine upload --repository testpypi dist/*" 
 fix = true
 line-length = 79
 indent-width = 4
-exclude = ["tests/*", "docs/*"]
+exclude = ["tests/*", "docs/*", "scripts/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D"]

@@ -12,7 +12,12 @@ import numpy as np
 import torch
 import xarray as xr
 
+from .logger import adjeff_logging
 
+logger = adjeff_logging.get_logger()
+
+
+@adjeff_logging.log_execution_time
 def fft_convolve_2D(
     in1: np.ndarray | xr.DataArray,
     in2: np.ndarray | xr.DataArray,
@@ -49,6 +54,7 @@ def fft_convolve_2D(
     -------
     np.ndarray or xarray.DataArray
         The convolved array, same type as input.
+
     """
     # Save metadata if input is xarray
     if isinstance(in1, xr.DataArray):
@@ -100,10 +106,11 @@ def fft_convolve_2D_torch(
     Unlike a standard FFT-based convolution, which is circular and can produce
     wrap around artifacts at the tensor edges, the linear convolution is
     computed by:
-        1) Extending the input to avoid wrap-around,
-        2) Zero-padding the kernel to match the extended input,
-        3) Multiplying in the Fpurier domain (rFFT -> iFFT),
-        4) Cropping the result according to `conv_type`.
+
+    1) Extending the input to avoid wrap-around,
+    2) Zero-padding the kernel to match the extended input,
+    3) Multiplying in the Fpurier domain (rFFT -> iFFT),
+    4) Cropping the result according to `conv_type`.
 
     This method is GPU-efficient and minimizes temporary allocations.
 
@@ -119,10 +126,9 @@ def fft_convolve_2D_torch(
     const_padding_values : float, optional
         Constant value used when `padding="constant"` (default 0.0).
     conv_type : {"valid", "same"}, optional
-        Determines output size:
-        - `"valid"`: only positions where the kernel fully overlaps
-          input (N-K+1 × N-K+1),
-        - `"same"`: output has the same shape as input (N × N).
+        Determines output size: `"valid"`: only positions where the
+        kernel fully overlaps input (N-K+1 × N-K+1), and `"same"`
+        output has the same shape as input (N × N).
 
     Returns
     -------
