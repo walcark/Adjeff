@@ -38,11 +38,6 @@ numpy = ">=2.4.2,<3"
 pandas = ">=3.0.0,<4"
 colorlog = "*"
 
-[tool.pixi.environments]
-cpu = ["cpu"]
-default = ["gpu"]
-dev = ["dev"]
-
 [tool.pixi.feature.gpu]
 system-requirements = { cuda = "12.6" }
 dependencies = { cuda-version = "12.6.*", pytorch-gpu = "*" }
@@ -56,6 +51,12 @@ pytest-cov = ">=6.0"
 ruff = ">=0.11"
 pre-commit = ">=4.2"
 mypy = ">=1.5"
+scipy = "*"
+
+[tool.pixi.environments]
+cpu = ["cpu"]
+default = ["gpu"]
+dev = ["dev", "gpu"]
 
 [tool.pixi.feature.dev.tasks]
 fmt = { cmd = "ruff format ." }
@@ -71,6 +72,7 @@ build = { cmd = "python -m build" }
 upload-testpypi = { cmd = "python -m twine upload --repository testpypi dist/*" }
 
 [tool.ruff]
+fix = true
 line-length = 79
 indent-width = 4
 exclude = ["tests/*", "docs/*"]

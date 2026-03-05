@@ -12,7 +12,8 @@ import xarray as xr
 def square_grid(n: int, res: float) -> xr.Coordinates:
     """Create the coordinates for a 2D square grid.
 
-    The grid is assumed to have the same number of pixel for each dimensions.
+    The grid is assumed to have the same number of pixel for each dimensions
+    and is centered on (0, 0).
 
     Parameters
     ----------
@@ -33,7 +34,8 @@ def square_grid(n: int, res: float) -> xr.Coordinates:
 def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
     """Create the coordinates for a 2D rectangular grid.
 
-    The grid can have a different number of pixels on each dimensions.
+    The grid can have a different number of pixels on each dimensions and is
+    centered on (0, 0).
 
     Parameters
     ----------
