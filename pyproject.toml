@@ -65,6 +65,8 @@ test = { cmd = "pytest --cov" }
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
 ensure-pip = { cmd = "python -m ensurepip --upgrade" }
 install-build = { cmd = "python -m pip install --upgrade build twine" }
+install-sphinx = { cmd = "python -m pip install --upgrade sphinx sphinx-rtd-theme" }
+build-doc = { cmd = "sphinx-build -b html source build/html", cwd = "docs" }
 build = { cmd = "python -m build" }
 upload-testpypi = { cmd = "python -m twine upload --repository testpypi dist/*" }
 
