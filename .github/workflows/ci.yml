@@ -14,18 +14,23 @@ permissions:
 jobs:
   fmt-test:
     runs-on: ubuntu-latest
+
     steps:
+
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.12"
+
     - name: Load Pixi
       uses: prefix-dev/setup-pixi@v0.9.4
       with:
         pixi-version: v0.65.0
         cache: true
         environments: dev
+
     - name: Lint
       run: pixi run lint
+
     - name: Test
       run: pixi run test
