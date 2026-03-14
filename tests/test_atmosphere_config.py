@@ -2,9 +2,9 @@ from typing import Any
 
 import pytest
 import xarray as xr
-from smartg.smartg import Sensor
 
 from adjeff.atmosphere import AtmoConfig, GeoConfig
+from conftest import requires_cuda
 
 _VALID_ATMO: dict[str, Any] = dict(
     aot=xr.DataArray(0.2),
@@ -76,13 +76,17 @@ def test_geo_config_sat_le():
     assert geo.sat_le == {"th_deg": 15.0, "phi_deg": 45.0, "zip": True}
 
 
+@requires_cuda
 def test_geo_config_sun_sensor():
     """sun_sensor should return a Sensor instance."""
+    from smartg.smartg import Sensor
     assert isinstance(GeoConfig(**_VALID_GEO).sun_sensor, Sensor)
 
 
+@requires_cuda
 def test_geo_config_sat_sensor():
     """sat_sensor should return a Sensor instance."""
+    from smartg.smartg import Sensor
     assert isinstance(GeoConfig(**_VALID_GEO).sat_sensor, Sensor)
 
 

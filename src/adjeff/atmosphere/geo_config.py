@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import numpy as np
 import xarray as xr
 from pydantic import Field
 from pydantic.functional_validators import BeforeValidator as Before
-from smartg.smartg import Sensor
+
+if TYPE_CHECKING:
+    from smartg.smartg import Sensor
 
 from ._config import _Config, to_arr
 
@@ -57,6 +59,8 @@ class GeoConfig(_Config):
     @property
     def sun_sensor(self) -> Sensor:
         """Return the Sun Smart-G Sensor object."""
+        from smartg.smartg import Sensor
+
         return Sensor(
             POSZ=self.sat_height,
             THDEG=180.0 - self.sza.data,
@@ -67,6 +71,8 @@ class GeoConfig(_Config):
     @property
     def sat_sensor(self) -> Sensor:
         """Return the Satellite Smart-G Sensor object."""
+        from smartg.smartg import Sensor
+
         return Sensor(
             POSZ=self.sat_height,
             THDEG=180.0 - self.vza.data,
