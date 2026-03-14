@@ -13,7 +13,7 @@ import numpy as np
 import xarray as xr
 from pydantic import BaseModel, ConfigDict
 
-Parameter = float | int | np.ndarray | list | xr.DataArray
+Parameter = float | int | np.ndarray | list[float | int] | xr.DataArray
 Module = Callable[["_Config"], xr.DataArray]
 
 
@@ -145,7 +145,7 @@ class _Config(BaseModel):
             name: xr.DataArray(unique_rows[:, i], dims=["index"])
             for i, name in enumerate(varying)
         }
-        unique_atm: _Config = type(self)(**unique_params, **kept, **others)
+        unique_atm: Self = type(self)(**unique_params, **kept, **others)
 
         # Create the inverse map dataset to restore a dataset after computation
         ref = next(iter(broadcasted.values()))

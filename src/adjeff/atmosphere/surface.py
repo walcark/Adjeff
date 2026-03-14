@@ -5,11 +5,7 @@ or analytical (gaussian, disk) shapes. The following methods instanciate
 both the Smart-G `Environment` and `Surface` from this knowledge.
 """
 
-from smartg.smartg import (  # type: ignore[import-untyped]
-    Entity,
-    Environment,
-    LambSurface,
-)
+from smartg.smartg import Entity, Environment, LambSurface
 
 
 class SurfaceFactory:

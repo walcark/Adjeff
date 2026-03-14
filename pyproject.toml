@@ -72,6 +72,13 @@ build-doc = { cmd = "sphinx-build -b html source build/html", cwd = "docs" }
 build = { cmd = "python -m build" }
 upload-testpypi = { cmd = "python -m twine upload --repository testpypi dist/*" }
 
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "smartg.*"
+ignore_missing_imports = true
+
 [tool.ruff]
 fix = true
 line-length = 79
