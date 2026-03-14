@@ -32,7 +32,25 @@ jobs:
     - name: Lint
       run: pixi run -e dev lint
 
+    - name: Cache smartg auxdata
+      uses: actions/cache@v4
+      id: cache-auxdata
+      with:
+        path: ~/.cache/smartg/auxdata
+        key: smartg-auxdata-v1
+
+    - name: Download smartg auxdata
+      if: steps.cache-auxdata.outputs.cache-hit != 'true'
+      run: |
+        pixi run -e dev python -c "
+        from smartg.auxdata import download
+        from pathlib import Path
+        download(Path('$HOME/.cache/smartg/auxdata'), data_type='all')
+        "
+
     - name: Test
+      env:
+        SMARTG_DIR_AUXDATA: ${{ env.HOME }}/.cache/smartg/auxdata
       run: pixi run -e dev test
 
     - name: Type check with mypy
