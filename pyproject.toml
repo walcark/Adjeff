@@ -37,6 +37,7 @@ xarray = ">=2026.1.0,<2027"
 numpy = ">=2.4.2,<3"
 pandas = ">=3.0.0,<4"
 colorlog = "*"
+structlog = ">=25.5.0,<26"
 
 [tool.pixi.feature.gpu]
 system-requirements = { cuda = "12.6" }
