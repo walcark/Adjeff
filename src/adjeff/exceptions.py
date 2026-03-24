@@ -7,3 +7,7 @@ class AdjeffError(Exception):
 
 class MissingVariableError(AdjeffError):
     """Required variable missing from one or more band Datasets."""
+
+
+class AdjeffAccessorError(AdjeffError):
+    """An error occured during the call to the xarray adjeff accessor."""

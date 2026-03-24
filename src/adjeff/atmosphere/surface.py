@@ -5,7 +5,12 @@ or analytical (gaussian, disk) shapes. The following methods instanciate
 both the Smart-G `Environment` and `Surface` from this knowledge.
 """
 
+import numpy as np
+import xarray as xr
 from smartg.smartg import Entity, Environment, LambSurface
+from smartg.water import Albedo_cst
+
+from adjeff import AdjeffAccessorError
 
 
 class SurfaceFactory:
@@ -14,21 +19,35 @@ class SurfaceFactory:
     def __init__(self) -> None:
         pass
 
-    @property
-    def entity(self) -> Entity:
+    def entity(self, arr: xr.DataArray) -> Entity:
         """Return an entity object based on input image coordinates."""
         return Entity()
 
-    @property
-    def surface(self) -> LambSurface:
+    def surface(self, arr: xr.DataArray) -> LambSurface:
         """Return an Lambertian Surface object based on the input image."""
-        return LambSurface()
+        if arr.adjeff.kind == "analytical":
+            return LambSurface(Albedo_cst(arr.adjeff.params["rho_max"]))
+        elif arr.adjeff.kind == "arbitrary":
+            mean_alb: float = float(np.mean(arr.values))
+            return LambSurface(Albedo_cst(mean_alb))
+        else:
+            raise AdjeffAccessorError(f"Wrong adjeff kind: {arr.adjeff.kind}")
 
-    @property
-    def environment(self) -> Environment:
+    def environment(self, arr: xr.DataArray) -> Environment:
         """Return an Environment object based on the input image."""
-        return Environment()
+        if arr.adjeff.kind == "analytical":
+            return analytical_environment(arr)
+        elif arr.adjeff.kind == "arbitrary":
+            return arbitrary_environment(arr)
+        else:
+            raise AdjeffAccessorError(f"Wrong adjeff kind: {arr.adjeff.kind}")
 
-    # TODO: chaque méthode appelle son pendant _entity, _surface, _environment
-    # TODO: qui ne travaille que sur le dico {coords, rho_min, rho_max, sigma}
-    # TODO: et qui ont toutes un cache.
+
+def analytical_environment(arr: xr.DataArray) -> Environment:
+    """Return the Environment for an analytical surface."""
+    return Environment()
+
+
+def arbitrary_environment(arr: xr.DataArray) -> Environment:
+    """Return the Environment for an analytical surface."""
+    return Environment()
