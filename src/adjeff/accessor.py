@@ -15,6 +15,7 @@ import numpy as np
 import torch
 import xarray as xr
 
+from .core.bands import SensorBand
 from .utils.radial import bin_radial, natural_npix, radial_distances
 
 
@@ -81,6 +82,10 @@ class AdjeffAccessor:
     def params(self, var: str) -> dict[str, object] | None:
         """Return parameters of *var*, or None."""
         return self._ds[var].attrs.get("adjeff:params")
+
+    def band(self, var: str) -> SensorBand | None:
+        """Return the SensorBand of *var*, or None if absent."""
+        return self._ds[var].attrs.get("band")
 
     def radial(
         self,
