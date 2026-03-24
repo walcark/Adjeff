@@ -10,10 +10,8 @@ from typing import TYPE_CHECKING
 import structlog
 import xarray as xr
 
-from adjeff.core import SensorBand
-
 if TYPE_CHECKING:
-    from adjeff.core import ImageDict
+    from adjeff.core import ImageDict, SensorBand
 
 logger = structlog.get_logger(__name__)
 
