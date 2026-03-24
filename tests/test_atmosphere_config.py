@@ -10,7 +10,6 @@ _VALID_ATMO: dict[str, Any] = dict(
     aot=xr.DataArray(0.2),
     h=xr.DataArray(0.5),
     rh=xr.DataArray(50.0),
-    wl=xr.DataArray(443.0),
     href=xr.DataArray(2.0),
     species={"sulphate": 1.0},
 )
@@ -30,9 +29,6 @@ def test_atmo_config_wrong_input():
     with pytest.raises(ValueError, match="'rh'"):
         AtmoConfig(**{**_VALID_ATMO, "rh": xr.DataArray(101.0)})
     
-    with pytest.raises(ValueError, match="'wl'"):
-        AtmoConfig(**{**_VALID_ATMO, "wl": 0.443})
-
     with pytest.raises(ValueError):
         AtmoConfig(**{**_VALID_ATMO, "species": {"sulphate": 0.999}})
 

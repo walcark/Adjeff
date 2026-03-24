@@ -25,8 +25,6 @@ class AtmoConfig(_Config):
         Relative humidity [%].
     href : xr.DataArray
         Reference height of the exponential aerosol vertical profile.
-    wl : xr.DataArray
-        Wavelength [nm].
     species : dict[str, float]
         Dictionnary of species concentrations.
     """
@@ -35,7 +33,6 @@ class AtmoConfig(_Config):
     h: Annotated[xr.DataArray, Before(to_arr("h", ge=0.0, le=9.0))]
     rh: Annotated[xr.DataArray, Before(to_arr("rh", ge=0.0, le=100.0))]
     href: Annotated[xr.DataArray, Before(to_arr("href", ge=0.1))]
-    wl: Annotated[xr.DataArray, Before(to_arr("wl", ge=300.0))]
     species: dict[str, float]
 
     @model_validator(mode="after")

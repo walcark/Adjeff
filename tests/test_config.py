@@ -12,7 +12,6 @@ _SCALAR: dict[str, Any] = dict(
     aot=xr.DataArray(0.2),
     h=xr.DataArray(0.5),
     rh=xr.DataArray(50.0),
-    wl=xr.DataArray(443.0),
     href=xr.DataArray(2.0),
     species={"sulphate": 1.0},
 )
@@ -39,7 +38,7 @@ def test_dataset_returns_dataset():
 def test_dataset_keys():
     """Ensure thatthe dataset property exposes exactly the AtmoConfig fields."""
     cfg = AtmoConfig(**_SCALAR)
-    assert set(cfg.dataset.data_vars) == {"aot", "h", "rh", "wl", "href"}
+    assert set(cfg.dataset.data_vars) == {"aot", "h", "rh", "href"}
 
 
 def test_dataset_values():
@@ -77,7 +76,6 @@ def test_iter_scalars_broadcast_to_all_batches():
     cfg = _pix_conf([0.1, 0.2, 0.3, 0.4])
     for batch in cfg.iter(n_batch=2, dim="pixel"):
         xr.testing.assert_equal(batch.rh, cfg.rh)
-        xr.testing.assert_equal(batch.wl, cfg.wl)
 
 
 @pytest.mark.parametrize("n_batch,expected_n_batches", [
@@ -129,7 +127,6 @@ def test_unique_scalar_fields_unchanged():
     cfg = _pix_conf([0.1, 0.2, 0.1])
     unique_cfg, _ = cfg.unique(dims=["pixel"])
     xr.testing.assert_equal(unique_cfg.rh, cfg.rh)
-    xr.testing.assert_equal(unique_cfg.wl, cfg.wl)
 
 
 def test_run_applies_fn_and_concatenates():
