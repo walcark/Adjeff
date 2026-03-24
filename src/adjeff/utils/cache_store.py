@@ -18,6 +18,11 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
+# TODO: if might be interesting to enable cache to return the bands
+# TODO: where all variables were found, and adapte _compute in Module
+# TOOD: to work only on those bands.
+
+
 class CacheStore:
     """Zarr-backed content-hash cache for a SceneModule output.
 
@@ -106,7 +111,8 @@ class CacheStore:
         """Return cached DataArrays or None on cache miss.
 
         Band ids must be provided because the cache doesn't know the bands
-        for which the object was saved.
+        for which the object was saved. Returns None if any var or any band
+        is missing.
 
         Parameters
         ----------

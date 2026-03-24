@@ -4,6 +4,6 @@ The package provides utilities to simulate environment effets and optimize
 models for adjacency effects.
 """
 
-from .exceptions import AdjeffError, MissingVariableError
+from .exceptions import AdjeffAccessorError, AdjeffError, MissingVariableError
 
-__all__ = ["AdjeffError", "MissingVariableError"]
+__all__ = ["AdjeffAccessorError", "AdjeffError", "MissingVariableError"]
