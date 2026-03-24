@@ -10,8 +10,10 @@ from typing import TYPE_CHECKING
 import structlog
 import xarray as xr
 
+from adjeff.core import SensorBand
+
 if TYPE_CHECKING:
-    pass
+    from adjeff.core import ImageDict
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +48,12 @@ class CacheStore:
         """Return the root cache directory, or None if caching is disabled."""
         return self._cache_dir
 
-    def save_vars(self, key: str, scene: object, variables: list[str]) -> None:
+    def save_vars(
+        self,
+        key: str,
+        scene: "ImageDict",
+        variables: list[str],
+    ) -> None:
         """Save *variables* DataArrays for each band to Zarr under *key*.
 
         This method only saves *variables*, and thus allows to solely save the
@@ -59,8 +66,8 @@ class CacheStore:
         ----------
         key : str
             Content hash identifying this cache entry.
-        scene : xr.DataArray
-            ArrayDict whose band Datasets are the data source.
+        scene : ImageDict
+            ImageDict whose band Datasets are the data source.
         variables : list[str]
             Variable names to persist.
 
@@ -69,8 +76,8 @@ class CacheStore:
             return
         assert self._cache_dir is not None
 
-        for band_id in scene.band_ids:  # type: ignore[union-attr]
-            ds = scene[band_id]  # type: ignore[index]
+        for band_id in scene.band_ids:
+            ds = scene[band_id]
             subset = ds[variables]
             dest = self._cache_dir / key / f"{band_id}.zarr"
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -93,9 +100,9 @@ class CacheStore:
     def load_vars(
         self,
         key: str,
-        band_ids: list[str],
+        bands: list[SensorBand],
         variables: list[str],
-    ) -> dict[str, dict[str, xr.DataArray]] | None:
+    ) -> dict[SensorBand, dict[str, xr.DataArray]] | None:
         """Return cached DataArrays or None on cache miss.
 
         Band ids must be provided because the cache doesn't know the bands
@@ -121,28 +128,26 @@ class CacheStore:
         if not self.enabled or self._cache_dir is None:
             return None
 
-        result: dict[str, dict[str, xr.DataArray]] = {}
-        for band_id in band_ids:
-            path = self._cache_dir / key / f"{band_id}.zarr"
+        result: dict[SensorBand, dict[str, xr.DataArray]] = {}
+        for band in bands:
+            path = self._cache_dir / key / f"{band}.zarr"
             if not path.exists():
-                logger.debug("cache miss", key=key[:8], band=band_id)
+                logger.debug("cache miss", key=key[:8], band=band)
                 return None
             try:
                 ds = xr.open_zarr(path)
-                result[band_id] = {
-                    var: ds[var] for var in variables if var in ds
-                }
+                result[band] = {var: ds[var] for var in variables if var in ds}
             except Exception:
                 logger.warning(
                     "failed to load from cache",
                     key=key[:8],
-                    band=band_id,
+                    band=band,
                     path=str(path),
                 )
                 return None
 
         logger.debug(
-            "Cache was hit.", key=key[:8], bands=band_ids, vars=variables
+            "Cache was hit.", key=key[:8], bands=bands, vars=variables
         )
         return result if result else None
 
