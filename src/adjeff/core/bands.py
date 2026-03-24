@@ -6,11 +6,29 @@ from enum import Enum
 class SensorBand(Enum):
     """Base Enum for a SensorBand."""
 
+    def __init__(self, id: str, wl_nm: float, res_km: float) -> None:
+        self.id = id
+        self.wl_nm = wl_nm
+        self.res_km = res_km
+
+    def __repr__(self) -> str:
+        """Return information about the band."""
+        return "{}.{}({}nm, {}km)".format(
+            self.__class__.__name__,
+            self.id,
+            self.wl_nm,
+            self.res_km,
+        )
+
+    def __str__(self) -> str:
+        """Return a simple representation of the band."""
+        return f"{self.__class__.__name__}.{self.id}"
+
 
 class S2Band(SensorBand):
     """Define the bands for Sentinel-2.
 
-    Wavelengths are store in nm, and resolutions in km.
+    Wavelengths are stored in nm, and resolutions in km.
     """
 
     B01 = ("B01", 443.0, 0.06)
@@ -26,12 +44,3 @@ class S2Band(SensorBand):
     B10 = ("B10", 1375.0, 0.06)
     B11 = ("B11", 1610.0, 0.02)
     B12 = ("B12", 2190.0, 0.02)
-
-    def __init__(self, id: str, wl_nm: float, res_km: float) -> None:
-        self._value_ = id
-        self.wl_nm = wl_nm
-        self.res_km = res_km
-
-    def __str__(self) -> str:
-        """Return a simple representation of the band."""
-        return f"{self.name}: {self.wl_nm}nm, {self.res_km}km"
