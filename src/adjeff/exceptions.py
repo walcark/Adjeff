@@ -11,3 +11,7 @@ class MissingVariableError(AdjeffError):
 
 class AdjeffAccessorError(AdjeffError):
     """An error occured during the call to the xarray adjeff accessor."""
+
+
+class ConfigurationError(AdjeffError):
+    """Invalid or missing configuration parameters."""
