@@ -54,9 +54,10 @@ def _resolve_n(
             }
         return {band: round(extent_km / band.res_km) for band in bands}
 
+    assert n is not None
     if isinstance(n, dict):
         return {band: n[band] for band in bands}
-    return {band: n for band in bands}  # type: ignore[return-value]
+    return {band: n for band in bands}
 
 
 def gaussian_image_dict(

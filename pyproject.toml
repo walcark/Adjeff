@@ -87,7 +87,7 @@ ignore_missing_imports = true
 fix = true
 line-length = 79
 indent-width = 4
-exclude = ["tests/*", "docs/*", "scripts/*"]
+exclude = ["tests/*", "docs/*", "scripts/*", "test.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D"]

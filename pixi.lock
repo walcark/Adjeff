@@ -2000,7 +2000,7 @@ packages:
 - pypi: ./
   name: adjeff
   version: 0.1.0
-  sha256: 337dfb2ef6d0125cab1d17b64f21206f1af89dd35b463a54492771608691a0b8
+  sha256: 2c1b59c065dc12a7bbf1fcc5afc0766438b19707d4eda87c4c2dbe363471c487
   requires_python: '>=3.11,<3.13'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.15.3-hb03c661_0.conda

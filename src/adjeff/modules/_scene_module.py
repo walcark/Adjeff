@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
-import joblib
+import joblib  # type: ignore[import-untyped]
 import structlog
 import torch.nn as nn
 import xarray as xr
@@ -132,7 +132,7 @@ class SceneModule(nn.Module):
             )
         )
 
-    def _config_dict(self) -> dict:
+    def _config_dict(self) -> dict[str, object]:
         """Return frozen configuration for cache keying.
 
         The configuration is composed of all the input parameters used in the
