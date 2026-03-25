@@ -126,6 +126,17 @@ class ImageDict:
                     f"Var {var!r} is missing from band(s): {missing_bands}"
                 )
 
+    def shallow_copy(self) -> "ImageDict":
+        """Return a new ImageDict sharing the same DataArrays by reference.
+
+        Each band Dataset is shallow-copied so that new variable assignments
+        on the copy do not affect the original. Existing DataArrays are shared
+        in memory and dask graphs are preserved (no compute triggered).
+        """
+        return ImageDict(
+            {band: ds.copy(deep=False) for band, ds in self._data.items()}
+        )
+
     def __getitem__(self, band: SensorBand) -> xr.Dataset:
         """Return a wavelength band."""
         return self._data[band]

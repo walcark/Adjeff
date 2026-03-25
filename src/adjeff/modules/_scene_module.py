@@ -85,6 +85,7 @@ class SceneModule(nn.Module):
         3) self._compute() is called if the cache is not hit,
         4) results are stamped and eventually cached.
         """
+        scene = scene.shallow_copy()
         module_name = type(self).__name__
         scene.require_vars(self.required_vars)
 
