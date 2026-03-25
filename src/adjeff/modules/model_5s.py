@@ -11,6 +11,7 @@ from typing import ClassVar
 import xarray as xr
 
 from adjeff.core import ImageDict
+from adjeff.utils import CacheStore
 
 from ._scene_module import SceneModule
 
@@ -35,7 +36,7 @@ class Toa2Unif(SceneModule):
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Invert the 5S model, assuming rho_s=rho_env=rho_unif."""
-        for band in scene.band_ids:
+        for band in scene.bands:
             ds = scene[band]
 
             rho_toa_star = ds["rho_toa"] - ds["rho_atm"]
@@ -69,7 +70,7 @@ class Unif2Toa(SceneModule):
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Use the 5S model, assuming rho_s=rho_env=rho_unif."""
-        for band in scene.band_ids:
+        for band in scene.bands:
             ds: xr.Dataset = scene[band]
 
             t_up = ds["tdir_up"] + ds["tdif_up"]
@@ -86,3 +87,9 @@ class Surface2Env(SceneModule):
 
     Uses a point-spread function to perform the convolution.
     """
+
+    required_vars: ClassVar[list[str]] = ["rho_s"]
+    output_vars: ClassVar[list[str]] = ["rho_env"]
+
+    def __init__(self, cache: CacheStore | None = None) -> None:
+        super().__init__(cache=cache)

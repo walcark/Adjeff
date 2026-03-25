@@ -7,17 +7,17 @@ from adjeff.exceptions import MissingVariableError
 
 
 def _make_scene(
-    band_ids=(S2Band.B02, S2Band.B03),
+    bands=(S2Band.B02, S2Band.B03),
     n=16,
     variables=("rho_s",)
 ) -> ImageDict:
-    return random_image_dict(list(band_ids), list(variables), n=n)
+    return random_image_dict(list(bands), list(variables), n=n)
 
 
-def test_band_ids_sorted():
+def test_bands_sorted():
     """Band IDs are returned sorted by wavelength."""
     scene = _make_scene([S2Band.B04, S2Band.B02, S2Band.B03])
-    assert scene.band_ids == [S2Band.B02, S2Band.B03, S2Band.B04]
+    assert scene.bands == [S2Band.B02, S2Band.B03, S2Band.B04]
 
 def test_getitem_returns_dataset():
     """__getitem__ returns the xr.Dataset for a given band."""
@@ -94,8 +94,8 @@ def test_write_missing_var_raises(tmp_path):
 def test_progressive_enrichment():
     """Datasets can be enriched in-place by adding new variables."""
     scene = _make_scene(variables=["rho_s"])
-    for band_id in scene.band_ids:
-        ds = scene[band_id]
+    for band in scene.bands:
+        ds = scene[band]
         ds["rho_toa"] = xr.DataArray(
             np.random.rand(16, 16).astype(np.float32), dims=["y", "x"]
         )

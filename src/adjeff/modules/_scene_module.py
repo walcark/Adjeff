@@ -91,20 +91,20 @@ class SceneModule(nn.Module):
         key = self._cache_key(scene)
         log = logger.bind(module=module_name, key=key[:8])
 
-        cached = self._cache.load_vars(key, scene.band_ids, self.output_vars)
+        cached = self._cache.load_vars(key, scene.bands, self.output_vars)
         if cached is not None:
             log.info(
                 "cache hit — skipping compute",
-                bands=scene.band_ids,
+                bands=scene.bands,
                 vars=self.output_vars,
             )
-            for band_id, var_map in cached.items():
-                ds = scene[band_id]
+            for band, var_map in cached.items():
+                ds = scene[band]
                 for var_name, da in var_map.items():
                     ds[var_name] = da
             return scene
 
-        log.info("Starting compute", bands=scene.band_ids)
+        log.info("Starting compute", bands=scene.bands)
         scene = self._compute(scene)
         log.info("Computation finished", vars=self.output_vars)
         self._stamp_provenance(scene, key)
@@ -155,7 +155,7 @@ class SceneModule(nn.Module):
         by the provenance key of the input ImageDict.
         """
         hashes: dict[str, str] = {}
-        for band in scene.band_ids:
+        for band in scene.bands:
             ds = scene[band]
             for var in self.required_vars:
                 da: xr.DataArray = ds[var]
@@ -173,8 +173,8 @@ class SceneModule(nn.Module):
     def _stamp_provenance(self, scene: "ImageDict", key: str) -> None:
         """Store the provenance as attribute for each ImageDict's DataArray."""
         provenance = {"module": type(self).__name__, "key": key}
-        for band_id in scene.band_ids:
-            ds = scene[band_id]
+        for band in scene.bands:
+            ds = scene[band]
             for var in self.output_vars:
                 if var in ds:
                     ds[var].attrs["_atcor_provenance"] = provenance

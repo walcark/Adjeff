@@ -39,7 +39,7 @@ class ImageDict:
         All non-spatial dimensions are encoded in the filename. For instance
         ``rho_s__aot=0.4__rh=50.0__B02.npy`` if ``aot`` and ``rh`` are present
         as dimensions. If there are no extra (non-spatial) dims, the name will
-        have the form ``{var}__{band_id}.npy``
+        have the form ``{var}__{band}.npy``
 
         Parameters
         ----------
@@ -58,11 +58,11 @@ class ImageDict:
 
         written: list[Path] = []
 
-        for band_id in self.band_ids:
-            ds = self._data[band_id]
+        for band in self.bands:
+            ds = self._data[band]
             if var not in ds.data_vars:
                 raise MissingVariableError(
-                    f"Variable {var!r} is missing from band {band_id!r}"
+                    f"Variable {var!r} is missing from band {band!r}"
                 )
 
             da: xr.DataArray = ds[var]
@@ -72,7 +72,7 @@ class ImageDict:
 
             if not extra_dims:
                 # No extra dims — write a single file
-                filename = f"{var}__{band_id}.npy"
+                filename = f"{var}__{band}.npy"
                 path = out_dir / filename
                 np.save(path, da.values)
                 written.append(path)
@@ -85,7 +85,7 @@ class ImageDict:
                     suffix_parts = "__".join(
                         f"{dim}={val}" for dim, val in zip(extra_dims, combo)
                     )
-                    filename = f"{var}__{suffix_parts}__{band_id}.npy"
+                    filename = f"{var}__{suffix_parts}__{band}.npy"
                     path = out_dir / filename
                     slice_da = da.sel(selector)
                     np.save(path, slice_da.values)
@@ -94,14 +94,14 @@ class ImageDict:
             logger.debug(
                 "Saved DataArray to .npy file",
                 var=var,
-                band=band_id,
+                band=band,
                 path=str(directory),
             )
 
         return written
 
     @property
-    def band_ids(self) -> list[SensorBand]:
+    def bands(self) -> list[SensorBand]:
         """Sorted list of band identifiers (B02 < B03 < etc.)."""
         return sorted(self._data.keys(), key=lambda b: b.value)
 
@@ -141,8 +141,8 @@ class ImageDict:
     def __repr__(self) -> str:
         """Return a string representation of the ImageDict."""
         parts = []
-        for bid in self.band_ids:
-            var_names = list(self._data[bid].data_vars)
-            parts.append(f"  {bid!r}: {var_names}")
+        for band in self.bands:
+            var_names = list(self._data[band].data_vars)
+            parts.append(f"  {band!r}: {var_names}")
         inner = "\n".join(parts)
         return f"ImageDict(\n{inner}\n)" if parts else "ImageDict({})"

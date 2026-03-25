@@ -17,7 +17,7 @@ class TestModule(SceneModule):
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Shifting input values."""
-        for band in scene.band_ids:
+        for band in scene.bands:
             ds: xr.Dataset = scene[band]
             ds["rho_toa"] = ds["rho_s"] + 0.05
         return scene

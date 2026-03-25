@@ -79,10 +79,10 @@ class CacheStore:
             return
         assert self._cache_dir is not None
 
-        for band_id in scene.band_ids:
-            ds = scene[band_id]
+        for band in scene.bands:
+            ds = scene[band]
             subset = ds[variables]
-            dest = self._cache_dir / key / f"{band_id}.zarr"
+            dest = self._cache_dir / key / f"{band}.zarr"
             dest.parent.mkdir(parents=True, exist_ok=True)
 
             with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
@@ -95,7 +95,7 @@ class CacheStore:
             logger.debug(
                 "Scene was saved to cache.",
                 key=key[:8],
-                band=band_id,
+                band=band,
                 vars=variables,
                 path=str(dest),
             )
@@ -116,7 +116,7 @@ class CacheStore:
         ----------
         key : str
             Content hash to look up.
-        band_ids : list[str]
+        bands : list[str]
             Band identifiers to load.
         variables : list[str]
             Variable names to retrieve.
@@ -124,7 +124,7 @@ class CacheStore:
         Returns
         -------
         dict or None
-            ``{band_id: {var: DataArray}}`` on hit, ``None`` on miss.
+            ``{band: {var: DataArray}}`` on hit, ``None`` on miss.
             ``_atcor_provenance`` attributes are restored alongside DataArrays
             to preserve the provenance chain.
 
