@@ -161,7 +161,7 @@ class SceneModule(nn.Module):
             for var in self.required_vars:
                 da: xr.DataArray = ds[var]
                 provenance_key: str | None = da.attrs.get(
-                    "_atcor_provenance", {}
+                    "_adjeff_provenance", {}
                 ).get("key")
                 hash_val: str = str(
                     provenance_key
@@ -178,4 +178,4 @@ class SceneModule(nn.Module):
             ds = scene[band]
             for var in self.output_vars:
                 if var in ds:
-                    ds[var].attrs["_atcor_provenance"] = provenance
+                    ds[var].attrs["_adjeff_provenance"] = provenance

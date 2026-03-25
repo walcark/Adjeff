@@ -50,9 +50,9 @@ class GaussPSF(nn.Module, PSFModule):
             dims=["y_psf", "x_psf"],
             coords=coords,
             attrs={
-                "atcor:kind": "analytical",
-                "atcor:model": "Gaussian",
-                "atcor:params": {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "Gaussian",
+                "adjeff:params": {
                     "sigma": float(self.sigma.value),
                 },
                 "band": self.band,
@@ -105,9 +105,9 @@ class GaussGeneralPSF(nn.Module, PSFModule):
             dims=["y_psf", "x_psf"],
             coords=coords,
             attrs={
-                "atcor:kind": "analytical",
-                "atcor:model": "GaussianGeneral",
-                "atcor:params": {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "GaussianGeneral",
+                "adjeff:params": {
                     "sigma": float(self.sigma.value),
                     "n": float(self.n.value),
                 },
@@ -116,7 +116,7 @@ class GaussGeneralPSF(nn.Module, PSFModule):
         )
 
 
-class VoigtKernel(nn.Module, PSFModule):
+class VoigtPSF(nn.Module, PSFModule):
     """Trainable Voigt kernel."""
 
     def __init__(
@@ -182,9 +182,9 @@ class VoigtKernel(nn.Module, PSFModule):
             dims=["y_psf", "x_psf"],
             coords=coords,
             attrs={
-                "atcor:kind": "analytical",
-                "atcor:model": "Voigt",
-                "atcor:params": {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "Voigt",
+                "adjeff:params": {
                     "sigma": float(self.sigma.value),
                     "gamma": float(self.gamma.value),
                 },
@@ -193,7 +193,7 @@ class VoigtKernel(nn.Module, PSFModule):
         )
 
 
-class KingKernel(nn.Module, PSFModule):
+class KingPSF(nn.Module, PSFModule):
     """Trainable King kernel."""
 
     def __init__(
@@ -241,9 +241,9 @@ class KingKernel(nn.Module, PSFModule):
             dims=["y_psf", "x_psf"],
             coords=coords,
             attrs={
-                "atcor:kind": "analytical",
-                "atcor:model": "King",
-                "atcor:params": {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "King",
+                "adjeff:params": {
                     "sigma": float(self.sigma.value),
                     "gamma": float(self.gamma.value),
                 },
@@ -252,7 +252,7 @@ class KingKernel(nn.Module, PSFModule):
         )
 
 
-class MoffatGeneralizedKernel(nn.Module, PSFModule):
+class MoffatGeneralizedPSF(nn.Module, PSFModule):
     """Trainable Generalized Moffat kernel."""
 
     def __init__(
@@ -310,9 +310,9 @@ class MoffatGeneralizedKernel(nn.Module, PSFModule):
             dims=["y_psf", "x_psf"],
             coords=coords,
             attrs={
-                "atcor:kind": "analytical",
-                "atcor:model": "MoffatGeneralized",
-                "atcor:params": {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "MoffatGeneralized",
+                "adjeff:params": {
                     "alpha": float(self.alpha.value),
                     "beta": float(self.beta.value),
                     "gamma": float(self.gamma.value),

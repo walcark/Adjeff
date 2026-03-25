@@ -31,7 +31,7 @@ class NonAnalyticalPSF(nn.Module, PSFModule):
         2-D array of shape ``(n, n)``.  Will be normalised
         to sum to 1.  Accepts ``np.ndarray`` or ``torch.Tensor``.
     source:
-        Optional provenance tag stored in ``atcor:source`` attribute.
+        Optional provenance tag stored in ``adjeff:source`` attribute.
     """
 
     def __init__(
@@ -76,8 +76,8 @@ class NonAnalyticalPSF(nn.Module, PSFModule):
             dims=["y_psf", "x_psf"],
             coords=self.grid.as_coords(),
             attrs={
-                "atcor:kind": "non_analytical",
-                "atcor:source": self._source,
+                "adjeff:kind": "non_analytical",
+                "adjeff:source": self._source,
                 "band": self.band,
             },
         )

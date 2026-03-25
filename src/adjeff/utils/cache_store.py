@@ -125,7 +125,7 @@ class CacheStore:
         -------
         dict or None
             ``{band: {var: DataArray}}`` on hit, ``None`` on miss.
-            ``_atcor_provenance`` attributes are restored alongside DataArrays
+            ``_adjeff_provenance`` attributes are restored alongside DataArrays
             to preserve the provenance chain.
 
         """

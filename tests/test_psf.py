@@ -9,9 +9,9 @@ from adjeff.core._psf import PSFGrid
 from adjeff.core.analytical_psf import (
     GaussGeneralPSF,
     GaussPSF,
-    KingKernel,
-    MoffatGeneralizedKernel,
-    VoigtKernel,
+    KingPSF,
+    MoffatGeneralizedPSF,
+    VoigtPSF,
 )
 from adjeff.core.bands import S2Band, SensorBand
 from adjeff.core.non_analytical_psf import NonAnalyticalPSF
@@ -107,7 +107,7 @@ def _assert_dataarray_valid(da: xr.DataArray, n: int, band: SensorBand) -> None:
     assert "x_psf" in da.coords
     assert "y_psf" in da.coords
     assert da.attrs.get("band") is band
-    assert "atcor:kind" in da.attrs
+    assert "adjeff:kind" in da.attrs
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ def test_gauss_to_dataarray(gauss_psf, grid, band):
     """GaussPSF.to_dataarray must return a valid annotated DataArray."""
     da = gauss_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["atcor:model"] == "Gaussian"
+    assert da.attrs["adjeff:model"] == "Gaussian"
 
 
 # ---------------------------------------------------------------------------
@@ -165,21 +165,21 @@ def test_gauss_general_to_dataarray(gauss_general_psf, grid, band):
     """GaussGeneralPSF.to_dataarray must return a valid annotated DataArray."""
     da = gauss_general_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["atcor:model"] == "GaussianGeneral"
+    assert da.attrs["adjeff:model"] == "GaussianGeneral"
 
 
 # ---------------------------------------------------------------------------
-# VoigtKernel
+# VoigtPSF
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def voigt_psf(grid, band) -> VoigtKernel:
-    return VoigtKernel(grid=grid, band=band, sigma=1.0, gamma=1.0)
+def voigt_psf(grid, band) -> VoigtPSF:
+    return VoigtPSF(grid=grid, band=band, sigma=1.0, gamma=1.0)
 
 
 def test_voigt_forward_shape(voigt_psf, grid):
-    """VoigtKernel.forward must return a valid normalised kernel."""
+    """VoigtPSF.forward must return a valid normalised kernel."""
     _assert_kernel_valid(voigt_psf.forward(), grid.n)
 
 
@@ -191,10 +191,10 @@ def test_voigt_forward_peak_at_center(voigt_psf, grid):
 
 
 def test_voigt_to_dataarray(voigt_psf, grid, band):
-    """VoigtKernel.to_dataarray must return a valid annotated DataArray."""
+    """VoigtPSF.to_dataarray must return a valid annotated DataArray."""
     da = voigt_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["atcor:model"] == "Voigt"
+    assert da.attrs["adjeff:model"] == "Voigt"
 
 
 def test_voigt_eta_range(voigt_psf):
@@ -204,17 +204,17 @@ def test_voigt_eta_range(voigt_psf):
 
 
 # ---------------------------------------------------------------------------
-# KingKernel
+# KingPSF
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def king_psf(grid, band) -> KingKernel:
-    return KingKernel(grid=grid, band=band, sigma=1.0, gamma=2.0)
+def king_psf(grid, band) -> KingPSF:
+    return KingPSF(grid=grid, band=band, sigma=1.0, gamma=2.0)
 
 
 def test_king_forward_shape(king_psf, grid):
-    """KingKernel.forward must return a valid normalised kernel."""
+    """KingPSF.forward must return a valid normalised kernel."""
     _assert_kernel_valid(king_psf.forward(), grid.n)
 
 
@@ -226,24 +226,24 @@ def test_king_forward_peak_at_center(king_psf, grid):
 
 
 def test_king_to_dataarray(king_psf, grid, band):
-    """KingKernel.to_dataarray must return a valid annotated DataArray."""
+    """KingPSF.to_dataarray must return a valid annotated DataArray."""
     da = king_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["atcor:model"] == "King"
+    assert da.attrs["adjeff:model"] == "King"
 
 
 # ---------------------------------------------------------------------------
-# MoffatGeneralizedKernel
+# MoffatGeneralizedPSF
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def moffat_psf(grid, band) -> MoffatGeneralizedKernel:
-    return MoffatGeneralizedKernel(grid=grid, band=band, alpha=1.0, beta=1.0, gamma=1.0,)
+def moffat_psf(grid, band) -> MoffatGeneralizedPSF:
+    return MoffatGeneralizedPSF(grid=grid, band=band, alpha=1.0, beta=1.0, gamma=1.0,)
 
 
 def test_moffat_forward_shape(moffat_psf, grid):
-    """MoffatGeneralizedKernel.forward must return a valid normalised kernel."""
+    """MoffatGeneralizedPSF.forward must return a valid normalised kernel."""
     _assert_kernel_valid(moffat_psf.forward(), grid.n)
 
 
@@ -255,10 +255,10 @@ def test_moffat_forward_peak_at_center(moffat_psf, grid):
 
 
 def test_moffat_to_dataarray(moffat_psf, grid, band):
-    """MoffatGeneralizedKernel.to_dataarray must return a valid annotated DataArray."""
+    """MoffatGeneralizedPSF.to_dataarray must return a valid annotated DataArray."""
     da = moffat_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["atcor:model"] == "MoffatGeneralized"
+    assert da.attrs["adjeff:model"] == "MoffatGeneralized"
 
 
 # ---------------------------------------------------------------------------
@@ -307,14 +307,14 @@ def test_non_analytical_to_dataarray(non_analytical_psf, grid, band):
     """NonAnalyticalPSF.to_dataarray must return a valid annotated DataArray."""
     da = non_analytical_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["atcor:kind"] == "non_analytical"
-    assert da.attrs.get("atcor:source") == "SmartG"
+    assert da.attrs["adjeff:kind"] == "non_analytical"
+    assert da.attrs.get("adjeff:source") == "SmartG"
 
 
 def test_non_analytical_custom_source(grid, band, flat_kernel):
     """Custom source tag must appear in attrs."""
     psf = NonAnalyticalPSF(grid=grid, band=band, kernel=flat_kernel, source="MyTool")
-    assert psf.to_dataarray().attrs["atcor:source"] == "MyTool"
+    assert psf.to_dataarray().attrs["adjeff:source"] == "MyTool"
 
 
 def test_non_analytical_no_grad(non_analytical_psf):

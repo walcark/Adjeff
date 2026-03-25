@@ -86,7 +86,7 @@ class PSFModule:
             dims=["y_psf", "x_psf"],
             coords=coords,
             attrs={
-                "atcor:kind": "analytical",
+                "adjeff:kind": "analytical",
                 "band": self.band,
             },
         )

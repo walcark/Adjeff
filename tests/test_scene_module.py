@@ -37,9 +37,9 @@ def test_testmodule_shift_value(scene):
 
 
 def test_provenance_is_stamped(scene):
-    """Output DataArrays carry _atcor_provenance after compute."""
+    """Output DataArrays carry _adjeff_provenance after compute."""
     result = TestModule()(scene)
-    prov = result[S2Band.B02]["rho_toa"].attrs.get("_atcor_provenance")
+    prov = result[S2Band.B02]["rho_toa"].attrs.get("_adjeff_provenance")
     assert prov is not None
     assert prov["module"] == "TestModule"
     assert "key" in prov
