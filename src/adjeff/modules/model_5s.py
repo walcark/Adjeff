@@ -8,10 +8,11 @@ Implemented links:
 
 from typing import ClassVar
 
+import torch
 import xarray as xr
 
-from adjeff.core import ImageDict
-from adjeff.utils import CacheStore
+from adjeff.core import ImageDict, PSFDict, extend_analytical
+from adjeff.utils import CacheStore, fft_convolve_2D
 
 from ._scene_module import SceneModule
 
@@ -91,5 +92,45 @@ class Surface2Env(SceneModule):
     required_vars: ClassVar[list[str]] = ["rho_s"]
     output_vars: ClassVar[list[str]] = ["rho_env"]
 
-    def __init__(self, cache: CacheStore | None = None) -> None:
+    def __init__(
+        self,
+        psf_dict: PSFDict,
+        cache: CacheStore | None = None,
+        device: torch.device | str = "cuda",
+    ) -> None:
+        self._psf_dict = psf_dict
+        self._device = device
         super().__init__(cache=cache)
+
+    def _config_dict(self) -> dict[str, object]:
+        """Return frozen configuration for cache keying."""
+        return {"psf_dict": self._psf_dict._cache_dict()}
+
+    def _compute(self, scene: ImageDict) -> ImageDict:
+        """Perform convolution of `rho_s` with the PSF kernel for each band."""
+        for band in scene.bands:
+            ds: xr.Dataset = scene[band]
+            kernel = self._psf_dict.kernel(band)
+
+            if ds.adjeff.is_analytical("rho_s"):
+                n = ds["rho_s"].sizes["y"]
+                k = kernel.sizes["y_psf"]
+                rho_s = extend_analytical(ds["rho_s"], n + k - 1)
+                rho_env = fft_convolve_2D(
+                    rho_s,
+                    kernel,
+                    padding="constant",
+                    conv_type="valid",
+                    device=self._device,
+                )
+                ds["rho_env"] = rho_env.assign_coords(ds["rho_s"].coords)
+            else:
+                ds["rho_env"] = fft_convolve_2D(
+                    ds["rho_s"],
+                    kernel,
+                    padding="reflect",
+                    conv_type="same",
+                    device=self._device,
+                )
+
+        return scene

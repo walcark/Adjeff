@@ -74,6 +74,7 @@ class SceneModule(nn.Module):
     def __init__(self, cache: CacheStore | None = None) -> None:
         super().__init__()
         self._cache = cache if cache is not None else CacheStore()
+        self._log = logger.bind(module=type(self).__name__)
 
     def forward(self, scene: "ImageDict") -> "ImageDict":
         """Perform the module operations of the input ImageDict.
@@ -86,11 +87,10 @@ class SceneModule(nn.Module):
         4) results are stamped and eventually cached.
         """
         scene = scene.shallow_copy()
-        module_name = type(self).__name__
         scene.require_vars(self.required_vars)
 
         key = self._cache_key(scene)
-        log = logger.bind(module=module_name, key=key[:8])
+        log = self._log.bind(key=key[:8])
 
         cached = self._cache.load_vars(key, scene.bands, self.output_vars)
         if cached is not None:
