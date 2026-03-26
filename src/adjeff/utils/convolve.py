@@ -1,8 +1,8 @@
 """Implement FFT convolution with PyTorch GPU Optimization.
 
-The main method `fft_convolve_pytorch` uses an input torch.Tensor and returns
-another torch.Tensor. A wrapper method `fft_convolve` allows to perform the
-convolution on either a numpy.ndarray or xarray.DataArray.
+The main method `fft_convolve_2D_torch` operates on torch.Tensor objects.
+The wrapper `fft_convolve_2D` operates on xr.DataArray objects and handles
+arbitrary extra dimensions via ``xr.apply_ufunc``.
 
 """
 
@@ -19,78 +19,81 @@ logger = adjeff_logging.get_logger()
 
 @adjeff_logging.log_execution_time
 def fft_convolve_2D(
-    in1: np.ndarray | xr.DataArray,
-    in2: np.ndarray | xr.DataArray,
+    in1: xr.DataArray,
+    in2: xr.DataArray,
     *,
     padding: Literal["constant", "reflect", "replicate"],
     const_padding_values: float = 0.0,
     conv_type: str = "valid",
     device: torch.device | str = "cuda",
-) -> np.ndarray | xr.DataArray:
-    """Perform a 2D convolution on numpy or xarray objects using PyTorch FFT.
+) -> xr.DataArray:
+    """Perform a 2D convolution on xarray DataArrays using PyTorch FFT.
 
-    This is a wrapper around `fft_convolve_2D_torch` that allows passing numpy
-    arrays or xarray.DataArray as input. The actual computation is performed
-    on a PyTorch tensor on the specified device.
+    This is a wrapper around `fft_convolve_2D_torch` that handles arbitrarily
+    many extra dimensions in ``in1`` (e.g. ``aot``, ``wl``) by sweeping over
+    them via ``xr.apply_ufunc`` and reconstructing the output with the same
+    shape and coordinates. The following naming conventions are required:
+
+    - Spatial dimensions of ``in1`` must be named ``"y"`` and ``"x"``.
+    - Spatial dimensions of ``in2`` (the kernel) must be named ``"y_psf"``
+      and ``"x_psf"``.
 
     Parameters
     ----------
-    in1 : np.ndarray or xarray.DataArray
-        Input 2D array.
-    in2 : np.ndarray or xarray.DataArray
-        2D convolution kernel.
+    in1 : xr.DataArray
+        Input array. May have extra dimensions beyond ``(y, x)``.
+    in2 : xr.DataArray
+        Convolution kernel with spatial dims ``(y_psf, x_psf)``.
     padding : {"constant", "reflect", "replicate"}
-        Padding method before convolution. Only `"constant"` uses
-        `const_padding_values`.
+        Padding method. Only `"constant"` uses `const_padding_values`.
     const_padding_values : float, optional
         Value used for constant padding (default 0.0).
     conv_type : {"valid", "same"}, optional
         Output size mode.
     device : torch.device or str, optional
-        Device to perform computation on `"cpu"` or `"cuda"`, with
-        `"cuda"` by default.
+        Device to perform computation on (default ``"cuda"``).
 
     Returns
     -------
-    np.ndarray or xarray.DataArray
-        The convolved array, same type as input.
+    xr.DataArray
+        The convolved array with the same extra dimensions as ``in1``.
 
     """
-    # Save metadata if input is xarray
-    if isinstance(in1, xr.DataArray):
-        dims, coords = (in1.dims, in1.coords)
-    elif isinstance(in1, np.ndarray):
-        dims, coords = (None, None)
-    else:
-        raise ValueError(f"Wrong input type: {type(in1)}.")
 
-    # Convert input to PyTorch tensor
-    in1_tensor = torch.tensor(
-        np.asarray(in1), device=device, dtype=torch.float32
-    )
-    in2_tensor = torch.tensor(
-        np.asarray(in2), device=device, dtype=torch.float32
-    )
-
-    # Perform convolution
-    result = (
-        fft_convolve_2D_torch(
-            in1_tensor,
-            in2_tensor,
-            padding=padding,
-            const_padding_values=const_padding_values,
-            conv_type=conv_type,
+    def _convolve_slice(arr: np.ndarray, k: np.ndarray) -> np.ndarray:
+        in1_t = torch.tensor(arr, device=device, dtype=torch.float32)
+        in2_t = torch.tensor(k, device=device, dtype=torch.float32)
+        return (
+            fft_convolve_2D_torch(
+                in1_t,
+                in2_t,
+                padding=padding,
+                const_padding_values=const_padding_values,
+                conv_type=conv_type,
+            )
+            .detach()
+            .cpu()
+            .numpy()
         )
-        .detach()
-        .cpu()
-        .numpy()
-    )
 
-    # Return as xarray if needed
-    if isinstance(in1, xr.DataArray):
-        return xr.DataArray(result, dims=dims, coords=coords)
-    else:
-        return result
+    result = xr.apply_ufunc(
+        _convolve_slice,
+        in1,
+        in2,
+        input_core_dims=[["y", "x"], ["y_psf", "x_psf"]],
+        output_core_dims=[["y_out", "x_out"]],
+        vectorize=True,
+    ).rename({"y_out": "y", "x_out": "x"})
+
+    n_out = result.sizes["y"]
+    half = (in1.sizes["y"] - n_out) // 2
+    return cast(
+        xr.DataArray,
+        result.assign_coords(
+            y=in1.coords["y"].values[half : half + n_out],
+            x=in1.coords["x"].values[half : half + n_out],
+        ),
+    )
 
 
 def fft_convolve_2D_torch(
