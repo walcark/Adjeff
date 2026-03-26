@@ -101,3 +101,16 @@ class PSFDict:
     def kernel(self, band: SensorBand) -> xr.DataArray:
         """Alias for to_dataarray()."""
         return self.to_dataarray(band)
+
+    def _cache_dict(self) -> dict:
+        """Return a joblib-hashable representation of all kernel data.
+
+        xr.DataArray values are converted to nested lists so that joblib
+        can hash them.  Used by SceneModule._config_dict().
+        """
+        result: dict = {}
+        for band, ds in self._data.items():
+            result[str(band)] = {
+                var: da.values for var, da in ds.data_vars.items()
+            }
+        return result
