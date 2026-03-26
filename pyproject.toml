@@ -41,6 +41,7 @@ structlog = ">=25.5.0,<26"
 pip = ">=26.0.1,<27"
 joblib = ">=1.5.3,<2"
 zarr = ">=3.1.5,<4"
+dask = ">=2026.3.0,<2027"
 
 [tool.pixi.feature.gpu]
 system-requirements = { cuda = "12.6" }
