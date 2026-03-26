@@ -5,8 +5,40 @@ an older version of xarray used in Smart-G. See: https://github.com/hygeos/luts.
 
 """
 
+from __future__ import annotations
+
 import numpy as np
 import xarray as xr
+
+
+def _normalize_da(
+    name: str,
+    da: xr.DataArray,
+    deduplicate_dims: list[str] | None,
+) -> xr.DataArray:
+    """Ensure *da* has a coordinate along its dim and is at least 1-D.
+
+    Scalar DataArrays are promoted to 1-D.  1-D DataArrays without a
+    coordinate on their sweep dimension get one assigned from their values.
+    Multi-dimensional DataArrays are only valid when *deduplicate_dims* is set.
+
+    Raises
+    ------
+    ValueError
+        If *da* has more than one dimension and *deduplicate_dims* is ``None``.
+    """
+    if da.ndim == 0:
+        v = float(da)
+        return xr.DataArray([v], dims=[name], coords={name: [v]})
+    if da.ndim == 1 and da.dims[0] == name and name not in da.coords:
+        return da.assign_coords({name: da.values})
+    if da.ndim > 1 and deduplicate_dims is None:
+        raise ValueError(
+            f"Parameter '{name}' has {da.ndim} dimensions "
+            f"{list(da.dims)}. Multi-dimensional config "
+            "parameters require deduplicate_dims to be set."
+        )
+    return da
 
 
 def square_grid(n: int, res: float) -> xr.Coordinates:
