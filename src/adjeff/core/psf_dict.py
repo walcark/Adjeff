@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Any, Self
 
 import xarray as xr
 
@@ -102,13 +102,13 @@ class PSFDict:
         """Alias for to_dataarray()."""
         return self.to_dataarray(band)
 
-    def _cache_dict(self) -> dict:
+    def _cache_dict(self) -> dict[str, Any]:
         """Return a joblib-hashable representation of all kernel data.
 
         xr.DataArray values are converted to nested lists so that joblib
         can hash them.  Used by SceneModule._config_dict().
         """
-        result: dict = {}
+        result: dict[str, Any] = {}
         for band, ds in self._data.items():
             result[str(band)] = {
                 var: da.values for var, da in ds.data_vars.items()

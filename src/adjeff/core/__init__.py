@@ -12,6 +12,7 @@ from .bands import S2Band, SensorBand
 from .image_dict import ImageDict
 from .image_generator import (
     disk_image_dict,
+    extend_analytical,
     gaussian_image_dict,
     random_image_dict,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "SensorBand",
     "ImageDict",
     "disk_image_dict",
+    "extend_analytical",
     "gaussian_image_dict",
     "random_image_dict",
     "NonAnalyticalPSF",

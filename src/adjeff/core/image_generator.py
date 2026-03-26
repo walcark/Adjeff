@@ -60,6 +60,27 @@ def _resolve_n(
     return {band: n for band in bands}
 
 
+def _gaussian_data(
+    coords: xr.Coordinates,
+    sigma: float,
+    rho_min: float,
+    rho_max: float,
+) -> np.ndarray:
+    return rho_min + (rho_max - rho_min) * np.exp(
+        -(coords["x"] ** 2 + coords["y"] ** 2) / sigma**2
+    )
+
+
+def _disk_data(
+    coords: xr.Coordinates,
+    radius: float,
+    rho_min: float,
+    rho_max: float,
+) -> np.ndarray:
+    r2 = coords["x"] ** 2 + coords["y"] ** 2
+    return np.where(r2 <= radius**2, rho_max, rho_min)
+
+
 def gaussian_image_dict(
     sigma: float,
     rho_min: float = 0.0,
@@ -114,14 +135,12 @@ def gaussian_image_dict(
     for band in bands:
         coords: xr.Coordinates = square_grid(band_n[band], band.res_km)
 
-        data: np.ndarray = rho_min + (rho_max - rho_min) * np.exp(
-            -(coords["x"] ** 2 + coords["y"] ** 2) / sigma**2
-        )
+        data: np.ndarray = _gaussian_data(coords, sigma, rho_min, rho_max)
 
         attrs = {
             "adjeff:kind": "analytical",
-            "adjeff.model": "gaussian",
-            "adjeff.params": {
+            "adjeff:model": "gaussian",
+            "adjeff:params": {
                 "sigma": sigma,
                 "rho_min": rho_min,
                 "rho_max": rho_max,
@@ -207,15 +226,12 @@ def disk_image_dict(
     for band in bands:
         coords: xr.Coordinates = square_grid(band_n[band], band.res_km)
 
-        r2 = coords["x"] ** 2 + coords["y"] ** 2
-        mask = r2 <= radius**2
-
-        data: np.ndarray = np.where(mask, rho_max, rho_min)
+        data: np.ndarray = _disk_data(coords, radius, rho_min, rho_max)
 
         attrs = {
             "adjeff:kind": "analytical",
-            "adjeff.model": "disk",
-            "adjeff.params": {
+            "adjeff:model": "disk",
+            "adjeff:params": {
                 "radius": radius,
                 "rho_min": rho_min,
                 "rho_max": rho_max,
@@ -244,6 +260,50 @@ def disk_image_dict(
         )
 
     return ImageDict(band_datasets)
+
+
+def extend_analytical(da: xr.DataArray, n_ext: int) -> xr.DataArray:
+    """Re-evaluate an analytical DataArray on a larger square grid.
+
+    The extended grid has the same resolution and center as *da* but
+    ``n_ext`` pixels per side.  Only "gaussian" and "disk" models are
+    supported; both use the parameters stored in ``da.attrs``.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        Analytical DataArray (``adjeff:kind == "analytical"``).
+    n_ext : int
+        Number of pixels per dimension of the extended grid.
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray evaluated on the extended grid, same attrs as *da*.
+
+    """
+    model = da.attrs.get("adjeff:model")
+    params: dict[str, float] = da.attrs.get("adjeff:params", {})
+    res = float(da.coords["x"][1] - da.coords["x"][0])
+    coords = square_grid(n_ext, res)
+
+    if model == "gaussian":
+        data = _gaussian_data(
+            coords, params["sigma"], params["rho_min"], params["rho_max"]
+        )
+    elif model == "disk":
+        data = _disk_data(
+            coords, params["radius"], params["rho_min"], params["rho_max"]
+        )
+    else:
+        raise ValueError(f"Unknown analytical model: {model!r}")
+
+    return xr.DataArray(
+        np.asarray(data, dtype=np.float32),
+        dims=["y", "x"],
+        coords=coords,
+        attrs=da.attrs,
+    )
 
 
 def random_image_dict(
