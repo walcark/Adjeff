@@ -3,6 +3,7 @@
 from ._config import Module, Parameter, _Config, to_arr
 from .atmo_config import AtmoConfig
 from .geo_config import GeoConfig
+from .spectral_config import SpectralConfig
 
 __all__ = [
     "Module",
@@ -11,4 +12,5 @@ __all__ = [
     "to_arr",
     "AtmoConfig",
     "GeoConfig",
+    "SpectralConfig",
 ]

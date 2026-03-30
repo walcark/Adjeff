@@ -46,7 +46,7 @@ def to_arr(
         if isinstance(v, xr.DataArray):
             da = v
         elif isinstance(v, (float, int)):
-            da = xr.DataArray(float(v))
+            da = xr.DataArray(np.atleast_1d(v), dims=[field_name])
         else:
             arr = np.asarray(v)
             if arr.ndim == 1:
