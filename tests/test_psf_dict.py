@@ -47,7 +47,7 @@ def psf_dict(gauss_b02, gauss_b03) -> PSFDict:
 
 @pytest.fixture
 def scene():
-    return random_image_dict([S2Band.B02, S2Band.B03], ["rho_s"], n=16)
+    return random_image_dict([S2Band.B02, S2Band.B03], ["rho_s"], res_km=0.01, n=16)
 
 
 @pytest.fixture

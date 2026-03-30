@@ -12,7 +12,7 @@ from adjeff.utils import CacheStore
 @pytest.fixture
 def scene():
     """Return a small single-band scene with rho_s."""
-    return random_image_dict(bands=[S2Band.B02], variables=["rho_s"], n=8, seed=0)
+    return random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0)
 
 
 # --- TestModule compute ---
@@ -63,8 +63,8 @@ def test_cache_hit_returns_same_values(tmp_path, scene):
 def test_cache_different_inputs_differ(tmp_path):
     """Two scenes with different content produce different outputs."""
     cache = CacheStore(tmp_path)
-    scene_a = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], n=8, seed=0)
-    scene_b = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], n=8, seed=1)
+    scene_a = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0)
+    scene_b = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=1)
     module = TestModule(cache=cache)
     r_a = module(scene_a)
     r_b = module(scene_b)
@@ -79,6 +79,6 @@ def test_cache_different_inputs_differ(tmp_path):
 
 def test_missing_required_var_raises():
     """TestModule raises MissingVariableError when rho_s is absent."""
-    scene = random_image_dict(bands=[S2Band.B02], variables=["rho_toa"], n=8, seed=0)
+    scene = random_image_dict(bands=[S2Band.B02], variables=["rho_toa"], res_km=0.01, n=8, seed=0)
     with pytest.raises(MissingVariableError):
         TestModule()(scene)

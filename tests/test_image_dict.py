@@ -11,7 +11,7 @@ def _make_scene(
     n=16,
     variables=("rho_s",)
 ) -> ImageDict:
-    return random_image_dict(list(bands), list(variables), n=n)
+    return random_image_dict(list(bands), list(variables), res_km=0.01, n=n)
 
 
 def test_bands_sorted():

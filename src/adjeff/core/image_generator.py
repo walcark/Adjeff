@@ -14,6 +14,7 @@ logger = structlog.getLogger(__name__)
 
 def _resolve_n(
     bands: list[SensorBand],
+    res_km: float | dict[SensorBand, float],
     n: int | dict[SensorBand, int] | None,
     extent_km: float | dict[SensorBand, float] | None,
 ) -> dict[SensorBand, int]:
@@ -23,13 +24,16 @@ def _resolve_n(
     ----------
     bands:
         Bands for which a pixel count is needed.
-    n:
+    res_km : float | dict
+        Resolution per band - either a scalar applied to all bands or a
+        per-band mapping.
+    n : int | dict
         Number of pixels along one dimension — either a scalar applied to
         all bands or a per-band mapping.
-    extent_km:
+    extent_km : float | dict
         Physical extent of the image [km] — either a scalar applied to all
         bands or a per-band mapping. ``n`` is derived per band as
-        ``round(extent_km / band.res_km)``.
+        ``round(extent_km / res_km)``.
 
     Returns
     -------
@@ -48,11 +52,14 @@ def _resolve_n(
         raise ValueError("`n` and `extent_km` are mutually exclusive.")
 
     if extent_km is not None:
+        _res = (
+            res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
+        )
         if isinstance(extent_km, dict):
             return {
-                band: round(extent_km[band] / band.res_km) for band in bands
+                band: round(extent_km[band] / _res[band]) for band in bands
             }
-        return {band: round(extent_km / band.res_km) for band in bands}
+        return {band: round(extent_km / _res[band]) for band in bands}
 
     assert n is not None
     if isinstance(n, dict):
@@ -83,6 +90,7 @@ def _disk_data(
 
 def gaussian_image_dict(
     sigma: float,
+    res_km: float | dict[SensorBand, float],
     rho_min: float = 0.0,
     rho_max: float = 1.0,
     bands: list[SensorBand] = [S2Band.B02],
@@ -102,6 +110,8 @@ def gaussian_image_dict(
     ----------
     sigma : float
         Standard deviation [km].
+    res_km : float | dict[SensorBand, float]
+        Pixel resolution [km]. Scalar or per-band mapping.
     rho_min : float, optional
         Minimum reflectance value, by default 0.0.
     rho_max : float, optional
@@ -129,11 +139,14 @@ def gaussian_image_dict(
     """
     logger.debug("Creating Gaussian ImageDict.", bands=bands)
 
-    band_n = _resolve_n(bands, n, extent_km)
+    _res_km = (
+        res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
+    )
+    band_n = _resolve_n(bands, res_km, n, extent_km)
     band_datasets: dict[SensorBand, xr.Dataset] = {}
 
     for band in bands:
-        coords: xr.Coordinates = square_grid(band_n[band], band.res_km)
+        coords: xr.Coordinates = square_grid(band_n[band], _res_km[band])
 
         data: np.ndarray = _gaussian_data(coords, sigma, rho_min, rho_max)
 
@@ -173,6 +186,7 @@ def gaussian_image_dict(
 
 def disk_image_dict(
     radius: float,
+    res_km: float | dict[SensorBand, float],
     rho_min: float = 0.0,
     rho_max: float = 1.0,
     bands: list[SensorBand] = [S2Band.B02],
@@ -193,6 +207,8 @@ def disk_image_dict(
     ----------
     radius : float
         Radius of the disk [km].
+    res_km : float | dict[SensorBand, float]
+        Pixel resolution [km]. Scalar or per-band mapping.
     rho_min : float, optional
         Background reflectance, by default 0.0.
     rho_max : float, optional
@@ -220,11 +236,14 @@ def disk_image_dict(
     """
     logger.debug("Creating Disk ImageDict.", bands=bands)
 
-    band_n = _resolve_n(bands, n, extent_km)
+    _res_km = (
+        res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
+    )
+    band_n = _resolve_n(bands, res_km, n, extent_km)
     band_datasets: dict[SensorBand, xr.Dataset] = {}
 
     for band in bands:
-        coords: xr.Coordinates = square_grid(band_n[band], band.res_km)
+        coords: xr.Coordinates = square_grid(band_n[band], _res_km[band])
 
         data: np.ndarray = _disk_data(coords, radius, rho_min, rho_max)
 
@@ -309,6 +328,7 @@ def extend_analytical(da: xr.DataArray, n_ext: int) -> xr.DataArray:
 def random_image_dict(
     bands: list[SensorBand],
     variables: list[str],
+    res_km: float | dict[SensorBand, float],
     seed: int | None = None,
     extent_km: float | dict[SensorBand, float] | None = None,
     n: int | dict[SensorBand, int] | None = None,
@@ -324,6 +344,8 @@ def random_image_dict(
         List of spectral bands to generate.
     variables : list[str]
         Names of the variables stored in each Dataset.
+    res_km : float | dict[SensorBand, float]
+        Pixel resolution [km]. Scalar or per-band mapping.
     seed : int | None
         Optional RNG seed for reproducible data.  Required for cache
         hits across separate runs — without a fixed seed the input hash
@@ -336,7 +358,10 @@ def random_image_dict(
         Mutually exclusive with ``extent_km``.
 
     """
-    band_n = _resolve_n(bands, n, extent_km)
+    _res_km = (
+        res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
+    )
+    band_n = _resolve_n(bands, res_km, n, extent_km)
     rng = np.random.default_rng(seed)
     logger.debug(
         "Creating random ImageDict",
@@ -347,7 +372,7 @@ def random_image_dict(
     band_datasets: dict[SensorBand, xr.Dataset] = {}
     for band in bands:
         bn = band_n[band]
-        coords: xr.Coordinates = square_grid(bn, band.res_km)
+        coords: xr.Coordinates = square_grid(bn, _res_km[band])
 
         data_vars = {
             v: xr.DataArray(
