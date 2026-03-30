@@ -7,7 +7,7 @@ can be passed in a similar way to any module that uses those classes.
 
 from __future__ import annotations
 
-from typing import Callable, Iterator, Optional, Self
+from typing import Any, Callable, Iterator, Optional, Protocol, Self
 
 import numpy as np
 import xarray as xr
@@ -15,6 +15,24 @@ from pydantic import BaseModel, ConfigDict
 
 Parameter = float | int | np.ndarray | list[float | int] | xr.DataArray
 Module = Callable[["_Config"], xr.DataArray]
+
+
+class ConfigProtocol(Protocol):
+    """Contract for Configuration classes (Atmo, Geo, ...)."""
+
+    @property
+    def _arrays(self) -> dict[str, xr.DataArray]:
+        """Return DataArrays attributes of the configuration."""
+        ...
+
+    @property
+    def model_fields(self) -> dict[str, Any]:
+        """Returns pydantic fields from the configuration attributes."""
+        ...
+
+    def unique(self, dims: list[str]) -> tuple[Self, xr.DataArray]:
+        """Deduplicate the fields living on dims, keep other intact."""
+        ...
 
 
 def to_arr(

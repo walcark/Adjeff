@@ -12,7 +12,7 @@ from pydantic.functional_validators import BeforeValidator as Before
 if TYPE_CHECKING:
     from smartg.smartg import Sensor
 
-from ._config import _Config, to_arr
+from adjeff.utils import _Config, to_arr
 
 
 class GeoConfig(_Config):

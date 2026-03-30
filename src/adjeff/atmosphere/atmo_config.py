@@ -9,7 +9,7 @@ import xarray as xr
 from pydantic.functional_validators import BeforeValidator as Before
 from pydantic.functional_validators import model_validator
 
-from ._config import _Config, to_arr
+from adjeff.utils import _Config, to_arr
 
 
 class AtmoConfig(_Config):
