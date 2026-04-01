@@ -26,8 +26,8 @@ class ConfigProtocol(Protocol):
         ...
 
     @property
-    def model_fields(self) -> dict[str, Any]:
-        """Returns pydantic fields from the configuration attributes."""
+    def _non_arrays(self) -> dict[str, Any]:
+        """Return non-DataArray fields of the configuration."""
         ...
 
     def unique(self, dims: list[str]) -> tuple[Self, xr.DataArray]:
@@ -110,6 +110,16 @@ class _Config(BaseModel):
             k: v
             for k in type(self).model_fields
             if isinstance(v := getattr(self, k), xr.DataArray)
+        }
+
+    @property
+    def _non_arrays(self) -> dict[str, Any]:
+        """Return non-DataArray fields of this config."""
+        arrays = self._arrays
+        return {
+            k: getattr(self, k)
+            for k in type(self).model_fields
+            if k not in arrays
         }
 
     @property

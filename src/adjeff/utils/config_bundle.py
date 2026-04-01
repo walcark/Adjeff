@@ -284,9 +284,9 @@ def _aggregate(
         for name, da in cfg._arrays.items():
             if name in wanted and name not in das:
                 das[name] = da
-        for name in cfg.model_fields:
-            if name not in cfg._arrays and name not in other:
-                other[name] = getattr(cfg, name)
+        for name, val in cfg._non_arrays.items():
+            if name not in other:
+                other[name] = val
     missing = wanted - set(das.keys())
     if missing:
         raise ValueError(
