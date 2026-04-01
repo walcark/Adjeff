@@ -63,6 +63,12 @@ def to_arr(
     def _validate(v: Parameter) -> xr.DataArray:
         if isinstance(v, xr.DataArray):
             da = v
+            default_dims = [d for d in da.dims if str(d).startswith("dim_")]
+            if default_dims:
+                raise ValueError(
+                    f"'{field_name}': DataArray has implicit dimensions "
+                    f"{default_dims} Please provide explicit dimension names."
+                )
         elif isinstance(v, (float, int)):
             da = xr.DataArray(np.atleast_1d(v), dims=[field_name])
         else:
