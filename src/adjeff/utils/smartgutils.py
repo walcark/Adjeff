@@ -1,8 +1,12 @@
 """Utilitary methods to handle Smart-G related data."""
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import xarray as xr
-from smartg.smartg import Sensor
+
+if TYPE_CHECKING:
+    from smartg.smartg import Sensor
 
 
 def make_sensors(
@@ -10,12 +14,14 @@ def make_sensors(
     phi_scalar: float,
     posz: float,
     loc: str = "ATMOS",
-) -> list[Sensor]:
+) -> list["Sensor"]:
     """Build a list of SmartG Sensor objects, one per angle value.
 
     SmartG's Sensor only accepts scalar THDEG/PHDEG, so multiple angles
     require a list of Sensor instances.
     """
+    from smartg.smartg import Sensor
+
     thdeg = np.atleast_1d(angles.values)
     phi = np.full_like(thdeg, phi_scalar)
     return [
