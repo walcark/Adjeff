@@ -1,44 +1,118 @@
 """Operate transformation of xr.Dataset and xr.DataArray objects.
 
-Also implements method to with LUT / MLUT and the luts package, that is
-an older version of xarray used in Smart-G. See: https://github.com/hygeos/luts.
+Contains:
+---------
 
+- ParamsBatch: used to handle iteration on DataArrays values and restore
+back dimensions after calculations.
+
+- grid / square_grid: instanciate square of rectangle (x,y) grid for 2D
+image coordinates.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import ClassVar, Self
 
 import numpy as np
 import xarray as xr
 
 
-def _normalize_da(
-    name: str,
-    da: xr.DataArray,
-    deduplicate_dims: list[str] | None,
-) -> xr.DataArray:
-    """Ensure *da* has a coordinate along its dim and is at least 1-D.
+@dataclass
+class ParamBatch:
+    """Flattened atmospheric parameters ready for a SmartG batch call.
 
-    Scalar DataArrays are promoted to 1-D.  1-D DataArrays without a
-    coordinate on their sweep dimension get one assigned from their values.
-    Multi-dimensional DataArrays are only valid when *deduplicate_dims* is set.
-
-    Raises
-    ------
-    ValueError
-        If *da* has more than one dimension and *deduplicate_dims* is ``None``.
+    Produced by :func:`atmo_flatten`.  Exposes the flat parameter dict for
+    :func:`~adjeff.atmosphere.create_atmosphere` and a :meth:`unstack`
+    method that reconstructs the full dimensional structure from SmartG
+    output — including handling the deduplication ``_index_tmp`` rename
+    transparently.
     """
-    if da.ndim == 0:
-        v = float(da)
-        return xr.DataArray([v], dims=[name], coords={name: [v]})
-    if da.ndim == 1 and da.dims[0] == name and name not in da.coords:
-        return da.assign_coords({name: da.values})
-    if da.ndim > 1 and deduplicate_dims is None:
-        raise ValueError(
-            f"Parameter '{name}' has {da.ndim} dimensions "
-            f"{list(da.dims)}. Multi-dimensional config "
-            "parameters require deduplicate_dims to be set."
-        )
-    return da
+
+    _DEDUP_TMP: ClassVar[str] = "_index_tmp"
+    _flat: dict[str, xr.DataArray]
+    _index_coord: xr.DataArray  # MultiIndex coord for unstack
+
+    @classmethod
+    def from_dataarrays(cls, **arrs: xr.DataArray) -> Self:
+        """Broadcast and flatten DataArrays into a common dimension.
+
+        This common dimension name is ``index``. Handles the deduplication
+        case where some args already carry a dim named ``"index"`` produced
+        by the bundle's deduplication machinery. In that case the existing
+        index is temporarily renamed to avoid a name conflict with the new
+        flat index, and the :meth:`AtmoBatch.unstack` method renames it back
+        transparently after the computation.
+
+        Parameters
+        ----------
+        **args:
+            Named DataArrays (``wl``, ``aot``, ``rh``, ``h``, etc.). Each must
+            be 1-D along its own named dim — or already have been deduplicated
+            onto a single ``"index"`` dim by the bundle.
+        """
+        # Rename any existing "index" dimension
+        renamed: dict[str, xr.DataArray] = {}
+
+        for name, da in arrs.items():
+            dims_to_rename = {}
+            for d in da.dims:
+                if d == "index":
+                    dims_to_rename[d] = cls._DEDUP_TMP
+
+            renamed[name] = da.rename(dims_to_rename)
+
+        # Assign coords so unstack restores actual parameter values. For
+        # _DEDUP_TMP (the dedup index), integer positions are used so that
+        # all arrays share identical coords along that dim and xr.broadcast
+        # succeeds.
+        assigned: dict[str, xr.DataArray] = {}
+
+        for name, da in renamed.items():
+            coords = {}
+
+            for d in da.dims:
+                if d == cls._DEDUP_TMP:
+                    # Int coordinates so all arrays align for broadcast
+                    coords[d] = np.arange(da.sizes[d])
+                elif d in da.coords:
+                    coords[d] = da.coords[d]
+                else:
+                    coords[d] = da.values
+
+            assigned[name] = da.assign_coords(coords)
+
+        broadcasted = xr.broadcast(*assigned.values())
+        dims = broadcasted[0].dims
+        stacked = [arr.stack(index=dims) for arr in broadcasted]
+        flat_arrs = {name: arr for name, arr in zip(arrs.keys(), stacked)}
+
+        return cls(_flat=flat_arrs, _index_coord=stacked[0]["index"])
+
+    def as_dict(self) -> dict[str, xr.DataArray]:
+        """Return flat parameter dict suitable for ``create_atmosphere``."""
+        return dict(self._flat)
+
+    @property
+    def index_coord(self) -> xr.DataArray:
+        """MultiIndex coordinate to use when constructing result DataArrays."""
+        return self._index_coord
+
+    def unstack(self, res: xr.DataArray) -> xr.DataArray:
+        """Unstack the ``"index"`` dim and restore the dedup index if present.
+
+        Parameters
+        ----------
+        res:
+            DataArray with ``dim="index"`` already set (with ``index_coord``
+            as coordinate).  May also have leading angular dims like ``"vza"``
+            or ``"sza"``.
+        """
+        res = res.unstack("index")
+        if self._DEDUP_TMP in res.dims:
+            res = res.rename({self._DEDUP_TMP: "index"})
+        return res
 
 
 def square_grid(n: int, res: float) -> xr.Coordinates:
