@@ -18,7 +18,35 @@ logger = get_logger(__name__)
 
 
 class SmartgSampler_Tdir_up(SceneModuleSweep):
-    """Sample direct upward reflectance with Smart-G."""
+    """Sample direct upward transmittance analytically from optical depth.
+
+    Computes ``tdir_up = exp(-OD / cos(vza))`` where the optical depth
+    ``OD`` is retrieved from Smart-G.  See also
+    :class:`SmartgSampler_Tdir_down` for the downward counterpart.
+
+    Parameters
+    ----------
+    atmo_config : AtmoConfig
+        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
+    geo_config : GeoConfig
+        Viewing geometry (``vza``).
+    spectral_config : SpectralConfig
+        Spectral bands and wavelengths to compute.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh optical depth is set to zero.
+    afgl_type : str, optional
+        AFGL standard atmosphere profile identifier,
+        by default ``"afgl_exp_h8km"``.
+    n_ph : int, optional
+        Number of photons for the optical depth retrieval,
+        by default ``1e9``.
+    cache : CacheStore or None, optional
+        Result cache; ``None`` disables caching.
+    chunks : dict[str, int] or None, optional
+        Chunk sizes for vector dimensions.
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate before sweeping.
+    """
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["tdir_up"]
@@ -99,7 +127,36 @@ def tdir_up(
     remove_rayleigh: bool,
     n_ph: int = int(1e2),
 ) -> xr.DataArray:
-    """Compute the direct upward transmittance."""
+    """Compute the direct upward transmittance analytically.
+
+    Parameters
+    ----------
+    wl : xr.DataArray
+        Wavelengths [nm], 1-D.
+    aot : xr.DataArray
+        Aerosol optical thickness, 1-D.
+    rh : xr.DataArray
+        Relative humidity [%], 1-D.
+    h : xr.DataArray
+        Ground elevation [km], 1-D.
+    href : xr.DataArray
+        Reference height of the aerosol vertical profile [km], 1-D.
+    vza : xr.DataArray
+        Viewing zenith angles [°], 1-D.
+    species : dict[str, float]
+        OPAC aerosol species and fractional contributions.
+    afgl_type : str
+        AFGL standard atmosphere profile identifier.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh optical depth is set to zero.
+    n_ph : int, optional
+        Number of photons for the optical depth retrieval, by default 100.
+
+    Returns
+    -------
+    xr.DataArray
+        Direct upward transmittance with dims ``(vza, wl, ...)``.
+    """
     # Create an atmosphere for each combination of AtmoParams
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=wl, aot=aot, rh=rh, href=href, h=h

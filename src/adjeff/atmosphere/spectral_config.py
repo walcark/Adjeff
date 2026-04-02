@@ -44,13 +44,25 @@ class SpectralConfig(_Config):
 
     @classmethod
     def from_bands(cls, bands: list[SensorBand]) -> SpectralConfig:
-        """Construct SpectralParams from a list of SensorBand instances.
+        """Construct a SpectralConfig from a list of SensorBand instances.
 
         Parameters
         ----------
-        bands:
+        bands : list[SensorBand]
             Bands to sweep over. The ``wl`` coordinate is derived from
-            ``band.wl_nm`` for each band.
+            ``band.wl_nm`` for each band. All bands must be of the same
+            type.
+
+        Returns
+        -------
+        SpectralConfig
+            Config with ``wl`` populated from the band wavelengths.
+
+        Raises
+        ------
+        ConfigurationError
+            If *bands* contains instances of more than one ``SensorBand``
+            subclass.
         """
         band_type: type[SensorBand] = type(bands[0])
         if not all(isinstance(b, band_type) for b in bands):

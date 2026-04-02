@@ -18,7 +18,17 @@ from .bands import SensorBand
 
 
 class GaussPSF(nn.Module, PSFModule):
-    """Trainable Gaussian PSF model with constrained sigma."""
+    """Trainable Gaussian PSF model with constrained sigma.
+
+    Parameters
+    ----------
+    grid : PSFGrid
+        Spatial sampling configuration (size and resolution).
+    band : SensorBand
+        Spectral band this PSF applies to.
+    sigma : float
+        Initial Gaussian standard deviation [km].
+    """
 
     def __init__(self, grid: PSFGrid, band: SensorBand, sigma: float) -> None:
         nn.Module.__init__(self)
@@ -61,7 +71,22 @@ class GaussPSF(nn.Module, PSFModule):
 
 
 class GaussGeneralPSF(nn.Module, PSFModule):
-    """Trainable Gaussian Generalized PSF model."""
+    """Trainable Generalised Gaussian PSF model.
+
+    The kernel follows ``exp(-( r² / (2σ²) )ⁿ)``, where *n* controls the
+    shape: ``n=0.5`` yields a standard Gaussian.
+
+    Parameters
+    ----------
+    grid : PSFGrid
+        Spatial sampling configuration.
+    band : SensorBand
+        Spectral band this PSF applies to.
+    sigma : float
+        Initial scale parameter [km].
+    n : float
+        Initial shape exponent. Constrained to ``[0.05, 0.5]``.
+    """
 
     def __init__(
         self, grid: PSFGrid, band: SensorBand, sigma: float, n: float
@@ -117,7 +142,22 @@ class GaussGeneralPSF(nn.Module, PSFModule):
 
 
 class VoigtPSF(nn.Module, PSFModule):
-    """Trainable Voigt kernel."""
+    """Trainable pseudo-Voigt PSF kernel.
+
+    Linearly mixes a Gaussian (width *sigma*) and a Lorentzian (width
+    *gamma*) using the Thompson et al. mixing parameter η.
+
+    Parameters
+    ----------
+    grid : PSFGrid
+        Spatial sampling configuration.
+    band : SensorBand
+        Spectral band this PSF applies to.
+    sigma : float
+        Initial Gaussian width [km].
+    gamma : float
+        Initial Lorentzian half-width [km].
+    """
 
     def __init__(
         self,
@@ -194,7 +234,22 @@ class VoigtPSF(nn.Module, PSFModule):
 
 
 class KingPSF(nn.Module, PSFModule):
-    """Trainable King kernel."""
+    """Trainable King profile PSF kernel.
+
+    The kernel follows ``(1 + r² / (2σ²γ))^{-γ}``, producing a
+    power-law tail controlled by *gamma*.
+
+    Parameters
+    ----------
+    grid : PSFGrid
+        Spatial sampling configuration.
+    band : SensorBand
+        Spectral band this PSF applies to.
+    sigma : float
+        Initial core width [km].
+    gamma : float
+        Initial power-law index.
+    """
 
     def __init__(
         self,
@@ -253,7 +308,24 @@ class KingPSF(nn.Module, PSFModule):
 
 
 class MoffatGeneralizedPSF(nn.Module, PSFModule):
-    """Trainable Generalized Moffat kernel."""
+    """Trainable Generalised Moffat PSF kernel.
+
+    The kernel follows ``(1 + (r/α)^{2β})^{-γ}``.  Setting *beta* = 1
+    and *gamma* = β recovers the standard Moffat profile.
+
+    Parameters
+    ----------
+    grid : PSFGrid
+        Spatial sampling configuration.
+    band : SensorBand
+        Spectral band this PSF applies to.
+    alpha : float
+        Initial scale radius [km].
+    beta : float
+        Initial shape exponent controlling the power-law slope.
+    gamma : float, optional
+        Initial outer power-law index, by default 1.0.
+    """
 
     def __init__(
         self,

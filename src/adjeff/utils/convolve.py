@@ -112,7 +112,7 @@ def fft_convolve_2D_torch(
 
     1) Extending the input to avoid wrap-around,
     2) Zero-padding the kernel to match the extended input,
-    3) Multiplying in the Fpurier domain (rFFT -> iFFT),
+    3) Multiplying in the Fourier domain (rFFT -> iFFT),
     4) Cropping the result according to `conv_type`.
 
     This method is GPU-efficient and minimizes temporary allocations.

@@ -17,7 +17,34 @@ logger = get_logger(__name__)
 
 
 class SmartgSampler_Tdif_up(SceneModuleSweep):
-    """Sample upward diffuse transmittance with Smart-G."""
+    """Sample upward diffuse transmittance with Smart-G.
+
+    Computes ``tdif_up`` — the diffuse component of the upward flux
+    reaching the satellite — for every combination of viewing geometry
+    and atmospheric state defined by the supplied configs.
+
+    Parameters
+    ----------
+    atmo_config : AtmoConfig
+        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
+    geo_config : GeoConfig
+        Viewing geometry (``vza``, ``saa``).
+    spectral_config : SpectralConfig
+        Spectral bands and wavelengths to compute.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed.
+    afgl_type : str, optional
+        AFGL standard atmosphere profile identifier,
+        by default ``"afgl_exp_h8km"``.
+    n_ph : int, optional
+        Number of photons per Smart-G call, by default ``3e7``.
+    cache : CacheStore or None, optional
+        Result cache; ``None`` disables caching.
+    chunks : dict[str, int] or None, optional
+        Chunk sizes for vector dimensions.
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate before sweeping.
+    """
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["tdif_up"]
@@ -84,7 +111,38 @@ def tdif_up(
     n_ph: int,
     saa: np.ndarray,
 ) -> xr.DataArray:
-    """Compute the upward diffuse transmittance with Smart-G."""
+    """Compute the upward diffuse transmittance with Smart-G.
+
+    Parameters
+    ----------
+    wl : xr.DataArray
+        Wavelengths [nm], 1-D.
+    aot : xr.DataArray
+        Aerosol optical thickness, 1-D.
+    rh : xr.DataArray
+        Relative humidity [%], 1-D.
+    h : xr.DataArray
+        Ground elevation [km], 1-D.
+    href : xr.DataArray
+        Reference height of the aerosol vertical profile [km], 1-D.
+    vza : xr.DataArray
+        Viewing zenith angles [°], 1-D.
+    species : dict[str, float]
+        OPAC aerosol species and fractional contributions.
+    afgl_type : str
+        AFGL standard atmosphere profile identifier.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed.
+    n_ph : int
+        Number of photons per Smart-G call.
+    saa : np.ndarray
+        Solar azimuth angle(s) [°].
+
+    Returns
+    -------
+    xr.DataArray
+        Upward diffuse transmittance with dims ``(vza, wl, ...)``.
+    """
     logger.info("Computing tdif_up ...", wl=wl, vza=vza)
 
     # Create an atmosphere for each combination of AtmoParams

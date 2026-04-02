@@ -57,6 +57,11 @@ class AdjeffAccessor:
             Existing variable whose coordinates are reused.
         target : str
             Name of the new variable to write.
+
+        Returns
+        -------
+        None
+            The Dataset is modified in-place.
         """
         ref = self._ds[like]
         arr = t.detach().cpu().numpy().astype(np.float32)
@@ -98,6 +103,22 @@ class AdjeffAccessor:
         Bins at the natural pixel-sized resolution (no empty bins). When
         *n_bins* exceeds the natural maximum, the profile is upsampled via
         linear interpolation so the result is always gap-free.
+
+        Parameters
+        ----------
+        var : str
+            Dataset variable to profile.
+        center : tuple[float, float] or None, optional
+            ``(cx, cy)`` origin in coordinate units. Defaults to the
+            coordinate mean.
+        n_bins : int or None, optional
+            Number of radial bins. When ``None`` the natural bin count
+            (one bin per pixel) is used.
+
+        Returns
+        -------
+        xr.DataArray
+            1-D DataArray with dim ``"r"`` containing the azimuthal mean.
         """
         rr_np, vv_np = radial_distances(self._ds, var, center)
         npix = natural_npix(self._ds, var)
@@ -130,7 +151,25 @@ class AdjeffAccessor:
         n_bins: int | None = None,
         normalize: bool = True,
     ) -> xr.DataArray:
-        """Radial CDF of *var*, weighted by annulus area."""
+        """Radial CDF of *var*, weighted by annulus area.
+
+        Parameters
+        ----------
+        var : str
+            Dataset variable to accumulate.
+        center : tuple[float, float] or None, optional
+            ``(cx, cy)`` origin. Defaults to the coordinate mean.
+        n_bins : int or None, optional
+            Number of radial bins forwarded to :meth:`radial`.
+        normalize : bool, optional
+            If ``True`` (default), the CDF is normalised to ``[0, 1]``.
+
+        Returns
+        -------
+        xr.DataArray
+            1-D DataArray with dim ``"r"`` containing the cumulative
+            area-weighted profile.
+        """
         radial = self.radial(var, center, n_bins)
         r = torch.from_numpy(radial.coords["r"].values.astype(np.float32))
         f = torch.from_numpy(radial.values.astype(np.float32))
@@ -161,7 +200,27 @@ class AdjeffAccessor:
         center: tuple[float, float] | None = None,
         n_bins: int | None = None,
     ) -> xr.DataArray:
-        """Azimuthal std per radial bin — departure from circular symmetry."""
+        """Azimuthal standard deviation per radial bin.
+
+        Measures the departure from circular symmetry: a value of zero
+        means all pixels at that radius have the same value.
+
+        Parameters
+        ----------
+        var : str
+            Dataset variable to analyse.
+        center : tuple[float, float] or None, optional
+            ``(cx, cy)`` origin. Defaults to the coordinate mean.
+        n_bins : int or None, optional
+            Number of radial bins. When ``None`` the natural bin count
+            is used.
+
+        Returns
+        -------
+        xr.DataArray
+            1-D DataArray with dim ``"r"`` containing the per-bin
+            azimuthal standard deviation.
+        """
         rr_np, vv_np = radial_distances(self._ds, var, center)
         npix = n_bins if n_bins is not None else natural_npix(self._ds, var)
 

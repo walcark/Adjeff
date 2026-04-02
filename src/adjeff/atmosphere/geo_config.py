@@ -82,7 +82,15 @@ class GeoConfig(_Config):
 
     @property
     def satellite_relative_position(self) -> tuple[float, float]:
-        """Return satellite position relative to the observation point."""
+        """Return satellite position relative to the observation point.
+
+        Returns
+        -------
+        tuple[float, float]
+            ``(x, y)`` offset [km] of the satellite ground projection
+            relative to the nadir point, derived from ``vza``, ``vaa``
+            and ``sat_height``.
+        """
         # Compute the observation angles cosines
         tan_vza: float = np.tan(np.radians(self.vza.data))
         cos_vaa: float = np.cos(np.radians(180 - self.vaa.data))

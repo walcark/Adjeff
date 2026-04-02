@@ -16,7 +16,33 @@ logger = get_logger(__name__)
 
 
 class SmartgSampler_Sph_alb(SceneModuleSweep):
-    """Sample spherical albedo of the atmosphere with Smart-G."""
+    """Sample the spherical albedo of the atmosphere with Smart-G.
+
+    Computes ``sph_alb`` — the fraction of the upwelling flux reflected
+    back downward by the atmosphere — for every combination of atmospheric
+    state defined by the supplied configs.  Geometry-independent: no
+    ``geo_config`` is required.
+
+    Parameters
+    ----------
+    atmo_config : AtmoConfig
+        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
+    spectral_config : SpectralConfig
+        Spectral bands and wavelengths to compute.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed.
+    afgl_type : str, optional
+        AFGL standard atmosphere profile identifier,
+        by default ``"afgl_exp_h8km"``.
+    n_ph : int, optional
+        Number of photons per Smart-G call, by default ``2e7``.
+    cache : CacheStore or None, optional
+        Result cache; ``None`` disables caching.
+    chunks : dict[str, int] or None, optional
+        Chunk sizes for vector dimensions.
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate before sweeping.
+    """
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["sph_alb"]
@@ -78,7 +104,34 @@ def sph_alb(
     remove_rayleigh: bool,
     n_ph: int,
 ) -> xr.DataArray:
-    """Compute the spherical albedo of the atmosphere with Smart-G."""
+    """Compute the spherical albedo of the atmosphere with Smart-G.
+
+    Parameters
+    ----------
+    wl : xr.DataArray
+        Wavelengths [nm], 1-D.
+    aot : xr.DataArray
+        Aerosol optical thickness, 1-D.
+    rh : xr.DataArray
+        Relative humidity [%], 1-D.
+    h : xr.DataArray
+        Ground elevation [km], 1-D.
+    href : xr.DataArray
+        Reference height of the aerosol vertical profile [km], 1-D.
+    species : dict[str, float]
+        OPAC aerosol species and fractional contributions.
+    afgl_type : str
+        AFGL standard atmosphere profile identifier.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed.
+    n_ph : int
+        Number of photons per Smart-G call.
+
+    Returns
+    -------
+    xr.DataArray
+        Spherical albedo with dims ``(wl, ...)``.
+    """
     logger.info("Computing sph_alb ...", wl=wl)
 
     # Create an atmosphere for each combination of AtmoParams

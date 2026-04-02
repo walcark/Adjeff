@@ -35,7 +35,18 @@ class Pipeline:
             available.update(mod.output_vars)
 
     def __call__(self, scene: ImageDict) -> ImageDict:
-        """Apply all modules in order."""
+        """Apply all modules in order and return the enriched scene.
+
+        Parameters
+        ----------
+        scene : ImageDict
+            Input scene. Each module receives the output of the previous one.
+
+        Returns
+        -------
+        ImageDict
+            Scene with all pipeline output variables added.
+        """
         for mod in self._modules:
             scene = mod(scene)
         return scene

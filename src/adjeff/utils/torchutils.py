@@ -1,4 +1,4 @@
-"""Define usefull class or methods for PyTorch usage."""
+"""Define useful classes and methods for PyTorch usage."""
 
 import torch
 import torch.nn as nn

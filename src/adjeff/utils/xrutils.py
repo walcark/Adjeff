@@ -3,10 +3,10 @@
 Contains:
 ---------
 
-- ParamsBatch: used to handle iteration on DataArrays values and restore
+- ParamBatch: used to handle iteration on DataArrays values and restore
 back dimensions after calculations.
 
-- grid / square_grid: instanciate square of rectangle (x,y) grid for 2D
+- grid / square_grid: instantiate square or rectangle (x, y) grid for 2D
 image coordinates.
 """
 
@@ -47,7 +47,7 @@ class ParamBatch:
 
         Parameters
         ----------
-        **args:
+        **arrs : xr.DataArray
             Named DataArrays (``wl``, ``aot``, ``rh``, ``h``, etc.). Each must
             be 1-D along its own named dim — or already have been deduplicated
             onto a single ``"index"`` dim by the bundle.
@@ -104,10 +104,17 @@ class ParamBatch:
 
         Parameters
         ----------
-        res:
+        res : xr.DataArray
             DataArray with ``dim="index"`` already set (with ``index_coord``
             as coordinate).  May also have leading angular dims like ``"vza"``
             or ``"sza"``.
+
+        Returns
+        -------
+        xr.DataArray
+            Array with ``"index"`` unstacked back to the original parameter
+            dimensions. If deduplication introduced a ``_index_tmp`` dimension,
+            it is renamed back to ``"index"``.
         """
         res = res.unstack("index")
         if self._DEDUP_TMP in res.dims:

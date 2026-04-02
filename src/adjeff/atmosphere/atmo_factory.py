@@ -1,4 +1,4 @@
-"""Class to instanciate a multi-profile atmosphere."""
+"""Functions to instantiate a multi-profile atmosphere."""
 
 import numpy as np
 import structlog
@@ -19,11 +19,45 @@ def create_atmosphere(
     remove_rayleigh: bool = False,
     wl_ref_nm: float = 560.0,
 ) -> MLUT:
-    """Create an atmosphere based on atmospheric parameters.
+    """Create a multi-profile Smart-G atmosphere from atmospheric parameters.
 
-    The atmospheric parameters must be specified as xr.DataArray with a
-    common single-dimension. A common single-dimension allows to simplify
-    I/O understanding.
+    Each parameter DataArray must share the same single named dimension
+    (e.g. ``"index"``).  One :class:`~smartg.atmosphere.AtmAFGL` instance
+    is built per element along that dimension; all instances are then merged
+    into a single ``MLUT`` via ``multi_profiles``.
+
+    Parameters
+    ----------
+    atmo_params : dict[str, xr.DataArray]
+        Mapping of parameter names to 1-D DataArrays.  Required keys:
+        ``"wl"`` (wavelength [nm]), ``"aot"`` (aerosol optical thickness),
+        ``"rh"`` (relative humidity [%]), ``"h"`` (ground elevation [km]),
+        ``"href"`` (reference height of the aerosol profile [km]).
+    species : dict[str, float]
+        OPAC aerosol species and their fractional contributions.
+        Values must sum to 1.
+    afgl_type : str, optional
+        Identifier of the AFGL standard atmosphere profile file,
+        by default ``"afgl_exp_h8km"``.
+    remove_rayleigh : bool, optional
+        If ``True``, Rayleigh optical depth is set to zero, by default
+        ``False``.
+    wl_ref_nm : float, optional
+        Reference wavelength [nm] used to scale the aerosol optical
+        thickness, by default 560.0.
+
+    Returns
+    -------
+    MLUT
+        A merged multi-profile Smart-G atmosphere ready for simulation.
+
+    Raises
+    ------
+    MissingVariableError
+        If any of the required keys is absent from *atmo_params*.
+    ValueError
+        If the DataArrays do not share a single common dimension or if
+        their sizes differ.
     """
     params_li = parse_params(atmo_params)
     grid, pfgrid = grids()

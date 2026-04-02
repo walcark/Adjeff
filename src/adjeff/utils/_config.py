@@ -208,7 +208,25 @@ class _Config(BaseModel):
         return unique_atm, inverse_map
 
     def iter(self, n_batch: int, dim: str) -> Iterator[Self]:
-        """Cut the configuration along `dim` in `n_batch` chunks."""
+        """Yield sub-configs by slicing *dim* into chunks of size *n_batch*.
+
+        The chunk size is computed so that the total number of elements
+        across all dimensions does not exceed *n_batch* per iteration.
+        If *dim* is not present in any array the whole configuration is
+        yielded as a single chunk.
+
+        Parameters
+        ----------
+        n_batch : int
+            Target maximum number of elements per chunk (across all dims).
+        dim : str
+            Dimension name along which to slice.
+
+        Yields
+        ------
+        _Config
+            A sub-configuration of the same type with *dim* sliced.
+        """
         arrays = self._arrays
         dim_sizes: dict[str, int] = {}
         for v in arrays.values():
@@ -239,7 +257,25 @@ class _Config(BaseModel):
             )
 
     def run(self, fn: Module, n_batch: int, dim: str) -> xr.DataArray:
-        """Launch a function on each batch and concatenate the result."""
+        """Apply *fn* on each chunked sub-configuration and concatenate.
+
+        Parameters
+        ----------
+        fn : Module
+            Callable that takes a ``_Config`` instance and returns a
+            ``xr.DataArray``.
+        n_batch : int
+            Target maximum number of elements per chunk, forwarded to
+            :meth:`iter`.
+        dim : str
+            Dimension to slice along, forwarded to :meth:`iter`.  The
+            outputs are concatenated along this same dimension.
+
+        Returns
+        -------
+        xr.DataArray
+            Concatenation of all per-batch outputs along *dim*.
+        """
         return xr.concat(
             [fn(batch) for batch in self.iter(n_batch, dim)],
             dim=dim,

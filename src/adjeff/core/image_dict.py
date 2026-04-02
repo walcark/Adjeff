@@ -146,7 +146,7 @@ class ImageDict:
         self._data[band] = ds
 
     def __contains__(self, band: object) -> bool:
-        """Check if *band* is store in the ImageDict."""
+        """Check if *band* is stored in the ImageDict."""
         return band in self._data
 
     def __repr__(self) -> str:

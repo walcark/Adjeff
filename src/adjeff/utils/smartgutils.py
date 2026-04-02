@@ -15,10 +15,26 @@ def make_sensors(
     posz: float,
     loc: str = "ATMOS",
 ) -> list["Sensor"]:
-    """Build a list of SmartG Sensor objects, one per angle value.
+    """Build a list of Smart-G Sensor objects, one per angle value.
 
-    SmartG's Sensor only accepts scalar THDEG/PHDEG, so multiple angles
-    require a list of Sensor instances.
+    Smart-G's Sensor only accepts scalar ``THDEG``/``PHDEG``, so multiple
+    angles require a list of Sensor instances.
+
+    Parameters
+    ----------
+    angles : xr.DataArray
+        Zenith angles [°] to iterate over (``THDEG`` values).
+    phi_scalar : float
+        Azimuth angle [°] shared by all sensors (``PHDEG``).
+    posz : float
+        Sensor altitude [km] (``POSZ``).
+    loc : str, optional
+        Smart-G location flag, by default ``"ATMOS"``.
+
+    Returns
+    -------
+    list[Sensor]
+        One Smart-G ``Sensor`` instance per element in *angles*.
     """
     from smartg.smartg import Sensor
 

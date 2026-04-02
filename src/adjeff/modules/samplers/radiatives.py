@@ -15,7 +15,47 @@ from .tdir_up import SmartgSampler_Tdir_up
 
 
 class RadiativePipeline(Pipeline):
-    """Pipeline that computes radiative parameters."""
+    """Pipeline that computes all radiative parameters in sequence.
+
+    Chains six :class:`~adjeff.modules.SceneModuleSweep` instances that
+    produce the following variables in order:
+
+    ``tdir_down`` → ``tdir_up`` → ``sph_alb`` → ``tdif_up`` →
+    ``tdif_down`` → ``rho_atm``
+
+    Parameters
+    ----------
+    atmo_config : AtmoConfig
+        Atmospheric state parameters.
+    geo_config : GeoConfig
+        Viewing/illumination geometry.
+    spectral_config : SpectralConfig
+        Spectral bands and wavelengths to compute.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed in all modules.
+    afgl_type : str, optional
+        AFGL standard atmosphere profile identifier,
+        by default ``"afgl_exp_h8km"``.
+    n_ph_sph_alb : int, optional
+        Photons per call for the spherical albedo module,
+        by default ``2e7``.
+    n_ph_rho_atm : int, optional
+        Photons per call for the atmospheric reflectance module,
+        by default ``2e7``.
+    n_ph_tdif_up : int, optional
+        Photons per call for the upward diffuse transmittance module,
+        by default ``3e7``.
+    n_ph_tdif_down : int, optional
+        Photons per call for the downward diffuse transmittance module,
+        by default ``3e7``.
+    cache : CacheStore or None, optional
+        Shared result cache forwarded to all modules; ``None`` disables
+        caching.
+    chunks : dict[str, int] or None, optional
+        Chunk sizes for vector dimensions, forwarded to all modules.
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate, forwarded to all modules.
+    """
 
     def __init__(
         self,
