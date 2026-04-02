@@ -14,7 +14,7 @@ import xarray as xr
 from adjeff.core import ImageDict, PSFDict, extend_analytical
 from adjeff.utils import CacheStore, fft_convolve_2D
 
-from ._scene_module import SceneModule
+from ..scene_module import SceneModule
 
 
 class Toa2Unif(SceneModule):

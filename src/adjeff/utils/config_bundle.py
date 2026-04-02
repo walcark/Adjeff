@@ -162,7 +162,7 @@ class _IndexMap:
         ref = next(iter(bcasted.values()))
         broadcast_dims = list(ref.dims)
         # Keep eff_dims first, then any extra dims from wider shapes.
-        extra = [d for d in broadcast_dims if d not in eff_dims]
+        extra = [str(d) for d in broadcast_dims if d not in eff_dims]
         used_dims = [d for d in eff_dims if d in broadcast_dims] + extra
 
         # Stack all arrays into a matrix and find the unique rows.
@@ -557,7 +557,7 @@ class ConfigBundle:
             configs, self._scalars, self._vectors
         )
         logger.debug(
-            "Aggregated parameters.",
+            "Aggregated ConfigBundle parameters..",
             scalars=list(self._scalars),
             vectors=list(self._vectors),
             das={k: list(v.dims) for k, v in self._das.items()},

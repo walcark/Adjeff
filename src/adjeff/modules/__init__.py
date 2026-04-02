@@ -1,13 +1,13 @@
 """Define all the operations that can be performed on ImageDict."""
 
-from ._scene_module_sweep import SceneModuleSweep
-from .model_5s import Surface2Env, Toa2Unif, Unif2Toa
+from .pipeline import Pipeline
+from .scene_module import SceneModule
+from .scene_module_sweep import SceneModuleSweep
 from .test_module import TestModule
 
 __all__ = [
+    "Pipeline",
+    "SceneModule",
     "SceneModuleSweep",
-    "Surface2Env",
-    "Toa2Unif",
-    "Unif2Toa",
     "TestModule",
 ]
