@@ -3,7 +3,6 @@
 from typing import ClassVar
 
 import xarray as xr
-from smartg.smartg import Sensor, Smartg
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
@@ -132,6 +131,8 @@ def sph_alb(
     xr.DataArray
         Spherical albedo with dims ``(wl, ...)``.
     """
+    from smartg.smartg import Sensor, Smartg
+
     logger.info("Computing sph_alb ...", wl=wl)
 
     # Create an atmosphere for each combination of AtmoParams
@@ -146,6 +147,7 @@ def sph_alb(
     )
 
     # Launch Smart-G for each atmosphere
+
     atm_size = len(batch.index_coord)
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(

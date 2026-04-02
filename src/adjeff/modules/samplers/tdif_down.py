@@ -4,7 +4,6 @@ from typing import ClassVar
 
 import numpy as np
 import xarray as xr
-from smartg.smartg import Smartg
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
@@ -147,6 +146,8 @@ def tdif_down(
     xr.DataArray
         Downward diffuse transmittance with dims ``(sza, wl, ...)``.
     """
+    from smartg.smartg import Smartg
+
     logger.info("Computing tdif_down ...", wl=wl, sza=sza)
 
     # Create an atmosphere for each combination of AtmoParams

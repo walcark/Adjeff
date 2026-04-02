@@ -4,8 +4,6 @@ from typing import ClassVar
 
 import numpy as np
 import xarray as xr
-from luts.luts import MLUT  # type: ignore[import-untyped]
-from smartg.smartg import Smartg
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
@@ -156,23 +154,13 @@ def tdir_down(
     )
 
     # Compute optical depth with Smart-G and reconstruct full dimensions
-    od = _optical_depth(atm, n_ph)
+    od = utils.compute_optical_depth(atm)
     od = batch.unstack(
         xr.DataArray(
-            od.values, dims=["index"], coords={"index": batch.index_coord}
+            od.values,
+            dims=["index"],
+            coords={"index": batch.index_coord},
         )
     )
     logger.info("tdir_down successfully calculated.")
     return xr.DataArray(np.exp(-od / np.cos(np.deg2rad(sza))))
-
-
-def _optical_depth(atm: MLUT, n_ph: int) -> xr.DataArray:
-    wl = atm.axes["wavelength"]
-    smartg = Smartg(autoinit=False)
-    res: xr.DataArray = smartg.run(
-        wl=wl, atm=atm, NBPHOTONS=n_ph, NF=int(1e3)
-    )["OD_atm"].to_xarray()
-    smartg.clear_context()
-    if len(wl) == 1 and "wavelength" not in res.dims:
-        res = res.expand_dims(wavelength=wl)
-    return res.sel(z_atm=0.0).drop_vars("z_atm")

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
+from luts.luts import MLUT
 
 if TYPE_CHECKING:
     from smartg.smartg import Sensor
@@ -44,6 +45,37 @@ def make_sensors(
         Sensor(POSZ=posz, THDEG=float(th), PHDEG=float(ph), LOC=loc)
         for th, ph in zip(thdeg, phi)
     ]
+
+
+def compute_optical_depth(atm: MLUT) -> xr.DataArray:
+    """Read the optical depth from the output LUT of a Smartg.run() result.
+
+    No number of photons needs to be specified because the simulation result
+    is not important. The optical depth is calculated by the Atmosphere object
+    and not the simulation process.
+
+    Parameters
+    ----------
+    atm : MLUT
+        The Atmosphere object for which the optical depth is computed.
+    """
+    from smartg.smartg import Smartg
+
+    wl = atm.axes["wavelength"]
+
+    smartg = Smartg(autoinit=False)
+    res: xr.DataArray = smartg.run(
+        wl=wl,
+        atm=atm,
+        NBPHOTONS=1000,
+        NF=1000,
+    )["OD_atm"].to_xarray()
+    smartg.clear_context()
+
+    if len(wl) == 1 and "wavelength" not in res.dims:
+        res = res.expand_dims(wavelength=wl)
+
+    return res.sel(z_atm=0.0).drop_vars("z_atm")
 
 
 def adapt_smartg_output(

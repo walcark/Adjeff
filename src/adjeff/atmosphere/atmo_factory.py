@@ -5,7 +5,6 @@ import structlog
 import xarray as xr
 from luts.luts import MLUT  # type: ignore[import-untyped]
 from smartg.atmosphere import AerOPAC, AtmAFGL
-from smartg.smartg import multi_profiles
 
 from adjeff.exceptions import MissingVariableError
 
@@ -59,6 +58,8 @@ def create_atmosphere(
         If the DataArrays do not share a single common dimension or if
         their sizes differ.
     """
+    from smartg.smartg import multi_profiles
+
     params_li = parse_params(atmo_params)
     grid, pfgrid = grids()
 

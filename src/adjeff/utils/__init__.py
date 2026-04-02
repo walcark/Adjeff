@@ -9,7 +9,11 @@ from .config_bundle import ConfigBundle
 from .convolve import fft_convolve_2D, fft_convolve_2D_torch
 from .logger import LoggerConfig, MultilineConsoleRenderer, adjeff_logging
 from .radial import bin_radial, natural_npix, radial_distances
-from .smartgutils import adapt_smartg_output, make_sensors
+from .smartgutils import (
+    adapt_smartg_output,
+    compute_optical_depth,
+    make_sensors,
+)
 from .torchutils import ConstrainedParameter, ExpTransform, SigmoidTransform
 from .xrutils import ParamBatch, grid, square_grid
 
@@ -35,6 +39,7 @@ __all__ = [
     "natural_npix",
     "bin_radial",
     "make_sensors",
+    "compute_optical_depth",
     "adapt_smartg_output",
     "ParamBatch",
 ]

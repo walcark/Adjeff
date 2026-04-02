@@ -4,8 +4,6 @@ from typing import ClassVar
 
 import numpy as np
 import xarray as xr
-from luts.luts import MLUT  # type: ignore[import-untyped]
-from smartg.smartg import Smartg
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
@@ -169,20 +167,9 @@ def tdir_up(
     )
 
     # Compute optical depth with Smart-G and reconstruct full dimensions
-    od = optical_depth(atm)
+    od = utils.compute_optical_depth(atm)
     od = batch.unstack(
         xr.DataArray(od, dims=["index"], coords={"index": batch.index_coord}),
     )
     logger.info("tdir_up successfully calculated.")
     return xr.DataArray(xr.apply_ufunc(np.exp, -od / np.cos(np.deg2rad(vza))))
-
-
-def optical_depth(atm: MLUT) -> xr.DataArray:
-    """Return the optical depth of the atmosphere."""
-    wl = atm.axes["wavelength"]
-    smartg = Smartg(autoinit=False)
-    res: MLUT = smartg.run(atm=atm, wl=wl, NBPHOTONS=100, NF=1000)
-    smartg.clear_context()
-    return xr.DataArray(
-        res["OD_atm"].to_xarray().sel(z_atm=0.0).drop_vars("z_atm")
-    )
