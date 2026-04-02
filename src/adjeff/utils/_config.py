@@ -69,12 +69,19 @@ def to_arr(
                     f"'{field_name}': DataArray has implicit dimensions "
                     f"{default_dims} Please provide explicit dimension names."
                 )
+            # Assign coords for 1D dims that have none, so label-based
+            # selection (sel, isel by label) works out of the box.
+            if da.ndim == 1 and da.dims[0] not in da.coords:
+                da = da.assign_coords({str(da.dims[0]): da.values})
         elif isinstance(v, (float, int)):
-            da = xr.DataArray(np.atleast_1d(v), dims=[field_name])
+            arr = np.atleast_1d(v)
+            da = xr.DataArray(arr, dims=[field_name], coords={field_name: arr})
         else:
             arr = np.asarray(v)
             if arr.ndim == 1:
-                da = xr.DataArray(arr, dims=[field_name])
+                da = xr.DataArray(
+                    arr, dims=[field_name], coords={field_name: arr}
+                )
             else:
                 raise ValueError(
                     f"'{field_name}': {arr.ndim}D array without explicit "
@@ -161,8 +168,17 @@ class _Config(BaseModel):
             if not any(d in v.dims for d in dims)
         }
 
+        # Strip coords on target dims before creating the Dataset: different
+        # fields can have value-based coords on the same dim, which would cause
+        # xarray to silently align/reindex on label rather than position when
+        # building the Dataset.
+        varying_stripped = {
+            k: v.drop_vars([d for d in dims if d in v.coords], errors="ignore")
+            for k, v in varying.items()
+        }
+
         # Broadcast before stack to handle partial dimensions
-        ds = xr.Dataset(varying)
+        ds = xr.Dataset(varying_stripped)
         broadcasted = dict(
             zip(varying, xr.broadcast(*[ds[k] for k in varying]))
         )
@@ -181,12 +197,12 @@ class _Config(BaseModel):
         }
         unique_atm: Self = type(self)(**unique_params, **kept, **others)
 
-        # Create the inverse map dataset to restore a dataset after computation
+        # Create the inverse map — positional only, no coords to avoid
+        # duplicate-label issues when the original dim has repeated values.
         ref = next(iter(broadcasted.values()))
         inverse_map = xr.DataArray(
-            inverse_indices.reshape([len(ref.coords[d]) for d in dims]),
+            inverse_indices.reshape([ref.sizes[d] for d in dims]),
             dims=dims,
-            coords={d: ref.coords[d] for d in dims},
         )
 
         return unique_atm, inverse_map
