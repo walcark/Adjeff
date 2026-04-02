@@ -68,7 +68,7 @@ dev-gpu = ["dev", "gpu"]
 fmt = { cmd = "ruff format ." }
 lint = { cmd = "ruff check" }
 type-check = { cmd = "mypy src/adjeff --strict" }
-test = { cmd = "pytest --cov" }
+test = { cmd = "pytest tests/ --cov" }
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
 ensure-pip = { cmd = "python -m ensurepip --upgrade" }
 install-build = { cmd = "python -m pip install --upgrade build twine" }
