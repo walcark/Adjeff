@@ -6,7 +6,7 @@ import xarray as xr
 
 from adjeff.core import ImageDict
 
-from ._scene_module import SceneModule
+from .scene_module import SceneModule
 
 
 class TestModule(SceneModule):

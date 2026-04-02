@@ -7,10 +7,11 @@ from ._config import ConfigProtocol, Module, Parameter, _Config, to_arr
 from .cache_store import CacheStore
 from .config_bundle import ConfigBundle
 from .convolve import fft_convolve_2D, fft_convolve_2D_torch
-from .logger import LoggerConfig, adjeff_logging
+from .logger import LoggerConfig, MultilineConsoleRenderer, adjeff_logging
 from .radial import bin_radial, natural_npix, radial_distances
+from .smartgutils import adapt_smartg_output, make_sensors
 from .torchutils import ConstrainedParameter, ExpTransform, SigmoidTransform
-from .xrutils import grid, square_grid
+from .xrutils import ParamBatch, grid, square_grid
 
 __all__ = [
     "ConfigProtocol",
@@ -23,6 +24,7 @@ __all__ = [
     "fft_convolve_2D",
     "fft_convolve_2D_torch",
     "adjeff_logging",
+    "MultilineConsoleRenderer",
     "ConstrainedParameter",
     "ExpTransform",
     "SigmoidTransform",
@@ -32,4 +34,7 @@ __all__ = [
     "radial_distances",
     "natural_npix",
     "bin_radial",
+    "make_sensors",
+    "adapt_smartg_output",
+    "ParamBatch",
 ]

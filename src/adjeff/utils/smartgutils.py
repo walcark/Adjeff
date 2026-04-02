@@ -1,0 +1,78 @@
+"""Utilitary methods to handle Smart-G related data."""
+
+import numpy as np
+import xarray as xr
+from smartg.smartg import Sensor
+
+
+def make_sensors(
+    angles: xr.DataArray,
+    phi_scalar: float,
+    posz: float,
+    loc: str = "ATMOS",
+) -> list[Sensor]:
+    """Build a list of SmartG Sensor objects, one per angle value.
+
+    SmartG's Sensor only accepts scalar THDEG/PHDEG, so multiple angles
+    require a list of Sensor instances.
+    """
+    thdeg = np.atleast_1d(angles.values)
+    phi = np.full_like(thdeg, phi_scalar)
+    return [
+        Sensor(POSZ=posz, THDEG=float(th), PHDEG=float(ph), LOC=loc)
+        for th, ph in zip(thdeg, phi)
+    ]
+
+
+def adapt_smartg_output(
+    res: xr.DataArray,
+    *,
+    squeeze: list[str] | None = None,
+    rename: dict[str, str] | None = None,
+    coords: dict[str, np.ndarray] | None = None,
+    expand: dict[str, np.ndarray] | None = None,
+) -> xr.DataArray:
+    """Normalize a Smart-G output DataArray.
+
+    This is necessary because Smart-G output sometimes has a global shape
+    that is hard to guess. For instance, some dimensions may or may not be
+    in the output results dimensions depending on the size of the parameters
+    passes to ``Smartg.run()``. Operations to perform on the outputs are:
+
+    1) squeezing: drop a dimension of size 1 that should not be in the output
+    2) renaming: rename a dimension name (ex: Zenith angles -> vza)
+    3) assigning coordinates: in order to keep track of the parameters used
+    for the computations.
+    4) expanding: expand the array with a new dimension, when Smart-G does
+    not built the dimension for a parameter used in computations.
+
+    Parameters
+    ----------
+    squeeze:
+        Dims to squeeze and drop if present (e.g. ``"Azimuth angles"``).
+    rename:
+        SmartG dim name → target name. Only applied if the source dim exists.
+    coords:
+        Coordinates to assign after renaming.
+    expand:
+        Target dim → values. Expands the dim if absent.
+    """
+    for dim in squeeze or []:
+        if dim in res.dims:
+            res = res.squeeze(dim=dim).drop_vars(dim)
+
+    if rename:
+        present = {src: tgt for src, tgt in rename.items() if src in res.dims}
+        if present:
+            res = res.rename(present)
+
+    if coords:
+        res = res.assign_coords(
+            {k: v for k, v in coords.items() if k in res.dims}
+        )
+
+    for dim, values in (expand or {}).items():
+        if dim not in res.dims:
+            res = res.expand_dims({dim: values})
+
+    return res
