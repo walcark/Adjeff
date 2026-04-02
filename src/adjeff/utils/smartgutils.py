@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
-from luts.luts import MLUT
+from luts.luts import MLUT  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from smartg.smartg import Sensor
