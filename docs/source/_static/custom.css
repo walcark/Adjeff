@@ -1,0 +1,32 @@
+/* ── Adjeff custom Sphinx / Furo overrides ─────────────────────────────── */
+
+/* Code blocks: slightly rounded, subtle border */
+div.highlight {
+    border-radius: 6px;
+}
+
+/* Signature line: give the function name a bit more weight */
+dt.sig {
+    font-size: 0.95rem;
+}
+
+/* Parameter / return field lists: tighten spacing */
+dl.field-list > dt {
+    min-width: 6rem;
+}
+
+/* Section headings: add a faint left border accent on h2 */
+article.bd-article h2,
+article section h2 {
+    border-left: 3px solid var(--color-brand-primary);
+    padding-left: 0.6rem;
+}
+
+/* Dark mode: make inline code pop a little more */
+body[data-theme="dark"] code.literal,
+body[data-theme="dark"] code.docutils {
+    background-color: rgba(96, 165, 250, 0.1);
+    color: #93C5FD;
+    border-radius: 3px;
+    padding: 1px 4px;
+}
