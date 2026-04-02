@@ -21,7 +21,7 @@ def test_atmo_config_wrong_input():
         AtmoConfig(**{**_VALID_ATMO, "aot": xr.DataArray(-0.1)})
 
     with pytest.raises(ValueError, match="'h'"):
-        AtmoConfig(**{**_VALID_ATMO, "h": xr.DataArray(10.0)})
+        AtmoConfig(**{**_VALID_ATMO, "h": xr.DataArray(10.1)})
 
     with pytest.raises(ValueError, match="'href'"):
         AtmoConfig(**{**_VALID_ATMO, "href": xr.DataArray(0.0)})

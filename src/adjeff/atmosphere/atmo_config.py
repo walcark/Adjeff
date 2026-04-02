@@ -30,7 +30,7 @@ class AtmoConfig(_Config):
     """
 
     aot: Annotated[xr.DataArray, Before(to_arr("aot", ge=0.0))]
-    h: Annotated[xr.DataArray, Before(to_arr("h", ge=0.0, le=9.0))]
+    h: Annotated[xr.DataArray, Before(to_arr("h", ge=0.0, le=10.0))]
     rh: Annotated[xr.DataArray, Before(to_arr("rh", ge=0.0, le=100.0))]
     href: Annotated[xr.DataArray, Before(to_arr("href", ge=0.1))]
     species: dict[str, float]
