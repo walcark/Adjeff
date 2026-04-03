@@ -1,6 +1,6 @@
 [project]
 name = "adjeff"
-version = "0.1.0"
+version = "0.2.0"
 authors = [{ name = "walcark", email = "kevin.walcarius@gmail.com" }]
 readme = "README.md"
 description = "Library that provides utilities to simulate adjacency effects."

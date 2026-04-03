@@ -2906,8 +2906,8 @@ packages:
   timestamp: 1744137672556
 - pypi: ./
   name: adjeff
-  version: 0.1.0
-  sha256: 53481f2302c016b15673323f5eda41c7b5ea14f90a0ef30aebd208e6014d6af1
+  version: 0.2.0
+  sha256: 000932ad8ccc1d5e4931220f1b75f0019dc97ac734303a511523dc412b4ceaaf
   requires_python: '>=3.11,<3.13'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.15.3-hb03c661_0.conda
