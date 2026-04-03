@@ -12,12 +12,7 @@ import numpy as np
 import torch
 import xarray as xr
 
-from .logger import adjeff_logging
 
-logger = adjeff_logging.get_logger()
-
-
-@adjeff_logging.log_execution_time
 def fft_convolve_2D(
     in1: xr.DataArray,
     in2: xr.DataArray,
