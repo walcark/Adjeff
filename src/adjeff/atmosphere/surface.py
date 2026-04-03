@@ -1,16 +1,20 @@
-"""Methods to instanciate Smart-G surface objects from a ground image.
+"""Methods to instantiate Smart-G surface objects from a ground image.
 
-Ground images in adjeff are either artibrary (real image, complex scene)
-or analytical (gaussian, disk) shapes. The following methods instanciate
+Ground images in adjeff are either arbitrary (real image, complex scene)
+or analytical (gaussian, disk) shapes. The following methods instantiate
 both the Smart-G `Environment` and `Surface` from this knowledge.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import xarray as xr
-from smartg.smartg import Entity, Environment, LambSurface
 from smartg.water import Albedo_cst
 
-from adjeff import AdjeffAccessorError
+if TYPE_CHECKING:
+    from smartg.smartg import Entity, Environment, LambSurface
 
 
 class SurfaceFactory:
@@ -19,35 +23,67 @@ class SurfaceFactory:
     def __init__(self) -> None:
         pass
 
-    def entity(self, arr: xr.DataArray) -> Entity:
+    def entity(self, arr: xr.Dataset) -> Entity:
         """Return an entity object based on input image coordinates."""
+        from smartg.smartg import Entity
+
         return Entity()
 
-    def surface(self, arr: xr.DataArray) -> LambSurface:
-        """Return an Lambertian Surface object based on the input image."""
-        if arr.adjeff.kind == "analytical":
-            return LambSurface(Albedo_cst(arr.adjeff.params["rho_max"]))
-        elif arr.adjeff.kind == "arbitrary":
-            mean_alb: float = float(np.mean(arr.values))
-            return LambSurface(Albedo_cst(mean_alb))
-        else:
-            raise AdjeffAccessorError(f"Wrong adjeff kind: {arr.adjeff.kind}")
+    def surface(self, arr: xr.Dataset) -> LambSurface:
+        """Return a Lambertian Surface object based on the input image."""
+        from smartg.smartg import LambSurface
 
-    def environment(self, arr: xr.DataArray) -> Environment:
+        kind = arr["rho_s"].adjeff.kind()
+        if kind == "analytical":
+            rho_max = arr["rho_s"].adjeff.params().get("rho_max")
+            return LambSurface(Albedo_cst(rho_max))
+        elif kind == "arbitrary":
+            rho_s_avg: float = float(np.mean(arr["rho_s"]))
+            return LambSurface(Albedo_cst(rho_s_avg))
+        else:
+            raise ValueError(f"Wrong kind of surface: {kind}")
+
+    def environment(self, arr: xr.Dataset) -> Environment:
         """Return an Environment object based on the input image."""
-        if arr.adjeff.kind == "analytical":
-            return analytical_environment(arr)
-        elif arr.adjeff.kind == "arbitrary":
+        from smartg.smartg import Environment
+
+        kind = arr["rho_s"].adjeff.kind()
+        if kind == "analytical":
+            params = arr["rho_s"].adjeff.params()
+            model = arr["rho_s"].adjeff.model()
+            return analytical_environment(model, params)
+        elif kind == "arbitrary":
             return arbitrary_environment(arr)
         else:
-            raise AdjeffAccessorError(f"Wrong adjeff kind: {arr.adjeff.kind}")
+            return Environment()
 
 
-def analytical_environment(arr: xr.DataArray) -> Environment:
+def analytical_environment(
+    model: str, params: dict[str, float]
+) -> Environment:
     """Return the Environment for an analytical surface."""
-    return Environment()
+    from smartg.smartg import Environment
+
+    if model == "gauss":
+        return Environment(
+            ENV=2,
+            ENV_SIZE=2 * params["sigma"] ** 2,
+            ALB=Albedo_cst(params["rho_min"]),
+        )
+
+    if model == "disk":
+        return Environment(
+            ENV=1,
+            ENV_SIZE=params["radius"],
+            ALB=Albedo_cst(params["rho_min"]),
+        )
+
+    else:
+        raise NotImplementedError(f"Model {model} not handled.")
 
 
-def arbitrary_environment(arr: xr.DataArray) -> Environment:
-    """Return the Environment for an analytical surface."""
+def arbitrary_environment(arr: xr.Dataset) -> Environment:
+    """Return the Environment for an arbitrary surface."""
+    from smartg.smartg import Environment
+
     return Environment()
