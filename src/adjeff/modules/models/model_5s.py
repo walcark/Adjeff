@@ -112,7 +112,7 @@ class Surface2Env(SceneModule):
             ds: xr.Dataset = scene[band]
             kernel = self._psf_dict.kernel(band)
 
-            if ds.adjeff.is_analytical("rho_s"):
+            if ds["rho_s"].adjeff.is_analytical():
                 n = ds["rho_s"].sizes["y"]
                 k = kernel.sizes["y_psf"]
                 rho_s = extend_analytical(ds["rho_s"], n + k - 1)

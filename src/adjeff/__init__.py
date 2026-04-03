@@ -4,7 +4,7 @@ The package provides utilities to simulate environment effects and optimize
 models for adjacency effects.
 """
 
-from .accessor import AdjeffAccessor
+from .accessor import AdjeffDataArrayAccessor
 from .exceptions import (
     AdjeffAccessorError,
     AdjeffError,
@@ -13,7 +13,7 @@ from .exceptions import (
 )
 
 __all__ = [
-    "AdjeffAccessor",
+    "AdjeffDataArrayAccessor",
     "AdjeffAccessorError",
     "AdjeffError",
     "ConfigurationError",

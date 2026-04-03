@@ -96,9 +96,9 @@ def adapt_smartg_output(
     1) squeezing: drop a dimension of size 1 that should not be in the output
     2) renaming: rename a dimension name (ex: Zenith angles -> vza)
     3) assigning coordinates: in order to keep track of the parameters used
-    for the computations.
+       for the computations.
     4) expanding: expand the array with a new dimension, when Smart-G does
-    not built the dimension for a parameter used in computations.
+       not built the dimension for a parameter used in computations.
 
     Parameters
     ----------

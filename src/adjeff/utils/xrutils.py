@@ -4,10 +4,10 @@ Contains:
 ---------
 
 - ParamBatch: used to handle iteration on DataArrays values and restore
-back dimensions after calculations.
+  back dimensions after calculations.
 
 - grid / square_grid: instantiate square or rectangle (x, y) grid for 2D
-image coordinates.
+  image coordinates.
 """
 
 from __future__ import annotations
