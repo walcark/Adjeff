@@ -58,11 +58,18 @@ pre-commit = ">=4.2"
 mypy = ">=1.5"
 scipy = "*"
 
+[tool.pixi.feature.notebooks.dependencies]
+jupyterlab = ">=4.0"
+matplotlib = ">=3.9"
+ipywidgets = ">=8.0"
+
 [tool.pixi.environments]
 cpu = ["cpu"]
 gpu = ["gpu"]
 dev = ["dev", "cpu"]
 dev-gpu = ["dev", "gpu"]
+notebooks = ["notebooks", "cpu"]
+notebooks-gpu = ["notebooks", "gpu"]
 
 [tool.pixi.feature.dev.tasks]
 fmt = { cmd = "ruff format ." }
@@ -88,7 +95,7 @@ ignore_missing_imports = true
 fix = true
 line-length = 79
 indent-width = 4
-exclude = ["tests/*", "docs/*", "scripts/*", "test.py"]
+exclude = ["tests/*", "docs/*", "scripts/*", "test.py", "notebooks/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D"]
