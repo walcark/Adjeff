@@ -284,4 +284,4 @@ class AdjeffDataArrayAccessor:
             output_core_dims=[["y", "x"]],
             vectorize=True,
         )
-        return result.assign_coords(y=y, x=x)
+        return xr.DataArray(result.assign_coords(y=y, x=x))

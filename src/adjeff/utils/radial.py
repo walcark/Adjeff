@@ -14,6 +14,7 @@ import math
 import numpy as np
 import torch
 import xarray as xr
+from scipy.interpolate import PchipInterpolator  # type: ignore[import-untyped]
 
 
 def _sample_radial_from_cdf(
@@ -68,7 +69,7 @@ def _sample_radial_from_cdf(
             filled.append(b)
         r_vals = np.array(filled)
 
-    return r_vals
+    return np.asarray(r_vals, dtype=np.float32)
 
 
 def _profile_to_field(
@@ -95,8 +96,6 @@ def _profile_to_field(
     np.ndarray
         Reconstructed field, shape ``(ny, nx)``.
     """
-    from scipy.interpolate import PchipInterpolator
-
     rr = np.sqrt(xx**2 + yy**2)
 
     # Deduplicate radii (keep first occurrence)
@@ -104,7 +103,10 @@ def _profile_to_field(
     r_u = r[unique_idx]
     v_u = values[unique_idx]
 
-    return PchipInterpolator(r_u, v_u, extrapolate=True)(rr).astype(np.float32)
+    result: np.ndarray = PchipInterpolator(r_u, v_u, extrapolate=True)(
+        rr
+    ).astype(np.float32)
+    return result
 
 
 def radial_distances(
