@@ -110,18 +110,15 @@ def _profile_to_field(
 
 
 def radial_distances(
-    ds: xr.Dataset,
-    var: str,
+    da: xr.DataArray,
     center: tuple[float, float] | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return flat float32 radial-distance and value arrays for *var*.
+    """Return flat float32 radial-distance and value arrays for *da*.
 
     Parameters
     ----------
-    ds : xr.Dataset
-        Dataset containing *var*.
-    var : str
-        Variable name.
+    da : xr.DataArray
+        Input array.
     center : tuple[float, float] or None
         ``(cx, cy)`` origin. Defaults to the coordinate mean.
 
@@ -132,7 +129,6 @@ def radial_distances(
     vv : np.ndarray
         Flat float32 array of pixel values, shape ``(n_pixels,)``.
     """
-    da = ds[var]
     if "x_psf" in da.dims and "y_psf" in da.dims:
         cx, cy = (0.0, 0.0) if center is None else center
         x = da.coords["x_psf"].values
@@ -150,22 +146,19 @@ def radial_distances(
     return rr, vv
 
 
-def natural_npix(ds: xr.Dataset, var: str) -> int:
+def natural_npix(da: xr.DataArray) -> int:
     """Return the maximum bin count that keeps bin width >= 1 pixel.
 
     Parameters
     ----------
-    ds : xr.Dataset
-        Dataset containing *var*.
-    var : str
-        Variable name.
+    da : xr.DataArray
+        Input array.
 
     Returns
     -------
     int
         Maximum number of radial bins with no empty bins guaranteed.
     """
-    da = ds[var]
     side = min(da.shape[-2], da.shape[-1])
     return max(int((side - 1) / math.sqrt(2)) - 1, 2)
 
