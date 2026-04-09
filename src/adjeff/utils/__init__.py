@@ -14,7 +14,12 @@ from .smartgutils import (
     compute_optical_depth,
     make_sensors,
 )
-from .torchutils import ConstrainedParameter, ExpTransform, SigmoidTransform
+from .torchutils import (
+    ConstrainedParameter,
+    ExpTransform,
+    SigmoidTransform,
+    radial_mask,
+)
 from .xrutils import ParamBatch, grid, square_grid
 
 __all__ = [
@@ -31,6 +36,7 @@ __all__ = [
     "ConstrainedParameter",
     "ExpTransform",
     "SigmoidTransform",
+    "radial_mask",
     "square_grid",
     "grid",
     "radial_distances",

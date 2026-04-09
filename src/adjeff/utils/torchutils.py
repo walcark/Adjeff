@@ -171,3 +171,29 @@ class ConstrainedParameter(nn.Module):
         p = self.transform.inverse(theta)
         p = torch.clamp(p, self.p_min, self.p_max)
         self.p.copy_(p)
+
+
+def radial_mask(
+    tensor: torch.Tensor, rr: torch.Tensor, threshold: float
+) -> torch.Tensor:
+    """Compute a radial mask for all values under threshold."""
+    with torch.no_grad():
+        values: torch.Tensor = tensor.flatten()
+        rr_cp: torch.Tensor = rr.to(values.device).flatten()
+
+        # Order values with increasing rr and compute cumsum
+        idx = torch.argsort(rr_cp)
+        sorted_values: torch.Tensor = values[idx].abs()
+        energy: torch.Tensor = sorted_values.cumsum(dim=0)
+
+        # Mask values for CDF > threshold
+        cutoff: torch.Tensor = energy[-1] * threshold
+        mask: torch.Tensor = energy <= cutoff
+
+        # Invert sorting to invert the mask
+        idx_inv: torch.Tensor = torch.empty_like(idx)
+        idx_inv[idx] = torch.arange(idx.numel(), device=idx.device)
+        mask = mask[idx_inv]
+
+        # Return the reshaped mask
+        return mask.to(tensor.device).reshape(*tensor.shape)
