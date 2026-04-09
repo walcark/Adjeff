@@ -100,9 +100,8 @@ class AdjeffDataArrayAccessor:
         xr.DataArray
             1-D DataArray with dim ``"r"`` containing the azimuthal mean.
         """
-        ds = self._da.to_dataset(name="_")
-        rr_np, vv_np = radial_distances(ds, "_", center)
-        npix = natural_npix(ds, "_")
+        rr_np, vv_np = radial_distances(self._da, center)
+        npix = natural_npix(self._da)
 
         rr = torch.from_numpy(rr_np)
         vv = torch.from_numpy(vv_np)
@@ -188,9 +187,8 @@ class AdjeffDataArrayAccessor:
         xr.DataArray
             1-D DataArray with dim ``"r"`` containing the per-bin std.
         """
-        ds = self._da.to_dataset(name="_")
-        rr_np, vv_np = radial_distances(ds, "_", center)
-        npix = n_bins if n_bins is not None else natural_npix(ds, "_")
+        rr_np, vv_np = radial_distances(self._da, center)
+        npix = n_bins if n_bins is not None else natural_npix(self._da)
 
         rr = torch.from_numpy(rr_np)
         vv = torch.from_numpy(vv_np)
@@ -250,6 +248,32 @@ class AdjeffDataArrayAccessor:
         r_vals = _sample_radial_from_cdf(profile, n, max_gap=max_gap)
         values = np.interp(r_vals, profile.coords["r"].values, profile.values)
         return xr.DataArray(values, dims=["r"], coords={"r": r_vals})
+
+    def to_tensor(self) -> torch.Tensor:
+        """Convert this DataArray to a float32 :class:`torch.Tensor`.
+
+        Returns
+        -------
+        torch.Tensor
+            Float32 tensor with the same shape as this DataArray.
+        """
+        return torch.from_numpy(self._da.values.astype(np.float32))
+
+    @property
+    def dists(self) -> torch.Tensor:
+        """Per-pixel radial distances as a float32 :class:`torch.Tensor`.
+
+        The distances are computed from the spatial coordinates relative to
+        the array centre. The returned tensor has shape ``(ny, nx)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Float32 tensor of shape ``(ny, nx)``.
+        """
+        rr_np, _ = radial_distances(self._da, None)
+        shape = (self._da.shape[-2], self._da.shape[-1])
+        return torch.from_numpy(rr_np.reshape(shape))
 
     def to_field(self, target_ds: xr.Dataset) -> xr.DataArray:
         """Reconstruct a field from radial profile via Pchip interpolation.
