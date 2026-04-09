@@ -208,3 +208,70 @@ def test_training_input_missing_grid_raises(scene):
             psf_init_params={"sigma": 1.0},
             psf_grids=incomplete_grids,
         )
+
+
+# ---------------------------------------------------------------------------
+# params
+# ---------------------------------------------------------------------------
+
+
+def test_params_single_combo_reads_attrs(gauss_b02):
+    """params() reads from kernel attrs for a single-combo PSFDict."""
+    psf_dict = PSFDict([gauss_b02])
+    p = psf_dict.params(S2Band.B02)
+    assert p is not None
+    assert "sigma" in p
+    assert isinstance(p["sigma"], float)
+
+
+def test_params_non_analytical_returns_none(grid):
+    """params() returns None for a NonAnalyticalPSF (no adjeff:params in attrs)."""
+    import numpy as np
+    from adjeff.core.non_analytical_psf import NonAnalyticalPSF
+
+    psf = NonAnalyticalPSF(
+        grid=grid, band=S2Band.B02, kernel=np.ones((grid.n, grid.n))
+    )
+    psf_dict = PSFDict.__new__(PSFDict)
+    psf_dict._data = {S2Band.B02: xr.Dataset({"kernel": psf.to_dataarray()})}
+    assert psf_dict.params(S2Band.B02) is None
+
+
+def test_params_multi_combo_reads_dataset_variables():
+    """params() reads param_* Dataset variables for multi-combo PSFDicts."""
+    import numpy as np
+
+    grid = PSFGrid(res=0.01, n=11)
+    kernel_da = xr.DataArray(
+        np.ones((2, grid.n, grid.n), dtype="float32"),
+        dims=["aot", "y_psf", "x_psf"],
+        coords={"aot": [0.1, 0.3], **grid.as_coords()},
+    )
+    sigma_da = xr.DataArray([0.5, 0.7], dims=["aot"], coords={"aot": [0.1, 0.3]})
+    psf_dict = PSFDict.from_kernels(
+        {S2Band.B02: kernel_da},
+        params={S2Band.B02: {"sigma": sigma_da}},
+    )
+    p = psf_dict.params(S2Band.B02)
+    assert p is not None
+    assert "sigma" in p
+    assert isinstance(p["sigma"], xr.DataArray)
+    assert list(p["sigma"].dims) == ["aot"]
+
+
+def test_from_kernels_with_params_stores_variable():
+    """from_kernels with params must add a param_sigma variable to the Dataset."""
+    import numpy as np
+
+    grid = PSFGrid(res=0.01, n=11)
+    kernel_da = xr.DataArray(
+        np.ones((grid.n, grid.n), dtype="float32"),
+        dims=["y_psf", "x_psf"],
+        coords=grid.as_coords(),
+    )
+    sigma_da = xr.DataArray(0.5)
+    psf_dict = PSFDict.from_kernels(
+        {S2Band.B02: kernel_da},
+        params={S2Band.B02: {"sigma": sigma_da}},
+    )
+    assert "param_sigma" in psf_dict[S2Band.B02].data_vars

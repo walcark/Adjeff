@@ -139,6 +139,13 @@ def test_gauss_to_dataarray(gauss_psf, grid, band):
     assert da.attrs["adjeff:model"] == "Gaussian"
 
 
+def test_gauss_param_dict(gauss_psf):
+    """GaussPSF.param_dict must return a dict with key 'sigma'."""
+    p = gauss_psf.param_dict()
+    assert set(p.keys()) == {"sigma"}
+    assert isinstance(p["sigma"], float)
+
+
 # ---------------------------------------------------------------------------
 # GaussGeneralPSF
 # ---------------------------------------------------------------------------
@@ -168,6 +175,13 @@ def test_gauss_general_to_dataarray(gauss_general_psf, grid, band):
     assert da.attrs["adjeff:model"] == "GaussianGeneral"
 
 
+def test_gauss_general_param_dict(gauss_general_psf):
+    """GaussGeneralPSF.param_dict must return keys 'sigma' and 'n'."""
+    p = gauss_general_psf.param_dict()
+    assert set(p.keys()) == {"sigma", "n"}
+    assert all(isinstance(v, float) for v in p.values())
+
+
 # ---------------------------------------------------------------------------
 # VoigtPSF
 # ---------------------------------------------------------------------------
@@ -195,6 +209,13 @@ def test_voigt_to_dataarray(voigt_psf, grid, band):
     da = voigt_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
     assert da.attrs["adjeff:model"] == "Voigt"
+
+
+def test_voigt_param_dict(voigt_psf):
+    """VoigtPSF.param_dict must return keys 'sigma' and 'gamma'."""
+    p = voigt_psf.param_dict()
+    assert set(p.keys()) == {"sigma", "gamma"}
+    assert all(isinstance(v, float) for v in p.values())
 
 
 def test_voigt_eta_range(voigt_psf):
@@ -232,6 +253,13 @@ def test_king_to_dataarray(king_psf, grid, band):
     assert da.attrs["adjeff:model"] == "King"
 
 
+def test_king_param_dict(king_psf):
+    """KingPSF.param_dict must return keys 'sigma' and 'gamma'."""
+    p = king_psf.param_dict()
+    assert set(p.keys()) == {"sigma", "gamma"}
+    assert all(isinstance(v, float) for v in p.values())
+
+
 # ---------------------------------------------------------------------------
 # MoffatGeneralizedPSF
 # ---------------------------------------------------------------------------
@@ -259,6 +287,13 @@ def test_moffat_to_dataarray(moffat_psf, grid, band):
     da = moffat_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
     assert da.attrs["adjeff:model"] == "MoffatGeneralized"
+
+
+def test_moffat_param_dict(moffat_psf):
+    """MoffatGeneralizedPSF.param_dict must return keys 'alpha', 'beta', 'gamma'."""
+    p = moffat_psf.param_dict()
+    assert set(p.keys()) == {"alpha", "beta", "gamma"}
+    assert all(isinstance(v, float) for v in p.values())
 
 
 # ---------------------------------------------------------------------------
@@ -321,3 +356,8 @@ def test_non_analytical_no_grad(non_analytical_psf):
     """NonAnalyticalPSF kernel must not require gradients."""
     k = non_analytical_psf.forward()
     assert not k.requires_grad
+
+
+def test_non_analytical_param_dict_empty(non_analytical_psf):
+    """NonAnalyticalPSF.param_dict must return an empty dict."""
+    assert non_analytical_psf.param_dict() == {}

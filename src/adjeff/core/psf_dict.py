@@ -40,6 +40,45 @@ class PSFDict:
             self._data[psf.band] = xr.Dataset({"kernel": da})
 
     @classmethod
+    def from_kernels(
+        cls,
+        kernels: dict["SensorBand", xr.DataArray],
+        params: dict["SensorBand", dict[str, xr.DataArray]] | None = None,
+    ) -> "PSFDict":
+        """Build a PSFDict directly from pre-built kernel DataArrays.
+
+        Unlike the standard constructor (which takes PSFModules), this
+        accepts DataArrays that may carry extra dimensions produced by
+        stacking per-combo optimisation results (e.g. ``aot``, ``rh``).
+
+        Per-combo parameter values can be supplied via *params* and are
+        stored as ``param_<name>`` variables alongside ``kernel`` in each
+        band Dataset.  Retrieve them afterwards with :meth:`params`.
+
+        Parameters
+        ----------
+        kernels : dict[SensorBand, xr.DataArray]
+            Mapping from band to kernel DataArray (dims at minimum
+            ``y_psf`` and ``x_psf``; any extra dims are preserved).
+        params : dict[SensorBand, dict[str, xr.DataArray]] or None
+            Optional per-band parameter DataArrays produced by the
+            optimiser (e.g. ``{B02: {"sigma": DataArray(aot, rh)}}``.
+
+        Returns
+        -------
+        PSFDict
+        """
+        obj: PSFDict = cls.__new__(cls)
+        obj._data = {}
+        for band, da in kernels.items():
+            ds_vars: dict[str, xr.DataArray] = {"kernel": da}
+            if params and band in params:
+                for pname, pda in params[band].items():
+                    ds_vars[f"param_{pname}"] = pda
+            obj._data[band] = xr.Dataset(ds_vars)
+        return obj
+
+    @classmethod
     def training_input(
         cls,
         scene: ImageDict,
@@ -93,6 +132,44 @@ class PSFDict:
         )
         band_summary = ", ".join(str(b) for b in self.bands)
         return f"PSFDict(bands=[{band_summary}], vars={{{vars_summary}}})"
+
+    def params(
+        self, band: SensorBand
+    ) -> dict[str, xr.DataArray | float] | None:
+        """Return the PSF parameter values for *band*.
+
+        Two storage strategies are supported:
+
+        - **Multi-combo** (post-optimisation): parameters were stored as
+          ``param_<name>`` variables in the Dataset by :meth:`from_kernels`.
+          Returns ``{name: DataArray}`` where each DataArray carries the
+          combo dimensions (e.g. ``aot``, ``rh``).
+
+        - **Single-combo** (direct from PSFModule): parameters are read
+          from ``kernel.attrs["adjeff:params"]``.
+          Returns ``{name: float}``.
+
+        Returns ``None`` when no parameter information is available
+        (e.g. :class:`~adjeff.core.non_analytical_psf.NonAnalyticalPSF`).
+
+        Parameters
+        ----------
+        band : SensorBand
+            Band of interest.
+
+        Returns
+        -------
+        dict[str, xr.DataArray | float] or None
+        """
+        ds = self._data[band]
+        param_vars: dict[str, xr.DataArray | float] = {
+            k[6:]: ds[k]
+            for k in ds.data_vars
+            if isinstance(k, str) and k.startswith("param_")
+        }
+        if param_vars:
+            return param_vars
+        return ds["kernel"].attrs.get("adjeff:params")
 
     def to_dataarray(self, band: SensorBand) -> xr.DataArray:
         """Return the kernel for the band of interest."""

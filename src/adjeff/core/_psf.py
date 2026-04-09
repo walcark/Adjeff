@@ -76,6 +76,15 @@ class PSFModule:
         """Return normalised 2D PSF kernel."""
         raise NotImplementedError
 
+    def param_dict(self) -> dict[str, float]:
+        """Return current parameter values as a plain ``{name: value}`` dict.
+
+        Returns an empty dict for non-parametric PSFs (e.g.
+        :class:`~adjeff.core.non_analytical_psf.NonAnalyticalPSF`).
+        Analytical subclasses override this method.
+        """
+        return {}
+
     @torch.no_grad()
     def to_dataarray(self) -> xr.DataArray:
         """Return the kernel as DataArray."""
