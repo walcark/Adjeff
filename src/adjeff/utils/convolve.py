@@ -168,9 +168,9 @@ def fft_convolve_2D_torch(
             value=0.0,
         )
 
-    # Kernel padded
-    in2_ext = torch.zeros((ext, ext_fft), dtype=in1.dtype, device=in1.device)
-    in2_ext[:k, :k] = in2
+    # Kernel padded — use F.pad so the gradient flows through in2.
+    # In-place assignment into a fresh tensor severs the autograd graph.
+    in2_ext = torch.nn.functional.pad(in2, (0, ext_fft - k, 0, ext - k))
 
     # FFT-based linear conv
     in1_fft = torch.fft.rfftn(in1_ext, s=(ext, ext_fft), dim=(0, 1))
