@@ -1,4 +1,4 @@
-"""Base nn.Module for all atmospheric correction scene operations."""
+"""Base classes for atmospheric correction scene operations."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import joblib  # type: ignore[import-untyped]
 import structlog
+import torch
 import torch.nn as nn
 import xarray as xr
 
@@ -14,12 +15,14 @@ from adjeff.utils import CacheStore
 
 if TYPE_CHECKING:
     from adjeff.core import ImageDict
+    from adjeff.core._psf import PSFModule
+    from adjeff.core.bands import SensorBand
 
 logger = structlog.get_logger(__name__)
 
 
-class SceneModule(nn.Module):
-    """Base nn.Module for scene transforms on ImageDict.
+class SceneModule:
+    """Base class for scene transforms on ImageDict.
 
     Subclasses must define two class attributes in order to work properly.
 
@@ -58,9 +61,9 @@ class SceneModule(nn.Module):
     >>>    S2Band.B04: ['rho_unif', 'rho_toa']
     >>> )
 
-    Each module produce the output with the forward method, as they inherit
-    from nn.Module. This forward method calls self._compute() that must be
-    defined in every subclasses.
+    Each module produces the output with the forward method, called via
+    ``__call__``.  This forward method calls self._compute() that must be
+    defined in every subclass.
 
     Parameters
     ----------
@@ -76,8 +79,12 @@ class SceneModule(nn.Module):
         self._cache = cache if cache is not None else CacheStore()
         self._log = logger.bind(module=type(self).__name__)
 
+    def __call__(self, scene: "ImageDict") -> "ImageDict":
+        """Apply the module to *scene*."""
+        return self.forward(scene)
+
     def forward(self, scene: "ImageDict") -> "ImageDict":
-        """Perform the module operations of the input ImageDict.
+        """Perform the module operations on the input ImageDict.
 
         The order of operations is the following:
         1) inputs are validated to ensure that all required parameters are
@@ -117,12 +124,7 @@ class SceneModule(nn.Module):
         """Run the core transform."""
 
     def _cache_key(self, scene: "ImageDict") -> str:
-        """Hash the content of the SceneModule instance.
-
-        The hash is computed from the module name, the configuration e.g. input
-        arguments of the __init__ method, and the dictionnary of input hashes
-        from the input ImageDict taken by forward().
-        """
+        """Hash the content of the SceneModule instance."""
         return str(
             joblib.hash(
                 {
@@ -134,27 +136,11 @@ class SceneModule(nn.Module):
         )
 
     def _config_dict(self) -> dict[str, object]:
-        """Return frozen configuration for cache keying.
-
-        The configuration is composed of all the input parameters used in the
-        __init__ method.
-        """
+        """Return frozen configuration for cache keying."""
         return {}
 
     def _input_hashes(self, scene: "ImageDict") -> dict[str, str]:
-        """Return the dictionnary mapping in band and variable to their hash.
-
-        In an input ImageDict, all bands and all keys of the datasets are
-        mapped to a unique DataArray. Two cases are treated:
-
-        1) if the DataArray has been produced by another SceneModule, it has
-        a provenance_key that can be used as a hash.
-        2) if not, the content of the DataArray is hashed to produce the key.
-
-        This enables to cache results from non-deterministic modules, as the
-        results hash key is not produced directly from its inside values but
-        by the provenance key of the input ImageDict.
-        """
+        """Return a hash per (band, variable) pair in the input scene."""
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
@@ -179,3 +165,36 @@ class SceneModule(nn.Module):
             for var in self.output_vars:
                 if var in ds:
                     ds[var].attrs["_adjeff_provenance"] = provenance
+
+
+class TrainableSceneModule(nn.Module, SceneModule):
+    """Abstract SceneModule with a differentiable per-band forward pass.
+
+    Inherits from both :class:`torch.nn.Module` (for parameter registration
+    and gradient flow) and :class:`SceneModule` (for the xarray pipeline
+    contract).  When called as ``model(scene)``, the ``nn.Module.__call__``
+    machinery is used (hooks fire, then ``forward`` is dispatched).
+
+    Subclasses must implement :meth:`forward_band` and expose their
+    per-band PSF modules via :attr:`psf_modules`.
+
+    These two additions form the contract consumed by
+    :class:`~adjeff.optim._Optimizer`.
+    """
+
+    def __init__(self, cache: CacheStore | None = None) -> None:
+        nn.Module.__init__(self)
+        SceneModule.__init__(self, cache=cache)
+
+    @property
+    @abstractmethod
+    def psf_modules(self) -> "dict[str, PSFModule]":
+        """Mapping of band IDs to PSF modules."""
+
+    @abstractmethod
+    def forward_band(
+        self,
+        band: "SensorBand",
+        **inputs: torch.Tensor,
+    ) -> torch.Tensor:
+        """Differentiable per-band forward pass for the training loop."""
