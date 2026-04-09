@@ -173,6 +173,32 @@ class ConstrainedParameter(nn.Module):
         self.p.copy_(p)
 
 
+def radial_weights(dists: torch.Tensor) -> torch.Tensor:
+    """Compute inverse-perimeter radial weights.
+
+    Each pixel is assigned weight ``1 / (2π · max(r_min, r))`` so that
+    integrating over the image gives equal importance to every radial
+    distance.  The centre pixel (r=0) receives the same weight as the
+    nearest non-zero-distance pixel to avoid division by zero.
+
+    Parameters
+    ----------
+    dists : torch.Tensor
+        Per-pixel radial distances, any shape.
+
+    Returns
+    -------
+    torch.Tensor
+        Weights tensor, same shape as *dists*.
+    """
+    dists_non_zero = dists[dists > 0]
+    if dists_non_zero.numel() == 0:
+        raise ValueError("dists must contain at least one non-zero value.")
+    min_dist = dists_non_zero.min()
+    perimeter = 2 * torch.pi * torch.maximum(min_dist, dists)
+    return 1.0 / perimeter
+
+
 def radial_mask(
     tensor: torch.Tensor, rr: torch.Tensor, threshold: float
 ) -> torch.Tensor:

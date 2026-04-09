@@ -19,6 +19,7 @@ from .torchutils import (
     ExpTransform,
     SigmoidTransform,
     radial_mask,
+    radial_weights,
 )
 from .xrutils import ParamBatch, grid, square_grid
 
@@ -37,6 +38,7 @@ __all__ = [
     "ExpTransform",
     "SigmoidTransform",
     "radial_mask",
+    "radial_weights",
     "square_grid",
     "grid",
     "radial_distances",
