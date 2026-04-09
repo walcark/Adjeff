@@ -157,7 +157,7 @@ def rho_toa(
     approx_psf = GaussGeneralPSF(
         band=band,
         grid=PSFGrid(res=res, n=n),
-        sigma=0.005,
+        sigma=0.00005,
         n=0.20,
     )
     rho_toa_approx = fft_convolve_2D(
@@ -170,7 +170,7 @@ def rho_toa(
 
     # Inverse sampling of the profile CDF -> radial sampling points
     profile = rho_toa_approx.adjeff.radial()
-    r_vals: xr.DataArray = profile.adjeff.radial_adaptive(n=nr, max_gap=1)
+    r_vals: xr.DataArray = profile.adjeff.radial_adaptive(n=nr, max_gap=0.1)
 
     # Create an atmosphere for each combination of AtmoParams
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
@@ -228,7 +228,11 @@ def rho_toa(
     result = result + rho_s["rho_atm"]
 
     # Reconstruct 2-D field from radial profile
-    return xr.DataArray(result.adjeff.to_field(rho_s).sel(wl=band.wl_nm))
+    # `.compute()` materialises dask chunks introduced by `+ rho_atm` above,
+    # because `to_field` uses `apply_ufunc` without dask support.
+    return xr.DataArray(
+        result.compute().adjeff.to_field(rho_s).sel(wl=band.wl_nm)
+    )
 
 
 def _radial_sensors(
