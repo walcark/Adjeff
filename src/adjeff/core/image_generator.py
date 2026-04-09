@@ -152,7 +152,7 @@ def gaussian_image_dict(
 
         attrs = {
             "adjeff:kind": "analytical",
-            "adjeff:model": "gaussian",
+            "adjeff:model": "gauss",
             "adjeff:params": {
                 "sigma": sigma,
                 "rho_min": rho_min,
