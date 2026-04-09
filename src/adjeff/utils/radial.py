@@ -110,16 +110,21 @@ def _profile_to_field(
 
 
 def radial_distances(
-    da: xr.DataArray,
-    center: tuple[float, float] | None,
+    source: xr.DataArray | xr.Dataset,
+    var_name: str | None = None,
+    *,
+    center: tuple[float, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return flat float32 radial-distance and value arrays for *da*.
+    """Return flat float32 radial-distance and value arrays.
 
     Parameters
     ----------
-    da : xr.DataArray
-        Input array.
-    center : tuple[float, float] or None
+    source : xr.DataArray or xr.Dataset
+        Input array or Dataset. When a Dataset is provided, *var_name* is
+        required to select the variable.
+    var_name : str or None, optional
+        Variable name to extract from *source* when it is a Dataset.
+    center : tuple[float, float] or None, optional
         ``(cx, cy)`` origin. Defaults to the coordinate mean.
 
     Returns
@@ -129,6 +134,14 @@ def radial_distances(
     vv : np.ndarray
         Flat float32 array of pixel values, shape ``(n_pixels,)``.
     """
+    if isinstance(source, xr.Dataset):
+        if var_name is None:
+            raise ValueError(
+                "var_name is required when source is an xr.Dataset"
+            )
+        da = source[var_name]
+    else:
+        da = source
     if "x_psf" in da.dims and "y_psf" in da.dims:
         cx, cy = (0.0, 0.0) if center is None else center
         x = da.coords["x_psf"].values
@@ -146,19 +159,33 @@ def radial_distances(
     return rr, vv
 
 
-def natural_npix(da: xr.DataArray) -> int:
+def natural_npix(
+    source: xr.DataArray | xr.Dataset,
+    var_name: str | None = None,
+) -> int:
     """Return the maximum bin count that keeps bin width >= 1 pixel.
 
     Parameters
     ----------
-    da : xr.DataArray
-        Input array.
+    source : xr.DataArray or xr.Dataset
+        Input array or Dataset. When a Dataset is provided, *var_name* is
+        required to select the variable.
+    var_name : str or None, optional
+        Variable name to extract from *source* when it is a Dataset.
 
     Returns
     -------
     int
         Maximum number of radial bins with no empty bins guaranteed.
     """
+    if isinstance(source, xr.Dataset):
+        if var_name is None:
+            raise ValueError(
+                "var_name is required when source is an xr.Dataset"
+            )
+        da = source[var_name]
+    else:
+        da = source
     side = min(da.shape[-2], da.shape[-1])
     return max(int((side - 1) / math.sqrt(2)) - 1, 2)
 

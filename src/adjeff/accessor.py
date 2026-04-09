@@ -100,7 +100,7 @@ class AdjeffDataArrayAccessor:
         xr.DataArray
             1-D DataArray with dim ``"r"`` containing the azimuthal mean.
         """
-        rr_np, vv_np = radial_distances(self._da, center)
+        rr_np, vv_np = radial_distances(self._da, center=center)
         npix = natural_npix(self._da)
 
         rr = torch.from_numpy(rr_np)
@@ -187,7 +187,7 @@ class AdjeffDataArrayAccessor:
         xr.DataArray
             1-D DataArray with dim ``"r"`` containing the per-bin std.
         """
-        rr_np, vv_np = radial_distances(self._da, center)
+        rr_np, vv_np = radial_distances(self._da, center=center)
         npix = n_bins if n_bins is not None else natural_npix(self._da)
 
         rr = torch.from_numpy(rr_np)
@@ -271,7 +271,7 @@ class AdjeffDataArrayAccessor:
         torch.Tensor
             Float32 tensor of shape ``(ny, nx)``.
         """
-        rr_np, _ = radial_distances(self._da, None)
+        rr_np, _ = radial_distances(self._da, center=None)
         shape = (self._da.shape[-2], self._da.shape[-1])
         return torch.from_numpy(rr_np.reshape(shape))
 

@@ -5,7 +5,8 @@ import pytest
 import xarray as xr
 
 from adjeff.core import ImageDict, S2Band
-from adjeff.modules.models.model_5s import Toa2Unif, Unif2Toa
+from adjeff.modules.classic.toa_to_unif import Toa2Unif
+from adjeff.modules.classic.unif_to_toa import Unif2Toa
 
 _SHAPE = (4, 4)
 _COORDS = {"y": np.arange(_SHAPE[0], dtype=np.float32), "x": np.arange(_SHAPE[1], dtype=np.float32)}
