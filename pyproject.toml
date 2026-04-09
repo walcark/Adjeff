@@ -45,7 +45,7 @@ dask = ">=2026.3.0,<2027"
 
 [tool.pixi.feature.gpu]
 system-requirements = { cuda = "12.6" }
-dependencies = { cuda-version = "12.6.*", pytorch-gpu = "*" }
+dependencies = { cuda-version = "12.6.*", pytorch-gpu = "*", cuda-cudart-dev = "12.6.*", cuda-nvcc = "12.6.*" }
 
 [tool.pixi.feature.cpu]
 dependencies = { pytorch-cpu = "*" }
