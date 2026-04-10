@@ -275,6 +275,36 @@ class AdjeffDataArrayAccessor:
         shape = (self._da.shape[-2], self._da.shape[-1])
         return torch.from_numpy(rr_np.reshape(shape))
 
+    def digitize(self, n_bins: int) -> xr.DataArray:
+        """Return values binned in ``n_bins`` values.
+
+        The values range from the minimum to the maximum of the field. The
+        new values are produced with np.linspace.
+
+        Parameters
+        ----------
+        n_bins : int
+            Number of different values in the output DataArray.
+
+        Returns
+        -------
+        xr.DataArray
+            The binned DataArray.
+        """
+        data = self._da.data
+
+        mini, maxi = np.nanmin(data), np.nanmax(data)
+        bins = np.linspace(mini, maxi, n_bins)
+        edges = (bins[:-1] + bins[1:]) / 2
+        idx = np.digitize(data, edges, right=False)
+
+        return xr.DataArray(
+            bins[idx],
+            dims=self._da.dims,
+            coords=self._da.coords,
+            attrs=self._da.attrs,
+        )
+
     def to_field(self, target_ds: xr.Dataset) -> xr.DataArray:
         """Reconstruct a field from radial profile via Pchip interpolation.
 
