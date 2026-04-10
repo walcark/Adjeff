@@ -35,6 +35,7 @@ from adjeff.core import (
     init_psf_dict,
 )
 from adjeff.core._psf import PSFModule
+from adjeff.exceptions import MissingVariableError
 from adjeff.modules.classic.toa_to_unif import Toa2Unif
 from adjeff.modules.models.psf_conv_module import PSFConvModule
 from adjeff.modules.samplers.radiatives import RadiativePipeline
@@ -153,6 +154,75 @@ class FullConfig(TypedDict):
     atmo_config: AtmoConfig
     geo_config: GeoConfig
     spectral_config: SpectralConfig
+
+
+def config_from_scene(
+    scene: ImageDict,
+    band: SensorBand,
+    n_bins: int | None = None,
+    species: dict[str, float] | None = None,
+) -> FullConfig:
+    """Build a :class:`FullConfig` from parameters stored in an ImageDict.
+
+    Reads atmospheric and geometric parameters directly from
+    ``scene[band]``, avoiding manual extraction and the coordinate-
+    alignment pitfalls that arise when building configs independently
+    from the scene.
+
+    Parameters
+    ----------
+    scene : ImageDict
+        Scene produced by a :class:`~adjeff.modules.loaders.ProductLoader`
+        (must contain ``aot``, ``h``, ``rh``, ``href``, ``vza``, ``vaa``,
+        ``sza``, ``saa`` in the Dataset for *band*).
+    band : SensorBand
+        Band from which to read the parameters.
+    n_bins : int or None, optional
+        If provided, ``aot`` and ``h`` are digitized to *n_bins* unique
+        values before building the config, reducing the number of unique
+        atmospheric configurations to simulate.
+    species : dict[str, float] or None, optional
+        Aerosol species mix summing to 1.0.  Defaults to
+        ``{"sulphate": 1.0}`` when ``None``.
+
+    Returns
+    -------
+    FullConfig
+        A plain dict with keys ``"atmo_config"``, ``"geo_config"``,
+        ``"spectral_config"``.
+
+    Raises
+    ------
+    MissingVariableError
+        If any of the required variables are absent from ``scene[band]``.
+    """
+    _REQUIRED = ["aot", "h", "rh", "href", "vza", "vaa", "sza", "saa"]
+    ds = scene[band]
+    missing = [v for v in _REQUIRED if v not in ds]
+    if missing:
+        raise MissingVariableError(
+            f"Variables {missing!r} are missing from band {band!r}. "
+            "Load the scene with a ProductLoader first."
+        )
+
+    aot: xr.DataArray = ds["aot"]
+    h: xr.DataArray = ds["h"]
+    if n_bins is not None:
+        aot = aot.adjeff.digitize(n_bins=n_bins)
+        h = h.adjeff.digitize(n_bins=n_bins)
+
+    return make_full_config(
+        bands=scene.bands,
+        aot=aot,
+        h=h,
+        rh=ds["rh"],
+        href=ds["href"],
+        vza=ds["vza"],
+        vaa=ds["vaa"],
+        sza=ds["sza"],
+        saa=ds["saa"],
+        species=species,
+    )
 
 
 def make_full_config(
