@@ -17,7 +17,7 @@ from .image_generator import (
     random_image_dict,
 )
 from .non_analytical_psf import NonAnalyticalPSF
-from .psf_dict import PSFDict
+from .psf_dict import PSFDict, init_psf_dict
 
 __all__ = [
     "PSFGrid",
@@ -35,4 +35,5 @@ __all__ = [
     "random_image_dict",
     "NonAnalyticalPSF",
     "PSFDict",
+    "init_psf_dict",
 ]

@@ -2,42 +2,55 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any, cast
 
 import xarray as xr
 
-from adjeff.exceptions import ConfigurationError
-
 from ._psf import PSFGrid, PSFModule
 from .bands import SensorBand
-from .image_dict import ImageDict
 
 
 class PSFDict:
     """Mapping of sensor bands to PSF kernels Datasets.
 
+    A PSFDict is either *trainable* (holds live :class:`PSFModule` objects
+    with gradient-tracked parameters) or *frozen* (holds pre-computed
+    :class:`xr.DataArray` kernels).  Use :func:`init_psf_dict` to create a
+    trainable instance and :meth:`to_frozen` to export after training.
+
     All PSFModules must be of the same type (one model type per PSFDict).
     """
 
-    def __init__(self, psfs: list[PSFModule]) -> None:
-        """Initialize PSFDict from a list of PSFModules of the same type."""
-        psf_types = {type(psf) for psf in psfs}
-        if len(psf_types) > 1:
-            raise ConfigurationError(
-                f"All PSFModules must be of the same type, got: {psf_types}"
-            )
+    _modules: dict[SensorBand, PSFModule] | None
+    _data: dict[SensorBand, xr.Dataset]
 
-        bands = [psf.band for psf in psfs]
-        duplicate_bands = {b for b in bands if bands.count(b) > 1}
-        if duplicate_bands:
-            raise ConfigurationError(
-                f"Duplicate bands in PSFDict: {duplicate_bands}"
-            )
+    @classmethod
+    def from_modules(
+        cls,
+        modules: dict[SensorBand, PSFModule],
+    ) -> "PSFDict":
+        """Create a trainable PSFDict holding live PSFModule objects.
 
-        self._data: dict[SensorBand, xr.Dataset] = {}
-        for psf in psfs:
-            da = psf.to_dataarray()
-            self._data[psf.band] = xr.Dataset({"kernel": da})
+        The returned instance is in *trainable* mode: it holds the original
+        :class:`PSFModule` objects (with gradient-tracked parameters) and
+        carries no pre-computed DataArrays.  Pass it to
+        :class:`~adjeff.modules.models.psf_conv_module.PSFConvModule` to
+        optimise the parameters, then call :meth:`to_frozen` to export.
+
+        Parameters
+        ----------
+        modules : dict[SensorBand, PSFModule]
+            Mapping from band to an instantiated PSFModule.
+
+        Returns
+        -------
+        PSFDict
+            Trainable PSFDict.
+        """
+        obj: PSFDict = cls.__new__(cls)
+        obj._modules = dict(modules)
+        obj._data = {}
+        return obj
 
     @classmethod
     def from_kernels(
@@ -69,6 +82,7 @@ class PSFDict:
         PSFDict
         """
         obj: PSFDict = cls.__new__(cls)
+        obj._modules = None
         obj._data = {}
         for band, da in kernels.items():
             ds_vars: dict[str, xr.DataArray] = {"kernel": da}
@@ -78,36 +92,67 @@ class PSFDict:
             obj._data[band] = xr.Dataset(ds_vars)
         return obj
 
-    @classmethod
-    def training_input(
-        cls,
-        scene: ImageDict,
-        psf_type: type[PSFModule],
-        psf_init_params: dict[str, float],
-        psf_grids: dict[SensorBand, PSFGrid],
-    ) -> Self:
-        """Initialise a PSFDict for a training.
+    # ------------------------------------------------------------------
+    # Trainable mode helpers
+    # ------------------------------------------------------------------
 
-        One PSF type is instantiated for each band in the scene, using the
-        same initialization parameters across bands.
+    @property
+    def is_trainable(self) -> bool:
+        """Return True when this PSFDict holds live PSFModule objects."""
+        return getattr(self, "_modules", None) is not None
+
+    def get_module(self, band: SensorBand) -> PSFModule:
+        """Return the PSFModule for *band* (trainable mode only).
+
+        Parameters
+        ----------
+        band : SensorBand
+            Band of interest.
+
+        Returns
+        -------
+        PSFModule
+            Live PSFModule with gradient-tracked parameters.
+
+        Raises
+        ------
+        RuntimeError
+            If this PSFDict is not in trainable mode.
         """
-        missing_bands = [b for b in scene.bands if b not in psf_grids]
-        if missing_bands:
-            raise ConfigurationError(
-                f"Missing bands grid specification for bands: {missing_bands}"
+        if not self.is_trainable or self._modules is None:
+            raise RuntimeError(
+                "get_module() requires a trainable PSFDict. "
+                "Use init_psf_dict() to create one."
             )
+        return self._modules[band]
 
-        psfs = [
-            psf_type(grid=psf_grids[band], band=band, **psf_init_params)  # type: ignore
-            for band in scene.bands
-        ]
+    def to_frozen(self) -> "PSFDict":
+        """Export current parameters to a frozen PSFDict.
 
-        return cls(psfs=psfs)
+        Calls :meth:`~adjeff.core._psf.PSFModule.to_dataarray` on each
+        live module to capture the current (possibly trained) kernel.
+
+        Returns
+        -------
+        PSFDict
+            Frozen PSFDict with DataArray kernels reflecting the current
+            parameter values.
+        """
+        if not self.is_trainable or self._modules is None:
+            return self
+        return PSFDict.from_kernels(
+            {band: psf.to_dataarray() for band, psf in self._modules.items()}
+        )
 
     @property
     def bands(self) -> list[SensorBand]:
         """Sorted list of band identifiers present in this PSFDict."""
-        return sorted(self._data.keys(), key=lambda b: b.value)
+        source = (
+            self._modules
+            if self.is_trainable and self._modules
+            else self._data
+        )
+        return sorted(source.keys(), key=lambda b: b.value)
 
     def __getitem__(self, band: SensorBand) -> xr.Dataset:
         """Return the Dataset for *band*."""
@@ -119,6 +164,8 @@ class PSFDict:
 
     def __contains__(self, band: object) -> bool:
         """Check if *band* is stored in the PSFDict."""
+        if self.is_trainable and self._modules is not None:
+            return band in self._modules
         return band in self._data
 
     def __repr__(self) -> str:
@@ -172,7 +219,19 @@ class PSFDict:
         return ds["kernel"].attrs.get("adjeff:params")
 
     def to_dataarray(self, band: SensorBand) -> xr.DataArray:
-        """Return the kernel for the band of interest."""
+        """Return the frozen kernel DataArray for *band*.
+
+        Raises
+        ------
+        RuntimeError
+            If this PSFDict is in trainable mode (call :meth:`to_frozen`
+            first, or use :meth:`get_module` to access the live PSFModule).
+        """
+        if self.is_trainable:
+            raise RuntimeError(
+                "to_dataarray() is not available in trainable mode. "
+                "Call to_frozen() first."
+            )
         return self._data[band]["kernel"]
 
     def kernel(self, band: SensorBand) -> xr.DataArray:
@@ -183,7 +242,7 @@ class PSFDict:
         """Return a joblib-hashable representation of all kernel data.
 
         xr.DataArray values are converted to nested lists so that joblib
-        can hash them.  Used by SceneModule._config_dict().
+        can hash them. Used by SceneModule._config_dict().
         """
         result: dict[str, Any] = {}
         for band, ds in self._data.items():
@@ -191,3 +250,48 @@ class PSFDict:
                 var: da.values for var, da in ds.data_vars.items()
             }
         return result
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+
+def init_psf_dict(
+    grids: dict[SensorBand, PSFGrid],
+    model: type[PSFModule],
+    init_parameters: dict[str, float] | dict[SensorBand, dict[str, float]],
+) -> PSFDict:
+    """Create a trainable :class:`PSFDict` with fresh PSFModule instances.
+
+    Parameters
+    ----------
+    grids : dict[SensorBand, PSFGrid]
+        Spatial grid for each band.
+    model : type[PSFModule]
+        PSF model class to instantiate (e.g. :class:`~adjeff.core.KingPSF`).
+    init_parameters : dict[str, float] or dict[SensorBand, dict[str, float]]
+        Initial parameter values.  Pass ``{"sigma": 0.1}`` to use the same
+        values for every band, or ``{S2Band.B02: {"sigma": 0.1}, ...}`` to
+        set per-band values.
+
+    Returns
+    -------
+    PSFDict
+        Trainable PSFDict.  Pass it to
+        :class:`~adjeff.modules.models.psf_conv_module.PSFConvModule` for
+        optimisation, then call :meth:`~PSFDict.to_frozen` to export.
+    """
+    modules: dict[SensorBand, PSFModule] = {}
+    per_band = bool(init_parameters) and isinstance(
+        next(iter(init_parameters)), SensorBand
+    )
+    for band, grid in grids.items():
+        if per_band:
+            params: dict[str, float] = cast(
+                dict[SensorBand, dict[str, float]], init_parameters
+            )[band]
+        else:
+            params = cast(dict[str, float], init_parameters)
+        modules[band] = model(grid=grid, band=band, **params)  # type: ignore[call-arg]
+    return PSFDict.from_modules(modules)

@@ -1,18 +1,19 @@
 """Tests for PSFDict."""
 
+import numpy as np
 import pytest
 import xarray as xr
 
 from adjeff.core import (
-    GaussPSF, 
-    KingPSF, 
-    PSFDict, 
-    PSFGrid, 
-    S2Band, 
-    SensorBand, 
-    random_image_dict
+    GaussPSF,
+    KingPSF,
+    PSFDict,
+    PSFGrid,
+    S2Band,
+    SensorBand,
+    init_psf_dict,
+    random_image_dict,
 )
-from adjeff.exceptions import ConfigurationError
 
 
 # ---------------------------------------------------------------------------
@@ -36,18 +37,13 @@ def gauss_b03(grid) -> GaussPSF:
 
 
 @pytest.fixture
-def king_b03(grid) -> KingPSF:
-    return KingPSF(grid=grid, band=S2Band.B03, sigma=1.0, gamma=2.0)
-
-
-@pytest.fixture
 def psf_dict(gauss_b02, gauss_b03) -> PSFDict:
-    return PSFDict([gauss_b02, gauss_b03])
-
-
-@pytest.fixture
-def scene():
-    return random_image_dict([S2Band.B02, S2Band.B03], ["rho_s"], res_km=0.01, n=16)
+    return PSFDict.from_kernels(
+        {
+            S2Band.B02: gauss_b02.to_dataarray(),
+            S2Band.B03: gauss_b03.to_dataarray(),
+        }
+    )
 
 
 @pytest.fixture
@@ -60,40 +56,87 @@ def psf_grids() -> dict[SensorBand, PSFGrid]:
 
 
 # ---------------------------------------------------------------------------
-# __init__
+# from_kernels
 # ---------------------------------------------------------------------------
 
 
-def test_init_single_psf(gauss_b02):
-    """PSFDict can be constructed with a single PSFModule."""
-    psf_dict = PSFDict([gauss_b02])
+def test_from_kernels_single_band(gauss_b02):
+    """from_kernels can be constructed with a single band."""
+    psf_dict = PSFDict.from_kernels({S2Band.B02: gauss_b02.to_dataarray()})
     assert S2Band.B02 in psf_dict
 
 
-def test_init_multiple_bands(gauss_b02, gauss_b03):
-    """PSFDict accepts multiple PSFModules of the same type on different bands."""
-    psf_dict = PSFDict([gauss_b02, gauss_b03])
+def test_from_kernels_multiple_bands(gauss_b02, gauss_b03):
+    """from_kernels accepts multiple bands."""
+    psf_dict = PSFDict.from_kernels(
+        {
+            S2Band.B02: gauss_b02.to_dataarray(),
+            S2Band.B03: gauss_b03.to_dataarray(),
+        }
+    )
     assert S2Band.B02 in psf_dict
     assert S2Band.B03 in psf_dict
 
 
-def test_init_mixed_types_raises(gauss_b02, king_b03):
-    """PSFDict must raise ConfigurationError when PSF types are mixed."""
-    with pytest.raises(ConfigurationError):
-        PSFDict([gauss_b02, king_b03])
-
-
-def test_init_duplicate_band_raises(gauss_b02, grid):
-    """PSFDict must raise ConfigurationError when the same band appears twice."""
-    gauss_b02_bis = GaussPSF(grid=grid, band=S2Band.B02, sigma=2.0)
-    with pytest.raises(ConfigurationError):
-        PSFDict([gauss_b02, gauss_b02_bis])
-
-
-def test_init_stores_kernel_variable(gauss_b02):
+def test_from_kernels_stores_kernel_variable(gauss_b02):
     """Each band Dataset must contain a 'kernel' variable."""
-    psf_dict = PSFDict([gauss_b02])
+    psf_dict = PSFDict.from_kernels({S2Band.B02: gauss_b02.to_dataarray()})
     assert "kernel" in psf_dict[S2Band.B02].data_vars
+
+
+# ---------------------------------------------------------------------------
+# from_modules / is_trainable / get_module / to_frozen
+# ---------------------------------------------------------------------------
+
+
+def test_from_modules_is_trainable(grid):
+    """from_modules produces a trainable PSFDict."""
+    psf = GaussPSF(grid=grid, band=S2Band.B02, sigma=1.0)
+    psf_dict = PSFDict.from_modules({S2Band.B02: psf})
+    assert psf_dict.is_trainable
+
+
+def test_from_kernels_is_not_trainable(gauss_b02):
+    """from_kernels produces a frozen (non-trainable) PSFDict."""
+    psf_dict = PSFDict.from_kernels({S2Band.B02: gauss_b02.to_dataarray()})
+    assert not psf_dict.is_trainable
+
+
+def test_get_module_returns_psf(grid):
+    """get_module returns the original PSFModule."""
+    psf = GaussPSF(grid=grid, band=S2Band.B02, sigma=1.0)
+    psf_dict = PSFDict.from_modules({S2Band.B02: psf})
+    assert psf_dict.get_module(S2Band.B02) is psf
+
+
+def test_get_module_raises_on_frozen(gauss_b02):
+    """get_module raises RuntimeError on a frozen PSFDict."""
+    psf_dict = PSFDict.from_kernels({S2Band.B02: gauss_b02.to_dataarray()})
+    with pytest.raises(RuntimeError):
+        psf_dict.get_module(S2Band.B02)
+
+
+def test_to_frozen_produces_frozen(grid):
+    """to_frozen converts a trainable PSFDict to a frozen one."""
+    psf = GaussPSF(grid=grid, band=S2Band.B02, sigma=1.0)
+    trainable = PSFDict.from_modules({S2Band.B02: psf})
+    frozen = trainable.to_frozen()
+    assert not frozen.is_trainable
+    assert S2Band.B02 in frozen
+
+
+def test_to_frozen_idempotent_on_frozen(gauss_b02):
+    """to_frozen on a frozen PSFDict returns the same object."""
+    psf_dict = PSFDict.from_kernels({S2Band.B02: gauss_b02.to_dataarray()})
+    assert psf_dict.to_frozen() is psf_dict
+
+
+def test_to_dataarray_raises_on_trainable(grid):
+    """to_dataarray raises RuntimeError in trainable mode."""
+    psf = GaussPSF(grid=grid, band=S2Band.B02, sigma=1.0)
+    psf_dict = PSFDict.from_modules({S2Band.B02: psf})
+    with pytest.raises(RuntimeError):
+        psf_dict.to_dataarray(S2Band.B02)
 
 
 # ---------------------------------------------------------------------------
@@ -107,10 +150,16 @@ def test_bands_sorted(psf_dict):
 
 
 def test_bands_sorted_regardless_of_input_order(grid):
-    """Bands must be sorted even when PSFModules are passed in reverse order."""
+    """Bands must be sorted even when passed in reverse order."""
     psf_b03 = GaussPSF(grid=grid, band=S2Band.B03, sigma=1.0)
     psf_b02 = GaussPSF(grid=grid, band=S2Band.B02, sigma=1.0)
-    assert PSFDict([psf_b03, psf_b02]).bands == [S2Band.B02, S2Band.B03]
+    psf_dict = PSFDict.from_kernels(
+        {
+            S2Band.B03: psf_b03.to_dataarray(),
+            S2Band.B02: psf_b02.to_dataarray(),
+        }
+    )
+    assert psf_dict.bands == [S2Band.B02, S2Band.B03]
 
 
 # ---------------------------------------------------------------------------
@@ -171,43 +220,55 @@ def test_repr_contains_class_name(psf_dict):
 
 
 # ---------------------------------------------------------------------------
-# training_input
+# init_psf_dict
 # ---------------------------------------------------------------------------
 
 
-def test_training_input_bands(scene, psf_grids):
-    """training_input must produce one PSF per band present in the scene."""
-    psf_dict = PSFDict.training_input(
-        scene=scene,
-        psf_type=GaussPSF,
-        psf_init_params={"sigma": 1.0},
-        psf_grids=psf_grids,
+def test_init_psf_dict_bands(psf_grids):
+    """init_psf_dict produces one PSF per band in grids."""
+    psf_dict = init_psf_dict(
+        grids=psf_grids,
+        model=GaussPSF,
+        init_parameters={"sigma": 1.0},
     )
-    assert psf_dict.bands == scene.bands
+    assert psf_dict.bands == [S2Band.B02, S2Band.B03]
 
 
-def test_training_input_has_kernel_variable(scene, psf_grids):
-    """Each band Dataset from training_input must contain a 'kernel' variable."""
-    psf_dict = PSFDict.training_input(
-        scene=scene,
-        psf_type=GaussPSF,
-        psf_init_params={"sigma": 1.0},
-        psf_grids=psf_grids,
+def test_init_psf_dict_is_trainable(psf_grids):
+    """init_psf_dict produces a trainable PSFDict."""
+    psf_dict = init_psf_dict(
+        grids=psf_grids,
+        model=GaussPSF,
+        init_parameters={"sigma": 1.0},
     )
-    for band in psf_dict.bands:
-        assert "kernel" in psf_dict[band].data_vars
+    assert psf_dict.is_trainable
 
 
-def test_training_input_missing_grid_raises(scene):
-    """training_input must raise ConfigurationError when a band grid is missing."""
-    incomplete_grids: dict[SensorBand, PSFGrid] = {S2Band.B02: PSFGrid(res=0.01, n=11)}
-    with pytest.raises(ConfigurationError):
-        PSFDict.training_input(
-            scene=scene,
-            psf_type=GaussPSF,
-            psf_init_params={"sigma": 1.0},
-            psf_grids=incomplete_grids,
-        )
+def test_init_psf_dict_per_band_params(psf_grids):
+    """init_psf_dict accepts per-band parameter dicts."""
+    psf_dict = init_psf_dict(
+        grids=psf_grids,
+        model=GaussPSF,
+        init_parameters={S2Band.B02: {"sigma": 0.5}, S2Band.B03: {"sigma": 2.0}},
+    )
+    assert psf_dict.get_module(S2Band.B02).param_dict()["sigma"] == pytest.approx(
+        0.5, rel=1e-3
+    )
+    assert psf_dict.get_module(S2Band.B03).param_dict()["sigma"] == pytest.approx(
+        2.0, rel=1e-3
+    )
+
+
+def test_init_psf_dict_to_frozen_has_kernel(psf_grids):
+    """to_frozen on init_psf_dict result contains a kernel variable."""
+    psf_dict = init_psf_dict(
+        grids=psf_grids,
+        model=GaussPSF,
+        init_parameters={"sigma": 1.0},
+    )
+    frozen = psf_dict.to_frozen()
+    for band in frozen.bands:
+        assert "kernel" in frozen[band].data_vars
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +278,7 @@ def test_training_input_missing_grid_raises(scene):
 
 def test_params_single_combo_reads_attrs(gauss_b02):
     """params() reads from kernel attrs for a single-combo PSFDict."""
-    psf_dict = PSFDict([gauss_b02])
+    psf_dict = PSFDict.from_kernels({S2Band.B02: gauss_b02.to_dataarray()})
     p = psf_dict.params(S2Band.B02)
     assert p is not None
     assert "sigma" in p
@@ -226,7 +287,6 @@ def test_params_single_combo_reads_attrs(gauss_b02):
 
 def test_params_non_analytical_returns_none(grid):
     """params() returns None for a NonAnalyticalPSF (no adjeff:params in attrs)."""
-    import numpy as np
     from adjeff.core.non_analytical_psf import NonAnalyticalPSF
 
     psf = NonAnalyticalPSF(
@@ -239,8 +299,6 @@ def test_params_non_analytical_returns_none(grid):
 
 def test_params_multi_combo_reads_dataset_variables():
     """params() reads param_* Dataset variables for multi-combo PSFDicts."""
-    import numpy as np
-
     grid = PSFGrid(res=0.01, n=11)
     kernel_da = xr.DataArray(
         np.ones((2, grid.n, grid.n), dtype="float32"),
@@ -261,8 +319,6 @@ def test_params_multi_combo_reads_dataset_variables():
 
 def test_from_kernels_with_params_stores_variable():
     """from_kernels with params must add a param_sigma variable to the Dataset."""
-    import numpy as np
-
     grid = PSFGrid(res=0.01, n=11)
     kernel_da = xr.DataArray(
         np.ones((grid.n, grid.n), dtype="float32"),

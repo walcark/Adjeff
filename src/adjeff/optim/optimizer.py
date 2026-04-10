@@ -56,7 +56,7 @@ class OptimizerConfig:
 class _Optimizer(abc.ABC):
     """Base class for PSF optimizers.
 
-    Subclasses implement :meth:`_run_combo`.  This class handles all
+    Subclasses implement :meth:`_run_combo`. This class handles all
     generic logic: training-set construction, parameter snapshots,
     the outer combo loop, early-stopping helpers, and PSFDict assembly.
 
