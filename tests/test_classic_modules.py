@@ -1,7 +1,6 @@
 """Tests for the 5S forward and inverse modules: Unif2Toa and Toa2Unif."""
 
 import numpy as np
-import pytest
 import xarray as xr
 
 from adjeff.core import ImageDict, S2Band
