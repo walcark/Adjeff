@@ -130,6 +130,20 @@ class _Config(BaseModel):
         }
 
     @property
+    def _stable_hash_repr(self) -> dict[str, object]:
+        """Return a primitive-only repr suitable for stable cache keying.
+
+        Converts DataArray fields to plain Python lists so that
+        ``joblib.hash`` produces the same result regardless of the Python
+        environment (e.g. CPU vs GPU builds).
+        """
+        result: dict[str, object] = {
+            k: v.values.tolist() for k, v in self._arrays.items()
+        }
+        result.update(self._non_arrays)
+        return result
+
+    @property
     def dataset(self) -> xr.Dataset:
         """Return the atmosphere parameters as a dataset."""
         return xr.Dataset(self._arrays)

@@ -110,14 +110,14 @@ class PSFConvModule(TrainableSceneModule):
             else:
                 kernel_da = self._psf_dict.kernel(band)
             rho_env = fft_convolve_2D(
-                ds[self._conv_input],
+                ds[self._conv_input].compute(),
                 kernel_da,
                 padding="reflect",
                 conv_type="same",
                 device=self._device,
             )
             ds[self.output_vars[0]] = self._formula(
-                **{k: ds[k] for k in self.required_vars},
+                **{k: ds[k].compute() for k in self.required_vars},
                 rho_env=rho_env,
             )
         return scene

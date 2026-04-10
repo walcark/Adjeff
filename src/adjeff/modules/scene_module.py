@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from abc import abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
@@ -12,6 +13,7 @@ import torch.nn as nn
 import xarray as xr
 
 from adjeff.utils import CacheStore
+from adjeff.utils._config import _Config
 
 if TYPE_CHECKING:
     from adjeff.core import ImageDict
@@ -135,9 +137,32 @@ class SceneModule:
             )
         )
 
+    # Parameters excluded from auto-detection: they're infrastructure, not
+    # computation config (don't affect the output value for given inputs).
+    _INFRA_PARAMS: ClassVar[frozenset[str]] = frozenset(
+        ("self", "cache", "chunks", "deduplicate_dims")
+    )
+
     def _config_dict(self) -> dict[str, object]:
-        """Return frozen configuration for cache keying."""
-        return {}
+        """Return frozen configuration for cache keying.
+
+        Auto-detects public ``__init__`` parameters stored as same-named
+        instance attributes, excluding infrastructure params (``cache``,
+        ``chunks``, ``deduplicate_dims``).
+
+        Subclasses with privately-stored params (e.g. ``_psf_dict``) must
+        override this method.
+        """
+        sig = inspect.signature(type(self).__init__)
+        raw = {
+            name: getattr(self, name)
+            for name in sig.parameters
+            if name not in self._INFRA_PARAMS and hasattr(self, name)
+        }
+        return {
+            k: v._stable_hash_repr if isinstance(v, _Config) else v
+            for k, v in raw.items()
+        }
 
     def _input_hashes(self, scene: "ImageDict") -> dict[str, str]:
         """Return a hash per (band, variable) pair in the input scene."""
@@ -185,6 +210,10 @@ class TrainableSceneModule(nn.Module, SceneModule):
     def __init__(self, cache: CacheStore | None = None) -> None:
         nn.Module.__init__(self)
         SceneModule.__init__(self, cache=cache)
+
+    def forward(self, scene: "ImageDict") -> "ImageDict":
+        """Delegate to :meth:`SceneModule.forward` (resolves MRO ambiguity)."""
+        return SceneModule.forward(self, scene)
 
     @property
     @abstractmethod
