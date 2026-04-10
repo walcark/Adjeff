@@ -1,21 +1,18 @@
-"""Base optimizer and L-BFGS implementation for PSF training."""
+"""Outer optimization loop and pipeline orchestrators."""
 
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
-from typing import cast
 
 import structlog
-import torch
-import torch.nn as nn
 import xarray as xr
 
 from adjeff.core import PSFDict
 from adjeff.core.bands import SensorBand
 from adjeff.modules.scene_module import TrainableSceneModule
 
-from .loss import Loss
+from ._combo_stage import _ComboStage, restore_all_params, save_all_params
+from ._config import OptimizerConfig
 from .training_set import (
     TrainingImages,
     TrainingSet,
@@ -26,46 +23,19 @@ from .training_set import (
 logger = structlog.get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class OptimizerConfig:
-    """Shared configuration for all PSF optimizers.
-
-    Parameters
-    ----------
-    min_steps : int
-        Minimum steps before early stopping is allowed.
-    max_steps : int
-        Hard upper bound on the number of steps.
-    loss_relative_tolerance : float
-        Stop when ``|Δloss / previous_loss| ≤ loss_relative_tolerance``.
-    loss : Loss
-        Loss function instance.
-    """
-
-    min_steps: int
-    max_steps: int
-    loss_relative_tolerance: float
-    loss: Loss
-
-
-# ---------------------------------------------------------------------------
-# Base optimizer
-# ---------------------------------------------------------------------------
-
-
 class _Optimizer(abc.ABC):
-    """Base class for PSF optimizers.
+    """Outer optimization loop over atmospheric combos.
 
-    Subclasses implement :meth:`_run_combo`. This class handles all
-    generic logic: training-set construction, parameter snapshots,
-    the outer combo loop, early-stopping helpers, and PSFDict assembly.
+    Handles combo building, parameter snapshots, kernel stacking, and
+    logging.  Subclasses implement :meth:`_run_combo` to specify what
+    happens within each combo.
 
     Parameters
     ----------
     train_images : TrainingImages
         Collection of training scenes.
     config : OptimizerConfig
-        Shared optimizer settings.
+        Configuration (used for logging and pipeline synthesis).
     device : str
         PyTorch device for tensor operations.
     """
@@ -79,16 +49,13 @@ class _Optimizer(abc.ABC):
         self.train_images = train_images
         self.config = config
         self.device = device
-
-        self.loss_history: list[float] = []
-        self.params_history: list[dict[str, dict[str, torch.Tensor]]] = []
-        self.nloop: int = 0
-        self.previous_loss: float = float("inf")
         self.best_loss: float = float("inf")
+        self.nloop: int = 0
 
-    # ------------------------------------------------------------------
-    # Public entry point
-    # ------------------------------------------------------------------
+    def _reset_state(self) -> None:
+        """Reset per-combo logging counters."""
+        self.best_loss = float("inf")
+        self.nloop = 0
 
     def run(self, model: TrainableSceneModule) -> PSFDict:
         """Optimise all PSFs in *model* and return a :class:`PSFDict`.
@@ -112,7 +79,7 @@ class _Optimizer(abc.ABC):
         n_combos = len(combo_sets)
         logger.info("Combo training sets ready.", n_combos=n_combos)
 
-        initial_params = self._save_all_params(model)
+        initial_params = save_all_params(model)
 
         kernel_pieces: dict[
             str, list[tuple[dict[str, float], xr.DataArray]]
@@ -129,9 +96,8 @@ class _Optimizer(abc.ABC):
                 progress=f"{combo_idx + 1}/{n_combos}",
             )
 
-            self._restore_all_params(model, initial_params)
+            restore_all_params(model, initial_params)
             self._reset_state()
-
             self._run_combo(model, band_sets, combo_str)
 
             for band_id, psf in model.psf_modules.items():
@@ -170,10 +136,6 @@ class _Optimizer(abc.ABC):
             params=stacked_params if stacked_params else None,
         )
 
-    # ------------------------------------------------------------------
-    # Abstract — implemented by each concrete optimizer
-    # ------------------------------------------------------------------
-
     @abc.abstractmethod
     def _run_combo(
         self,
@@ -183,93 +145,8 @@ class _Optimizer(abc.ABC):
     ) -> None:
         """Run one optimisation for a single atmospheric combo.
 
-        Called after the model has been reset to initial parameters and
-        :meth:`_reset_state` has been called.  Should update the model
-        in-place and set ``self.best_loss`` and ``self.nloop`` via
-        :meth:`record` and :meth:`improved_loss_or_under_min_steps`.
+        Must set ``self.best_loss`` and ``self.nloop`` for logging.
         """
-
-    # ------------------------------------------------------------------
-    # Loss aggregation
-    # ------------------------------------------------------------------
-
-    def _total_loss(
-        self,
-        model: TrainableSceneModule,
-        band_sets: list[tuple[SensorBand, TrainingSet]],
-    ) -> torch.Tensor:
-        """Sum of losses over all bands for a single atmospheric combo."""
-        losses = []
-        for band, ts in band_sets:
-            _band = band
-
-            def _fwd(
-                inputs: dict[str, torch.Tensor],
-                _b: SensorBand = _band,
-            ) -> torch.Tensor:
-                return model.forward_band(_b, **inputs)
-
-            losses.append(self.config.loss(_fwd, ts))
-        return torch.stack(losses).sum()
-
-    # ------------------------------------------------------------------
-    # Parameter save / restore
-    # ------------------------------------------------------------------
-
-    def _save_all_params(
-        self, model: TrainableSceneModule
-    ) -> dict[str, dict[str, torch.Tensor]]:
-        """Return a snapshot of all PSF unconstrained parameters."""
-        return {
-            band_id: {
-                name: p.data.clone()
-                for name, p in cast(nn.Module, psf).named_parameters()
-            }
-            for band_id, psf in model.psf_modules.items()
-        }
-
-    def _restore_all_params(
-        self,
-        model: TrainableSceneModule,
-        saved: dict[str, dict[str, torch.Tensor]],
-    ) -> None:
-        """Restore all PSF parameters from a snapshot."""
-        with torch.no_grad():
-            for band_id, psf in model.psf_modules.items():
-                for name, p in cast(nn.Module, psf).named_parameters():
-                    p.copy_(saved[band_id][name])
-
-    # ------------------------------------------------------------------
-    # State helpers
-    # ------------------------------------------------------------------
-
-    def _reset_state(self) -> None:
-        """Reset per-combo counters before each run."""
-        self.loss_history = []
-        self.params_history = []
-        self.nloop = 0
-        self.previous_loss = float("inf")
-        self.best_loss = float("inf")
-
-    def record(
-        self,
-        loss: float,
-        params: dict[str, dict[str, torch.Tensor]],
-    ) -> None:
-        """Append current loss and parameter snapshot to history."""
-        self.loss_history.append(loss)
-        self.params_history.append(params)
-
-    def improved_loss_or_under_min_steps(self, loss: float) -> bool:
-        """Return True if training should continue."""
-        if self.nloop < self.config.min_steps:
-            return True
-        rel = (self.previous_loss - loss) / max(abs(self.previous_loss), 1e-9)
-        return abs(rel) > self.config.loss_relative_tolerance
-
-    # ------------------------------------------------------------------
-    # Training-set construction
-    # ------------------------------------------------------------------
 
     def _build_combo_sets(
         self, model: TrainableSceneModule
@@ -306,10 +183,6 @@ class _Optimizer(abc.ABC):
             for combo in combos
         ]
 
-    # ------------------------------------------------------------------
-    # PSFDict assembly helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _stack_param(
         combo_vals: list[tuple[dict[str, float], float]],
@@ -336,3 +209,87 @@ class _Optimizer(abc.ABC):
                 da = da.expand_dims({dim: [val]})
             datasets.append(da.to_dataset(name="kernel"))
         return xr.combine_by_coords(datasets, combine_attrs="drop")["kernel"]
+
+
+class SingleStageOptimizer(_Optimizer):
+    """Optimizer wrapping a single :class:`_ComboStage`.
+
+    Parameters
+    ----------
+    stage : _ComboStage
+        The optimization stage to run for each combo.
+    train_images : TrainingImages
+        Collection of training scenes.
+    device : str
+        PyTorch device.
+    """
+
+    def __init__(
+        self,
+        stage: _ComboStage,
+        train_images: TrainingImages,
+        device: str = "cuda",
+    ) -> None:
+        super().__init__(train_images, stage.config, device=device)
+        self.stage = stage
+
+    def _run_combo(
+        self,
+        model: TrainableSceneModule,
+        band_sets: list[tuple[SensorBand, TrainingSet]],
+        combo_str: str,
+    ) -> None:
+        """Delegate to the wrapped stage."""
+        self.stage._reset_state()
+        self.stage._run_combo(model, band_sets, combo_str)
+        self.best_loss = self.stage.best_loss
+        self.nloop = self.stage.nloop
+
+
+class OptimizerPipeline(_Optimizer):
+    """Chains multiple :class:`_ComboStage` instances within each combo.
+
+    Each stage is reset and run in order.  The pipeline's ``best_loss`` is
+    the minimum across all stages; ``nloop`` is the total step count.
+
+    Parameters
+    ----------
+    stages : list[_ComboStage]
+        Stages to run sequentially per combo.
+    train_images : TrainingImages
+        Collection of training scenes.
+    device : str
+        PyTorch device.
+    """
+
+    def __init__(
+        self,
+        stages: list[_ComboStage],
+        train_images: TrainingImages,
+        device: str = "cuda",
+    ) -> None:
+        config = OptimizerConfig(
+            min_steps=sum(s.config.min_steps for s in stages),
+            max_steps=sum(s.config.max_steps for s in stages),
+            loss_relative_tolerance=stages[-1].config.loss_relative_tolerance,
+            loss=stages[-1].config.loss,
+        )
+        super().__init__(train_images, config, device=device)
+        self.stages = stages
+
+    def _run_combo(
+        self,
+        model: TrainableSceneModule,
+        band_sets: list[tuple[SensorBand, TrainingSet]],
+        combo_str: str,
+    ) -> None:
+        """Run all stages sequentially."""
+        total_nloop = 0
+        total_best_loss = float("inf")
+        for stage in self.stages:
+            stage._reset_state()
+            stage._run_combo(model, band_sets, combo_str)
+            total_nloop += stage.nloop
+            total_best_loss = min(total_best_loss, stage.best_loss)
+        self.best_loss = total_best_loss
+        self.nloop = total_nloop
