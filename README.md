@@ -60,7 +60,7 @@ The PSF shape and width depend on the aerosol optical thickness (AOT), the geome
 The library provides:
 
 - **Radiative quantity samplers** — six `SceneModule` subclasses that call [Smart-G](https://github.com/hygeos/smartg) (a GPU Monte Carlo radiative transfer code) to compute $T_{dir\downarrow}$, $T_{dir\uparrow}$, $T_{dif\downarrow}$, $T_{dif\uparrow}$, $\rho_{atm}$, and $s$.
-- **TOA simulation** — `SmartgSampler_Rho_toa` combines the radiative quantities with a convolution under the PSF symmetry assumption to produce $\rho_{toa}$.
+- **TOA simulation** — `SmartgSampler_Rho_toa_sym` combines the radiative quantities with a convolution under the PSF symmetry assumption to produce $\rho_{toa}$.
 - **PSF models** — analytical (Gaussian) and non-analytical PSF representations, usable independently for convolution experiments.
 - **Parameter sweep engine** — efficient vectorised sweeps over atmospheric and angular parameter grids, with automatic spatial deduplication to avoid recomputing identical configurations.
 
@@ -194,7 +194,7 @@ print(scene[S2Band.B02]["rho_atm"])     # dims: (wl, aot)
 
 ```python
 from adjeff.core import gaussian_image_dict
-from adjeff.modules.samplers import SmartgSampler_Rho_toa
+from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
 
 # Create an analytical Gaussian surface (sigma=0.5 km, 10 m resolution)
 scene = gaussian_image_dict(
@@ -207,7 +207,7 @@ scene = gaussian_image_dict(
 )
 
 # Simulate TOA (requires GPU)
-module = SmartgSampler_Rho_toa(
+module = SmartgSampler_Rho_toa_sym(
     atmo_config=atmo,
     geo_config=geo,
     spectral_config=spectral,
@@ -302,7 +302,7 @@ scene = pipeline(scene)
 | `SmartgSampler_Tdif_up` | `tdif_up` | Diffuse upward transmittance |
 | `SmartgSampler_Rho_atm` | `rho_atm` | Atmospheric path reflectance |
 | `SmartgSampler_Sph_alb` | `sph_alb` | Spherical albedo |
-| `SmartgSampler_Rho_toa` | `rho_toa` | TOA reflectance (requires `rho_s`) |
+| `SmartgSampler_Rho_toa_sym` | `rho_toa` | TOA reflectance (requires `rho_s`) |
 | `RadiativePipeline` | all six above | Convenience class chaining all samplers |
 
 ### xarray accessor
