@@ -6,6 +6,8 @@ Each subclass implements the PSFModule protocol (forward + to_dataarray).
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -218,7 +220,7 @@ class VoigtPSF(nn.Module, PSFModule):
         L = 1.0 / (1.0 + (r / self.gamma.value) ** 2)
         eta = self._eta()
         V = eta * L + (1.0 - eta) * G
-        return V / V.sum()
+        return cast(torch.Tensor, V / V.sum())
 
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "gamma": <value>}``."""
