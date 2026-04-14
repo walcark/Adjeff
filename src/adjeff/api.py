@@ -28,7 +28,7 @@ import xarray as xr
 
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import (
-    ImageDict,  # noqa: E402 (keep after TYPE_CHECKING block)
+    ImageDict,  # noqa: E402
     PSFDict,
     PSFGrid,
     SensorBand,
@@ -44,8 +44,6 @@ from adjeff.optim import Loss, OptimizerPipeline, TrainingImages
 from adjeff.optim.adam_optimizer import AdamConfig, _AdamStage
 from adjeff.optim.lbfgs_optimizer import LBFGSConfig, _LBFGSStage
 from adjeff.utils import CacheStore
-
-M = TypeVar("M", bound=PSFConvModule)
 
 # ---------------------------------------------------------------------------
 # Internal helper
@@ -291,6 +289,8 @@ def make_full_config(
 # ---------------------------------------------------------------------------
 # Model factory
 # ---------------------------------------------------------------------------
+
+M = TypeVar("M", bound=PSFConvModule)
 
 
 def make_model(
