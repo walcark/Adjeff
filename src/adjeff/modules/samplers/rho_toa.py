@@ -205,7 +205,9 @@ def rho_toa(
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
 
-    # Adapt output of Smart-G simulation
+    # Adapt output of the Smart-G simulation: (i the Azimuth and Zenith angles
+    # axes of size 1 are squeezed ; (ii) the sensor index is rename as r for
+    # radial distance and (iii) ensure that the wavelength axis exists.
     result = utils.adapt_smartg_output(
         result,
         squeeze=["Azimuth angles", "Zenith angles"],
@@ -216,20 +218,24 @@ def rho_toa(
             "wavelength": atm.axes["wavelength"],
         },
     )
-    result = batch.unstack(
-        xr.DataArray(
-            result.values,
-            dims=["r", "index"],
-            coords={"r": r_vals.coords["r"], "index": batch.index_coord},
-        )
+
+    # Transform the wavelength axis into index to unstack with batch
+    result = utils.adapt_smartg_output(
+        result,
+        rename={"wavelength": "index"},
+        coords={"index": batch.index_coord},
     )
+
+    # Unstack index to restore original coordinates
+    result = batch.unstack(result)
 
     # Add pre-computed rho_atm to avoid simulation noise
     result = result + rho_s["rho_atm"]
 
-    # Reconstruct 2-D field from radial profile
-    # `.compute()` materialises dask chunks introduced by `+ rho_atm` above,
-    # because `to_field` uses `apply_ufunc` without dask support.
+    # Reconstruct 2-D field from radial profile: `.compute()` materialises
+    # dask chunks introduced by `+ rho_atm` above, because `to_field` uses
+    # `apply_ufunc` without dask support.
+    # TODO: add dask support to apply_ufunc with parallelize=True.
     return xr.DataArray(
         result.compute().adjeff.to_field(rho_s).sel(wl=band.wl_nm)
     )
