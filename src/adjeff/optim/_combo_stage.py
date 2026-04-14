@@ -32,15 +32,15 @@ def save_all_params(
     }
 
 
+@torch.no_grad()
 def restore_all_params(
     model: TrainableSceneModule,
     saved: dict[str, dict[str, torch.Tensor]],
 ) -> None:
     """Restore all PSF parameters from a snapshot."""
-    with torch.no_grad():
-        for band_id, psf in model.psf_modules.items():
-            for name, p in cast(nn.Module, psf).named_parameters():
-                p.copy_(saved[band_id][name])
+    for band_id, psf in model.psf_modules.items():
+        for name, p in cast(nn.Module, psf).named_parameters():
+            p.copy_(saved[band_id][name])
 
 
 # ---------------------------------------------------------------------------
