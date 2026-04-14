@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Rho_toa(SceneModuleSweep):
+class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
     """Compute rho_toa by radial sampling under the symmetric PSF assumption.
 
     For each band, the module:

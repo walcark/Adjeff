@@ -444,18 +444,8 @@ For very large satellite images (tens of thousands × tens of thousands of pixel
 - Module operations are expressed as Dask task graphs and executed on demand;
 - Memory pressure is bounded regardless of image size.
 
-### (ii) PSF optimisation on training landscapes
-
-The current library provides forward simulation only. A key next step is a PSF optimisation module:
-- A differentiable forward model (PSF + convolution + radiative coupling) expressed as a `torch.nn.Module`;
-- An optimiser that fits the PSF parameters to observed $(\rho_s, \rho_{toa})$ pairs from training landscapes;
-- Support for batch optimisation over multiple scenes and illumination conditions.
-
-### (iii) Jupyter notebook documentation
+### (ii) Jupyter notebook documentation
 
 Step-by-step tutorials covering:
-- Creating and displaying surface images
-- Configuring atmospheric and geometric parameters
-- Running radiative quantity samplers and interpreting the output
-- Simulating TOA reflectance and performing basic atmospheric correction
+- Loading MAJA L2A processor output data and running module on the MAJA output attributes.
 - Building custom `SceneModule` subclasses

@@ -32,6 +32,9 @@ docs/_build
 docs/source/__pycache__/
 docs/source/*.pyc
 
+# Notebooks cached data
+notebooks/adjeff_cache/*
+
 # Scripts
 scripts/
 

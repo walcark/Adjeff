@@ -39,7 +39,7 @@ from adjeff.exceptions import MissingVariableError
 from adjeff.modules.classic.toa_to_unif import Toa2Unif
 from adjeff.modules.models.psf_conv_module import PSFConvModule
 from adjeff.modules.samplers.radiatives import RadiativePipeline
-from adjeff.modules.samplers.rho_toa import SmartgSampler_Rho_toa
+from adjeff.modules.samplers.rho_toa import SmartgSampler_Rho_toa_sym
 from adjeff.optim import Loss, OptimizerPipeline, TrainingImages
 from adjeff.optim.adam_optimizer import AdamConfig, _AdamStage
 from adjeff.optim.lbfgs_optimizer import LBFGSConfig, _LBFGSStage
@@ -145,7 +145,7 @@ class FullConfig(TypedDict):
 
     Keys match the keyword arguments expected by
     :class:`~adjeff.modules.samplers.RadiativePipeline` and
-    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa`, so the dict
+    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa_sym`, so the dict
     can be unpacked directly with ``**cfg``.
     """
 
@@ -243,7 +243,7 @@ def make_full_config(
     The returned dict has keys ``"atmo_config"``, ``"geo_config"``,
     ``"spectral_config"`` and can be unpacked directly with ``**cfg`` into
     :class:`~adjeff.modules.samplers.RadiativePipeline` and
-    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa`.
+    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa_sym`.
 
     Parameters
     ----------
@@ -391,7 +391,7 @@ def run_forward_pipeline(
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
 
     Chains :class:`~adjeff.modules.samplers.RadiativePipeline`,
-    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa`, and
+    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa_sym`, and
     :class:`~adjeff.modules.classic.Toa2Unif` in sequence.
 
     The config arguments match the keys of :func:`make_full_config`, so the
@@ -438,7 +438,7 @@ def run_forward_pipeline(
         cache=cache,
     )
     radiative = RadiativePipeline(**common)  # type: ignore[arg-type]
-    rho_toa = SmartgSampler_Rho_toa(**common, nr=nr, n_ph=n_ph)  # type: ignore[arg-type]
+    rho_toa = SmartgSampler_Rho_toa_sym(**common, nr=nr, n_ph=n_ph)  # type: ignore[arg-type]
     toa2unif = Toa2Unif()
 
     def _run(s: ImageDict) -> ImageDict:
