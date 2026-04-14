@@ -6,13 +6,34 @@ from typing import ClassVar
 import xarray as xr
 
 from adjeff.core import ImageDict, SensorBand
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils import CacheStore
 
 from ..scene_module import SceneModule
 
 
 class ProductLoader(SceneModule):
-    """Load configurations from earth observation products."""
+    """Load configurations from earth observation products.
+
+    Parameters
+    ----------
+    product_path : Path
+        The folder containing the product data.
+    mnt_path : Path
+        The folder storing the DEM (Digital Elevation Model) for
+        the data of interest.
+    href : float [default=2.0]
+        The height scale of the aerosol in the atmosphere. This quantity
+        is defined for an exponentially decreasing aerosol optical thickness
+        with elevation.
+    as_map : bool [default=False]
+        Whether to load 2D parameters as 2D map (True) or as spatially
+        averaged (False). For instance, Aerosol Optical Thickness and DEM are
+        generally stored as 2D varying maps, but may need to be average for
+        some processing purpose.
+    cache : CacheStore | None [default=None]
+        Whether to cache the loaded data for a next session.
+    """
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = [
@@ -56,10 +77,15 @@ class ProductLoader(SceneModule):
             else ImageDict({b: xr.Dataset() for b in self.bands})
         )
         for band in scene.bands:
-            res = scene[band]["rho_s"].adjeff.res
             scene[band]["rh"] = self.rh()
-            scene[band]["aot"] = self.aot(res=res, ref=scene[band]["rho_s"])
-            scene[band]["h"] = self.h(res=res, ref=scene[band]["rho_s"])
+            try:
+                scene[band]["aot"] = self.aot(ref=scene[band]["rho_s"])
+                scene[band]["h"] = self.h(ref=scene[band]["rho_s"])
+            except xr.CoordinateValidationError as e:
+                raise ConfigurationError(
+                    "Shape of input scene not consistent "
+                    "with MAJA 2D output format."
+                ) from e
             scene[band]["href"] = self.href()
             vza_vaa = self.vza_vaa(band)
             sza_saa = self.sza_saa()
@@ -86,26 +112,26 @@ class ProductLoader(SceneModule):
             coords=dict(href=[self.h_ref]),
         )
 
-    def aot(self, res: float, ref: xr.DataArray) -> xr.DataArray:
+    def aot(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the AOT, either as map or average."""
-        ...
+        raise NotImplementedError
 
-    def h(self, res: float, ref: xr.DataArray) -> xr.DataArray:
+    def h(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the MNT, either as map or average."""
-        ...
+        raise NotImplementedError
 
     def rh(self) -> xr.DataArray:
         """Return the relative humidity in percent."""
-        ...
+        raise NotImplementedError
 
     def vza_vaa(self, band: SensorBand) -> tuple[xr.DataArray, xr.DataArray]:
         """Return the Viewing Zenith and Azimuth angles."""
-        ...
+        raise NotImplementedError
 
     def sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
         """Return the Sun Zenith and Azimuth angles."""
-        ...
+        raise NotImplementedError
 
     def species(self) -> dict[str, float]:
         """Return the species proportion in the Atmosphere."""
-        ...
+        raise NotImplementedError
