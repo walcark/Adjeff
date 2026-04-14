@@ -83,8 +83,8 @@ def adapt_smartg_output(
     *,
     squeeze: list[str] | None = None,
     rename: dict[str, str] | None = None,
-    coords: dict[str, np.ndarray] | None = None,
-    expand: dict[str, np.ndarray] | None = None,
+    coords: dict[str, np.ndarray | xr.DataArray] | None = None,
+    expand: dict[str, np.ndarray | xr.DataArray] | None = None,
 ) -> xr.DataArray:
     """Normalize a Smart-G output DataArray.
 
@@ -102,13 +102,13 @@ def adapt_smartg_output(
 
     Parameters
     ----------
-    squeeze:
+    squeeze : list[str] | none [default=None]
         Dims to squeeze and drop if present (e.g. ``"Azimuth angles"``).
-    rename:
+    rename : rename[str, str] | None [default=None]
         SmartG dim name → target name. Only applied if the source dim exists.
-    coords:
+    coords : dict[str, np.ndarray | xr.DataArray] | None [default=None]
         Coordinates to assign after renaming.
-    expand:
+    expand : dict[str, np.ndarray | xr.DataArray] | None [default=None]
         Target dim → values. Expands the dim if absent.
     """
     for dim in squeeze or []:
