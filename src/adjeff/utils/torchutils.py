@@ -1,7 +1,5 @@
 """Define useful classes and methods for PyTorch usage."""
 
-from typing import cast
-
 import torch
 import torch.nn as nn
 
@@ -198,7 +196,7 @@ def radial_weights(dists: torch.Tensor) -> torch.Tensor:
         raise ValueError("dists must contain at least one non-zero value.")
     min_dist = dists_non_zero.min()
     perimeter = 2 * torch.pi * torch.maximum(min_dist, dists)
-    return cast(torch.Tensor, 1.0 / perimeter)
+    return 1.0 / perimeter  # type: ignore[no-any-return, unused-ignore]
 
 
 def radial_mask(
