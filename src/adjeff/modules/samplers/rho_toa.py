@@ -65,7 +65,6 @@ class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
         self,
         atmo_config: atmo.AtmoConfig,
         geo_config: atmo.GeoConfig,
-        spectral_config: atmo.SpectralConfig,
         remove_rayleigh: bool,
         afgl_type: str = "afgl_exp_h8km",
         nr: int = 100,
