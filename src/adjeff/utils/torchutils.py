@@ -194,7 +194,8 @@ def radial_weights(dists: torch.Tensor) -> torch.Tensor:
     dists_non_zero = dists[dists > 0]
     if dists_non_zero.numel() == 0:
         raise ValueError("dists must contain at least one non-zero value.")
-    min_dist = dists_non_zero.min()
+    threshold = 1e-3
+    min_dist = dists_non_zero[dists_non_zero > threshold].min()
     perimeter = 2 * torch.pi * torch.maximum(min_dist, dists)
     return 1.0 / perimeter  # type: ignore[no-any-return, unused-ignore]
 
