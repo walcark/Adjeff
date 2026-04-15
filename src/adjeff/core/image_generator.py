@@ -74,7 +74,7 @@ def _gaussian_data(
     rho_max: float,
 ) -> np.ndarray:
     return rho_min + (rho_max - rho_min) * np.exp(
-        -(coords["x"] ** 2 + coords["y"] ** 2) / sigma**2
+        -(coords["x"] ** 2 + coords["y"] ** 2) / (2 * sigma**2)
     )
 
 
