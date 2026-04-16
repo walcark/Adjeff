@@ -61,16 +61,34 @@ class AdjeffDataArrayAccessor:
     # Spatial
     # ------------------------------------------------------------------
 
+    def _x_coord_name(self) -> str:
+        """Return the name of the x spatial coordinate.
+
+        Tries ``"x"`` first, then ``"x_psf"`` as a fallback for PSF kernels.
+
+        Raises
+        ------
+        ValueError
+            If neither ``"x"`` nor ``"x_psf"`` is present in the coordinates.
+        """
+        for name in ("x", "x_psf"):
+            if name in self._da.coords:
+                return name
+        raise ValueError(
+            "No spatial x-coordinate found. "
+            "Expected 'x' or 'x_psf' in coordinates."
+        )
+
     @property
     def res(self) -> float:
         """Pixel size in coordinate units, inferred from the x-coordinate."""
-        x = self._da.coords["x"].values
+        x = self._da.coords[self._x_coord_name()].values
         return float(x[1] - x[0])
 
     @property
     def n(self) -> int:
-        """Number of pixels on the ``x`` dimension."""
-        return len(self._da.coords["x"])
+        """Number of pixels on the x spatial dimension."""
+        return len(self._da.coords[self._x_coord_name()])
 
     # ------------------------------------------------------------------
     # Radial analysis
