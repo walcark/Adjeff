@@ -309,7 +309,7 @@ class AdjeffDataArrayAccessor:
         xr.DataArray
             The binned DataArray.
         """
-        data = self._da.data
+        data = np.asarray(self._da.data)
 
         mini, maxi = np.nanmin(data), np.nanmax(data)
         bins = np.linspace(mini, maxi, n_bins)
