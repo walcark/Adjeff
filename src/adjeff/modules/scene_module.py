@@ -139,8 +139,12 @@ class SceneModule:
 
     # Parameters excluded from auto-detection: they're infrastructure, not
     # computation config (don't affect the output value for given inputs).
+    # Note: deduplicate_dims is intentionally NOT excluded — it changes the
+    # shape of the output (spatial broadcast vs parameter sweep dimensions),
+    # so two runs with different deduplicate_dims must produce distinct cache
+    # entries.
     _INFRA_PARAMS: ClassVar[frozenset[str]] = frozenset(
-        ("self", "cache", "chunks", "deduplicate_dims")
+        ("self", "cache", "chunks")
     )
 
     def _config_dict(self) -> dict[str, object]:
