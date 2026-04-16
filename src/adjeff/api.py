@@ -32,12 +32,14 @@ from adjeff.core import (
     PSFDict,
     PSFGrid,
     SensorBand,
+    gaussian_image_dict,
     init_psf_dict,
 )
 from adjeff.core._psf import PSFModule
 from adjeff.exceptions import MissingVariableError
 from adjeff.modules.classic.toa_to_unif import Toa2Unif
 from adjeff.modules.models.psf_conv_module import PSFConvModule
+from adjeff.modules.samplers.psf_atm import SmartgSampler_PSF_Atm
 from adjeff.modules.samplers.radiatives import RadiativePipeline
 from adjeff.modules.samplers.rho_toa import SmartgSampler_Rho_toa_sym
 from adjeff.optim import Loss, OptimizerPipeline, TrainingImages
@@ -429,7 +431,7 @@ def run_forward_pipeline(
         Same type as *scene*, enriched with ``rho_toa``, radiative
         quantities, and ``rho_unif``.
     """
-    common = dict(
+    radiative = RadiativePipeline(
         atmo_config=atmo_config,
         geo_config=geo_config,
         spectral_config=spectral_config,
@@ -437,8 +439,15 @@ def run_forward_pipeline(
         afgl_type=afgl_type,
         cache=cache,
     )
-    radiative = RadiativePipeline(**common)  # type: ignore[arg-type]
-    rho_toa = SmartgSampler_Rho_toa_sym(**common, nr=nr, n_ph=n_ph)  # type: ignore[arg-type]
+    rho_toa = SmartgSampler_Rho_toa_sym(
+        atmo_config=atmo_config,
+        geo_config=geo_config,
+        remove_rayleigh=remove_rayleigh,
+        afgl_type=afgl_type,
+        cache=cache,
+        nr=nr,
+        n_ph=n_ph,
+    )
     toa2unif = Toa2Unif()
 
     def _run(s: ImageDict) -> ImageDict:
@@ -447,6 +456,91 @@ def run_forward_pipeline(
     if isinstance(scene, list):
         return [_run(s) for s in scene]
     return _run(scene)
+
+
+# ---------------------------------------------------------------------------
+# PSF sampling
+# ---------------------------------------------------------------------------
+
+
+def sample_psf_atm(
+    bands: list[SensorBand],
+    res_km: float,
+    n: int,
+    atmo_config: AtmoConfig,
+    geo_config: GeoConfig,
+    remove_rayleigh: bool = False,
+    afgl_type: str = "afgl_exp_h8km",
+    n_ph: int = int(1e6),
+    cache: CacheStore | None = None,
+) -> PSFDict:
+    """Sample the atmospheric PSF and return a frozen :class:`PSFDict`.
+
+    Internally builds a constant input scene to carry the spatial grid
+    (only ``res`` and ``n`` matter to the sampler — the reflectance values
+    are irrelevant), runs
+    :class:`~adjeff.modules.samplers.SmartgSampler_PSF_Atm`, then wraps the
+    resulting ``psf_atm`` DataArrays into a :class:`~adjeff.core.PSFDict`.
+
+    Requires a CUDA GPU (delegates to Smart-G).
+
+    Parameters
+    ----------
+    bands : list[SensorBand]
+        Sensor bands to simulate.
+    res_km : float
+        Pixel size [km] — defines the Smart-G Entity sampling grid.
+    n : int
+        Grid side in pixels (must be odd and ≥ 3).
+    atmo_config : AtmoConfig
+        Atmospheric parameters (may contain swept dimensions).
+    geo_config : GeoConfig
+        Geometric parameters (sza, vza, saa, vaa must be scalar per call).
+    remove_rayleigh : bool
+        Suppress Rayleigh scattering (default ``False``).
+    afgl_type : str
+        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
+    n_ph : int
+        Photon count per Smart-G run (default ``1e6``).
+    cache : CacheStore or None
+        Optional result cache.
+
+    Returns
+    -------
+    PSFDict
+        Frozen PSFDict with one ``kernel`` DataArray per band.
+        Extra atmospheric dimensions (``aot``, ``rh``, ...) are preserved.
+    """
+    scene = gaussian_image_dict(
+        sigma=res_km * n,
+        res_km=res_km,
+        rho_min=0.5,
+        rho_max=0.5,
+        bands=bands,
+        n=n,
+    )
+    sampler = SmartgSampler_PSF_Atm(
+        atmo_config=atmo_config,
+        geo_config=geo_config,
+        remove_rayleigh=remove_rayleigh,
+        afgl_type=afgl_type,
+        n_ph=n_ph,
+        cache=cache,
+    )
+    out = sampler(scene)
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6.8, 4.8))
+    for band in bands:
+        out[band]["psf_atm"].isel(aot=0).adjeff.radial().plot(
+            ax=ax, label=f"{band.wl_nm}"
+        )
+    plt.yscale("log")
+    plt.legend()
+    plt.show()
+    return PSFDict.from_kernels(
+        {band: out[band]["psf_atm"] for band in out.bands}
+    )
 
 
 # ---------------------------------------------------------------------------
