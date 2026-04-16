@@ -120,7 +120,7 @@ class _Optimizer(abc.ABC):
         for band_id, pieces in kernel_pieces.items():
             band: SensorBand = model.psf_modules[band_id].band
             stacked[band] = self._stack_kernels(pieces)
-            if n_combos > 1 and param_pieces[band_id]:
+            if param_pieces[band_id]:
                 stacked_params[band] = {
                     pname: self._stack_param(combo_vals)
                     for pname, combo_vals in param_pieces[band_id].items()
@@ -201,8 +201,6 @@ class _Optimizer(abc.ABC):
         pieces: list[tuple[dict[str, float], xr.DataArray]],
     ) -> xr.DataArray:
         """Stack per-combo 2D kernels into a multi-dimensional DataArray."""
-        if len(pieces) == 1:
-            return pieces[0][1]
         datasets = []
         for combo, da in pieces:
             for dim, val in combo.items():
