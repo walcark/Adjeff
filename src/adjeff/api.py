@@ -21,6 +21,7 @@ Typical usage
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TypedDict, TypeVar, overload
 
 import numpy as np
@@ -38,10 +39,11 @@ from adjeff.core import (
 from adjeff.core._psf import PSFModule
 from adjeff.exceptions import MissingVariableError
 from adjeff.modules.classic.toa_to_unif import Toa2Unif
+from adjeff.modules.loaders.maja_loader import MajaLoader
 from adjeff.modules.models.psf_conv_module import PSFConvModule
 from adjeff.modules.samplers.psf_atm import SmartgSampler_PSF_Atm
 from adjeff.modules.samplers.radiatives import RadiativePipeline
-from adjeff.modules.samplers.rho_toa import SmartgSampler_Rho_toa_sym
+from adjeff.modules.samplers.rho_toa_sym import SmartgSampler_Rho_toa_sym
 from adjeff.optim import Loss, OptimizerPipeline, TrainingImages
 from adjeff.optim.adam_optimizer import AdamConfig, _AdamStage
 from adjeff.optim.lbfgs_optimizer import LBFGSConfig, _LBFGSStage
@@ -459,6 +461,207 @@ def run_forward_pipeline(
 
 
 # ---------------------------------------------------------------------------
+# Loaders
+# ---------------------------------------------------------------------------
+
+
+# TODO: make the function dependant on the loader if another loader is
+# TODO: introduced in the future.
+def load_maja(
+    product_path: Path,
+    bands: list[SensorBand],
+    res: float | list[float],
+    mnt_path: Path = Path("/work/CESBIO/projects/Maja/DTM_120"),
+    href: float = 2.0,
+    as_map: bool = False,
+    cache: CacheStore | None = None,
+    compute_radiatives: bool = False,
+    n_bins: int | None = None,
+    remove_rayleigh: bool = False,
+    afgl_type: str = "afgl_exp_h8km",
+    deduplicate_dims: list[str] | None = None,
+) -> ImageDict:
+    """Load a MAJA L2A product into an :class:`~adjeff.core.ImageDict`.
+
+    Wraps :class:`~adjeff.modules.loaders.MajaLoader` and optionally runs
+    :func:`run_radiatives_from_scene` in a single call.
+
+    Parameters
+    ----------
+    product_path : Path
+        Folder containing the MAJA product.
+    bands : list[SensorBand]
+        Bands to load.
+    res : float or list[float]
+        Target spatial resolution in km (e.g. ``0.12`` for 120 m).
+    mnt_path : Path
+        Folder containing the DEM at 20 m resolution.
+    href : float
+        Aerosol scale height [km] (default ``2.0``).
+    as_map : bool
+        When ``True``, load 2-D atmospheric parameters as full spatial maps
+        instead of spatially-averaged scalars (default ``False``).
+    cache : CacheStore or None
+        Optional on-disk cache shared between the loader and the radiative
+        pipeline (default ``None``).
+    compute_radiatives : bool
+        When ``True``, run the radiative pipeline after loading, enriching
+        the scene with ``tdir_down``, ``tdif_down``, ``tdir_up``,
+        ``tdif_up``, ``rho_atm``, and ``sph_alb`` (default ``False``).
+    n_bins : int or None
+        Number of bins used to digitise ``aot`` and ``h``, reducing the
+        number of Smart-G runs.  Ignored when *compute_radiatives* is
+        ``False``.
+    remove_rayleigh : bool
+        Suppress Rayleigh scattering in the radiative pipeline
+        (default ``False``).  Ignored when *compute_radiatives* is ``False``.
+    afgl_type : str
+        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).  Ignored
+        when *compute_radiatives* is ``False``.
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate before running Smart-G.  Pass
+        ``["x", "y"]`` when *as_map* is ``True`` to avoid running one
+        simulation per pixel (default ``None``).
+
+    Returns
+    -------
+    ImageDict
+        Scene with ``rho_s`` and atmospheric/geometric variables, plus
+        radiative quantities when *compute_radiatives* is ``True``.
+    """
+    loader = MajaLoader(
+        product_path=product_path,
+        bands=bands,
+        res=res,
+        mnt_path=mnt_path,
+        href=href,
+        as_map=as_map,
+        cache=cache,
+    )
+    scene = loader.forward()
+    if compute_radiatives:
+        scene = run_radiatives_from_scene(
+            scene,
+            n_bins=n_bins,
+            species=loader.species(),
+            remove_rayleigh=remove_rayleigh,
+            afgl_type=afgl_type,
+            cache=cache,
+            deduplicate_dims=deduplicate_dims,
+        )
+    return scene
+
+
+# ---------------------------------------------------------------------------
+# Scene-based radiative pipeline
+# ---------------------------------------------------------------------------
+
+
+@overload
+def run_radiatives_from_scene(
+    scene: ImageDict,
+    n_bins: int | None = ...,
+    species: dict[str, float] | None = ...,
+    remove_rayleigh: bool = ...,
+    afgl_type: str = ...,
+    cache: CacheStore | None = ...,
+    deduplicate_dims: list[str] | None = ...,
+) -> ImageDict: ...
+
+
+@overload
+def run_radiatives_from_scene(
+    scene: list[ImageDict],
+    n_bins: int | None = ...,
+    species: dict[str, float] | None = ...,
+    remove_rayleigh: bool = ...,
+    afgl_type: str = ...,
+    cache: CacheStore | None = ...,
+    deduplicate_dims: list[str] | None = ...,
+) -> list[ImageDict]: ...
+
+
+def run_radiatives_from_scene(
+    scene: ImageDict | list[ImageDict],
+    n_bins: int | None = None,
+    species: dict[str, float] | None = None,
+    remove_rayleigh: bool = False,
+    afgl_type: str = "afgl_exp_h8km",
+    cache: CacheStore | None = None,
+    deduplicate_dims: list[str] | None = None,
+) -> ImageDict | list[ImageDict]:
+    """Run the radiative pipeline using configs embedded in *scene*.
+
+    Unlike :func:`run_forward_pipeline` which takes explicit config objects,
+    this function reads ``aot``, ``h``, ``rh``, ``href``, ``vza``, ``vaa``,
+    ``sza``, ``saa`` directly from the scene (as produced by a
+    :class:`~adjeff.modules.loaders.ProductLoader`).
+
+    Because viewing geometry (``vza``, ``vaa``) varies across S2 bands, a
+    separate :class:`~adjeff.modules.samplers.RadiativePipeline` is built
+    and run for each band.  Results are merged back into a single scene.
+
+    Parameters
+    ----------
+    scene : ImageDict or list[ImageDict]
+        Scene(s) produced by a ProductLoader (must contain the atmospheric
+        and geometric variables listed above).
+    n_bins : int or None, optional
+        If provided, ``aot`` and ``h`` are digitised to *n_bins* unique
+        values before building the config, reducing the number of distinct
+        Smart-G runs.
+    species : dict[str, float] or None, optional
+        Aerosol species mix summing to 1.0.  Defaults to
+        ``{"sulphate": 1.0}`` when ``None``.
+    remove_rayleigh : bool
+        Suppress Rayleigh scattering (default ``False``).
+    afgl_type : str
+        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
+    cache : CacheStore or None
+        Shared cache forwarded to all pipeline instances.
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate before running Smart-G, reducing
+        redundant simulations when ``aot`` and ``h`` are 2-D maps.  Pass
+        ``["x", "y"]`` when the scene was loaded with ``as_map=True``
+        (default ``None``).
+
+    Returns
+    -------
+    ImageDict or list[ImageDict]
+        Same type as *scene*, enriched with the six radiative quantities
+        (``tdir_down``, ``tdif_down``, ``tdir_up``, ``tdif_up``,
+        ``rho_atm``, ``sph_alb``).
+    """
+
+    def _run(s: ImageDict) -> ImageDict:
+        s = s.shallow_copy()
+        for band in s.bands:
+            scene_band = ImageDict({band: s[band]})
+            config = config_from_scene(
+                scene=scene_band,
+                band=band,
+                n_bins=n_bins,
+                species=species,
+            )
+            radiative = RadiativePipeline(
+                atmo_config=config["atmo_config"],
+                geo_config=config["geo_config"],
+                spectral_config=config["spectral_config"],
+                remove_rayleigh=remove_rayleigh,
+                afgl_type=afgl_type,
+                cache=cache,
+                deduplicate_dims=deduplicate_dims,
+            )
+            scene_band = radiative(scene_band)
+            s[band] = scene_band[band]
+        return s
+
+    if isinstance(scene, list):
+        return [_run(s) for s in scene]
+    return _run(scene)
+
+
+# ---------------------------------------------------------------------------
 # PSF sampling
 # ---------------------------------------------------------------------------
 
@@ -528,16 +731,6 @@ def sample_psf_atm(
         cache=cache,
     )
     out = sampler(scene)
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(6.8, 4.8))
-    for band in bands:
-        out[band]["psf_atm"].isel(aot=0).adjeff.radial().plot(
-            ax=ax, label=f"{band.wl_nm}"
-        )
-    plt.yscale("log")
-    plt.legend()
-    plt.show()
     return PSFDict.from_kernels(
         {band: out[band]["psf_atm"] for band in out.bands}
     )
