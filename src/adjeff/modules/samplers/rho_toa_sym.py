@@ -144,10 +144,17 @@ def _rho_toa_sym(
     """
     from smartg.smartg import Smartg
 
-    # Single (sza, saa) local estimate — scalar angles, no zip needed
+    if rho_s["rho_s"].adjeff.kind() != "analytical":
+        raise ValueError(
+            "SmartgSampler_Rho_toa_sym requires an analytical rho_s surface. "
+            "Use SmartgSampler_Rho_toa for arbitrary fields. "
+            f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
+        )
+
     sun_le = {"th_deg": sza, "phi_deg": saa}
-    surf = atmo.SurfaceFactory().surface(rho_s)
-    env = atmo.SurfaceFactory().environment(rho_s)
+    factory = atmo.SurfaceFactory()
+    surf = factory.surface(rho_s)
+    env = factory.environment(rho_s)
 
     # Estimate approximate TOA radial profile
     res: float = rho_s["rho_s"].adjeff.res
