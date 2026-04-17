@@ -97,6 +97,7 @@ def gaussian_image_dict(
     var: str = "rho_s",
     extent_km: float | dict[SensorBand, float] | None = None,
     n: int | dict[SensorBand, int] | None = None,
+    analytical: bool = True,
 ) -> ImageDict:
     """Create an ImageDict with a Gaussian spatial pattern.
 
@@ -126,6 +127,8 @@ def gaussian_image_dict(
     n : int | dict[SensorBand, int] | None
         Number of pixels along one dimension. Scalar or per-band mapping.
         Mutually exclusive with ``extent_km``.
+    analytical : bool
+        Whether to register this field as analytical or not, default to True.
 
     Returns
     -------
@@ -150,15 +153,18 @@ def gaussian_image_dict(
 
         data: np.ndarray = _gaussian_data(coords, sigma, rho_min, rho_max)
 
-        attrs = {
-            "adjeff:kind": "analytical",
-            "adjeff:model": "gauss",
-            "adjeff:params": {
-                "sigma": sigma,
-                "rho_min": rho_min,
-                "rho_max": rho_max,
-            },
-        }
+        if analytical:
+            attrs = {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "gauss",
+                "adjeff:params": {
+                    "sigma": sigma,
+                    "rho_min": rho_min,
+                    "rho_max": rho_max,
+                },
+            }
+        else:
+            attrs = {"adjeff:kind": "arbitrary"}
 
         data_vars = {
             var: xr.DataArray(
@@ -193,6 +199,7 @@ def disk_image_dict(
     var: str = "rho_s",
     extent_km: float | dict[SensorBand, float] | None = None,
     n: int | dict[SensorBand, int] | None = None,
+    analytical: bool = True,
 ) -> ImageDict:
     """Create an ImageDict with a disk-shaped spatial pattern.
 
@@ -223,6 +230,8 @@ def disk_image_dict(
     n : int | dict[SensorBand, int] | None
         Number of pixels along one dimension. Scalar or per-band mapping.
         Mutually exclusive with ``extent_km``.
+    analytical : bool
+        Whether to register this field as analytical or not, default to True.
 
     Returns
     -------
@@ -247,15 +256,18 @@ def disk_image_dict(
 
         data: np.ndarray = _disk_data(coords, radius, rho_min, rho_max)
 
-        attrs = {
-            "adjeff:kind": "analytical",
-            "adjeff:model": "disk",
-            "adjeff:params": {
-                "radius": radius,
-                "rho_min": rho_min,
-                "rho_max": rho_max,
-            },
-        }
+        if analytical:
+            attrs = {
+                "adjeff:kind": "analytical",
+                "adjeff:model": "disk",
+                "adjeff:params": {
+                    "radius": radius,
+                    "rho_min": rho_min,
+                    "rho_max": rho_max,
+                },
+            }
+        else:
+            attrs = {"adjeff:kind": "arbitrary"}
 
         data_vars = {
             var: xr.DataArray(
