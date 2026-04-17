@@ -3,6 +3,7 @@
 from .psf_atm import SmartgSampler_PSF_Atm
 from .radiatives import RadiativePipeline
 from .rho_atm import SmartgSampler_Rho_atm
+from .rho_toa import SmartgSampler_Rho_toa
 from .rho_toa_sym import SmartgSampler_Rho_toa_sym
 from .sph_alb import SmartgSampler_Sph_alb
 from .tdif_down import SmartgSampler_Tdif_down
@@ -14,6 +15,7 @@ __all__ = [
     "SmartgSampler_PSF_Atm",
     "RadiativePipeline",
     "SmartgSampler_Rho_atm",
+    "SmartgSampler_Rho_toa",
     "SmartgSampler_Rho_toa_sym",
     "SmartgSampler_Sph_alb",
     "SmartgSampler_Tdif_down",
