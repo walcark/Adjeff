@@ -1,8 +1,9 @@
 """Class to load Maja metadata and attributes."""
 
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import rasterio
@@ -12,47 +13,61 @@ import xarray as xr
 from adjeff.core import SensorBand
 from adjeff.utils import CacheStore
 
-from .product_loader import ProductLoader
+from .product_loader import (
+    AtmosphereMixin,
+    ElevationMixin,
+    GeometryMixin,
+    ProductLoader,
+)
 
 logger = structlog.get_logger(__name__)
 
 
-class MajaLoader(ProductLoader):
+class MajaLoader(
+    ProductLoader,
+    GeometryMixin,
+    AtmosphereMixin,
+    ElevationMixin,
+):
     """Load an output product from the MAJA processor.
 
     Parameters
     ----------
     product_path : Path
         The folder containing the product data.
+    bands : list[SensorBand]
+        Bands to load from the product.
+    res : float [default=0.12]
+        Target spatial resolution in km (e.g. 0.12 for 120 m).
     mnt_path : Path
-        The folder storing the DEM (Digital Elevation Model) for the MAJA
-        atmospheric processor at 20m.
+        The folder storing the DEM at 20 m resolution.
     href : float [default=2.0]
-        The height scale of the aerosol in the atmosphere. This quantity
-        is defined for an exponentially decreasing aerosol optical thickness
-        with elevation.
+        Height scale of the aerosol (exponentially decreasing AOT model).
     as_map : bool [default=False]
-        Whether to load 2D parameters as 2D map (True) or as spatially
-        averaged (False). For instance, Aerosol Optical Thickness and DEM are
-        generally stored as 2D varying maps, but may need to be average for
-        some processing purpose.
+        When ``True``, load 2-D parameters as full spatial maps instead of
+        spatially-averaged scalars.
     cache : CacheStore | None [default=None]
-        Whether to cache the loaded data for a next session.
+        Optional on-disk cache for a next session.
     """
 
     def __init__(
         self,
         product_path: Path,
+        bands: list[SensorBand],
+        res: float | list[float],
         href: float = 2.0,
         as_map: bool = False,
         mnt_path: Path = Path("/work/CESBIO/projects/Maja/DTM_120"),
         cache: CacheStore | None = None,
     ) -> None:
+        self.mnt_path = mnt_path
         super().__init__(
             product_path=product_path,
+            bands=bands,
+            res=res,
             href=href,
             as_map=as_map,
-            mnt_path=mnt_path,
+            cache=cache,
         )
 
     def ensure_correct_folder(self, path: Path) -> None:
@@ -76,27 +91,77 @@ class MajaLoader(ProductLoader):
             xml_path=xml_path,
         )
 
+    def reflectance(
+        self,
+        band: SensorBand,
+        btype: Literal["SRE", "FRE"] = "SRE",
+    ) -> xr.DataArray:
+        """Load the surface reflectance at :attr:`resolution_m`.
+
+        Coordinates are normalised to pixel-spaced km values so that
+        ``da.adjeff.res`` returns the correct resolution in km.  The
+        original CRS is preserved in the ``crs`` attribute.
+
+        Parameters
+        ----------
+        band : SensorBand | list[SensorBand]
+            Band(s) to load.  When a list is passed only the first band
+            is returned (multi-band loading is not yet supported).
+        btype : {"SRE", "FRE"}, optional
+            Reflectance type: surface (SRE) or flat-surface (FRE).
+
+        Returns
+        -------
+        xr.DataArray
+            2-D ``(y, x)`` DataArray with values in [0, 1] and coordinates
+            in km.
+        """
+        from sensorsio.sentinel2 import Sentinel2
+
+        # Strip leading zeros only: "B02" → "B2", "B10" → "B10", "B8A" → "B8A"
+        sio_name = re.sub(r"^B0+", "B", band.id)
+        band_sio = Sentinel2.Band[sio_name]
+        btype_sio = Sentinel2.BandType[btype]
+
+        s2 = Sentinel2(str(self.product_path))
+        data = s2.read_as_xarray(
+            [band_sio],
+            band_type=btype_sio,
+            resolution=self.bands_to_res[band],
+        )
+
+        # Extract the single reflectance variable, drop the time dimension.
+        var_name = band_sio.name  # e.g. "B2"
+        rho_s = data[var_name].squeeze("t", drop=True)
+
+        # Convert UTM coordinates from metres to km so that da.adjeff.res
+        # returns the correct resolution in km while preserving the
+        # relative spatial layout of the original CRS.
+        rho_s = rho_s.assign_coords(
+            x=rho_s.coords["x"] / 1000.0,
+            y=rho_s.coords["y"] / 1000.0,
+        )
+        return rho_s
+
     def aot(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the AOT, either as map or average."""
         res = ref.adjeff.res
         glob_file = list(self.product_path.glob("*ATB_R2.tif"))
         if len(glob_file) == 0:
             raise FileNotFoundError("No file found for AOT.")
-        # Read second index for AOT
+        # Band index 2 (1-based) is the AOT layer.
         with rasterio.open(glob_file[0]) as src:
             arr = src.read(2).astype(float)
-            print(100 * "=")
-            print(arr.shape)
-            print(100 * "=")
 
         if self.as_map:
-            return xr.DataArray(arr, dims="aot", coords=dict(aot=arr))
+            return xr.DataArray(
+                downsample_res(arr, target_res=res, data_res=0.020) / 200,
+                dims=ref.dims,
+                coords=ref.coords,
+            )
 
-        return xr.DataArray(
-            downsample_res(arr, target_res=res, data_res=0.020) / 200,
-            dims=ref.dims,
-            coords=ref.coords,
-        )
+        mean_val = np.atleast_1d(np.nanmean(arr / 200))
+        return xr.DataArray(mean_val, dims="aot", coords=dict(aot=mean_val))
 
     def h(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the MNT, either as map or average."""
@@ -111,14 +176,14 @@ class MajaLoader(ProductLoader):
             arr = src.read(1).astype(float)
 
         if self.as_map:
-            arr = np.atleast_1d(arr)
-            return xr.DataArray(arr, dims="h", coords=dict(h=arr))
+            return xr.DataArray(
+                downsample_res(arr, target_res=res, data_res=0.020) / 1e3,
+                dims=ref.dims,
+                coords=ref.coords,
+            )
 
-        return xr.DataArray(
-            downsample_res(arr, target_res=res, data_res=0.020) / 1e3,
-            dims=ref.dims,
-            coords=ref.coords,
-        )
+        mean_val = np.atleast_1d(np.nanmean(arr / 1e3))
+        return xr.DataArray(mean_val, dims="h", coords=dict(h=mean_val))
 
     def rh(self) -> xr.DataArray:
         """Return the relative humidity in percent."""
@@ -144,7 +209,7 @@ class MajaLoader(ProductLoader):
         """Return the Viewing Zenith and Azimuth angles."""
         xml_path = str(self.mtd["xml_path"])
         root = ET.parse(xml_path).getroot()
-        band_id = band.id.replace("0", "")
+        band_id = re.sub(r"^B0+", "B", band.id)
         xpath = f".//Mean_Viewing_Incidence_Angle[@band_id='{band_id}']"
         view_elem = root.find(xpath)
         if view_elem is not None:
@@ -174,7 +239,7 @@ class MajaLoader(ProductLoader):
         raise ValueError("Sun angles not found.")
 
     def species(self) -> dict[str, float]:
-        """Return the species proportion in the Atmosphere."""
+        """Return the aerosol species proportions from CAMS data in the XML."""
         cams_aer = [
             "ammonium",
             "blackcar",
@@ -187,7 +252,7 @@ class MajaLoader(ProductLoader):
         ]
         tree = ET.parse(str(self.mtd["xml_path"]))
         root = tree.getroot()
-        aots = {}
+        aots: dict[str, float] = {}
         aots_sum = 0.0
         for aer in cams_aer:
             aer_aot = root.find(f".//Model[@name='{aer}']")
@@ -205,11 +270,11 @@ def downsample_res(
     target_res: float,
     data_res: float,
 ) -> np.ndarray:
-    """Downsample the resolution of a 2D array and return as DataArray.
+    """Downsample *data* from *data_res* to *target_res* (both in km).
 
-    The target resolution must be bigger than the original resolution.
+    Both resolutions must be expressed in the same unit.  *target_res*
+    must be an integer multiple of *data_res*.
     """
-    # Reduce to self.res
     int_target_res = int(round(1000 * target_res))
     int_data_res = int(round(1000 * data_res))
     if (int_target_res % int_data_res != 0) or (int_target_res < int_data_res):
@@ -218,7 +283,6 @@ def downsample_res(
             f" be divisible by {int_data_res}."
         )
     factor: int = int_target_res // int_data_res
-    print(factor)
     return block_reduce(
         data,
         block_size=(factor, factor),
@@ -231,7 +295,7 @@ def block_reduce(
     block_size: tuple[int, int],
     func: Any = np.mean,
 ) -> np.ndarray:
-    """Reduce the shape of a 2D array with a specific operator."""
+    """Reduce a 2-D array by applying *func* over non-overlapping blocks."""
     sx, sy = block_size
     nx, ny = arr.shape
     arr = arr[: nx - nx % sx, : ny - ny % sy]
