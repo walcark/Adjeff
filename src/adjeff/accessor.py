@@ -267,6 +267,77 @@ class AdjeffDataArrayAccessor:
         values = np.interp(r_vals, profile.coords["r"].values, profile.values)
         return xr.DataArray(values, dims=["r"], coords={"r": r_vals})
 
+    def transect(
+        self,
+        angle: float,
+        center: tuple[float, float] | None = None,
+        n_points: int | None = None,
+    ) -> xr.DataArray:
+        """Sample values along a line through the centre at a given azimuth.
+
+        Parameters
+        ----------
+        angle : float
+            Azimuth angle [°], measured counterclockwise from the +x axis.
+            The positive side of the transect points in direction *angle*;
+            the negative side points in direction *angle* + 180°.
+        center : tuple[float, float] or None, optional
+            ``(cx, cy)`` origin in coordinate units.  Defaults to the
+            coordinate mean.
+        n_points : int or None, optional
+            Number of sample points.  Defaults to the number of pixels
+            that fit along the transect at the native resolution.
+
+        Returns
+        -------
+        xr.DataArray
+            1-D DataArray with dim ``"s"`` (signed distance from centre,
+            same units as the spatial coordinates).
+
+        Raises
+        ------
+        ValueError
+            If the DataArray is not exactly 2-D ``(y, x)``.  Call
+            ``.squeeze()`` first when extra dimensions are present.
+        """
+        from scipy.interpolate import (  # type: ignore[import-untyped]
+            RegularGridInterpolator,
+        )
+
+        da = self._da
+        if da.ndim != 2:
+            raise ValueError(
+                f"transect requires a 2-D (y, x) DataArray; "
+                f"got shape {da.shape}. Call .squeeze() first."
+            )
+
+        x = da.coords["x"].values
+        y = da.coords["y"].values
+        cx = float(np.mean(x)) if center is None else float(center[0])
+        cy = float(np.mean(y)) if center is None else float(center[1])
+
+        angle_rad = np.deg2rad(angle)
+        cos_a = float(np.cos(angle_rad))
+        sin_a = float(np.sin(angle_rad))
+
+        r_max = min(x[-1] - cx, cx - x[0], y[-1] - cy, cy - y[0])
+        if n_points is None:
+            n_points = max(3, int(round(2.0 * r_max / self.res)) + 1)
+
+        s_vals = np.linspace(-r_max, r_max, n_points)
+        xs = cx + s_vals * cos_a
+        ys = cy + s_vals * sin_a
+
+        interp = RegularGridInterpolator(
+            (y, x),
+            da.values,
+            method="linear",
+            bounds_error=False,
+            fill_value=float("nan"),
+        )
+        sampled = interp(np.column_stack([ys, xs]))
+        return xr.DataArray(sampled, dims=["s"], coords={"s": s_vals})
+
     def to_tensor(self) -> torch.Tensor:
         """Convert this DataArray to a float32 :class:`torch.Tensor`.
 
