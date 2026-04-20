@@ -255,9 +255,16 @@ def _radial_sensors(
 ) -> list[Sensor]:
     """Create position-specific sensors at radial distances from scene centre.
 
-    Each ground point at distance r from centre lies along the vaa direction.
-    The satellite sensor is placed at distance ``sat_height * tan(vza)`` beyond
-    the ground point along the same direction.
+    Ground points are placed along the axis **perpendicular** to the viewing
+    azimuth (vaa + 90°).  This axis is the symmetry plane of the atmospheric
+    PSF: forward- and backward-scatter contributions are equal on both sides,
+    so the sampled radial profile is representative of the azimuthal average
+    even when VZA ≠ 0.  Sampling along vaa itself would bias the profile
+    toward the elongated lobe of the PSF.
+
+    For each ground point ``(gx, gy)`` on the perpendicular axis, the sensor
+    is offset by ``sat_height * tan(vza)`` along the vaa direction so that
+    it looks straight at ``(gx, gy)``.
 
     Parameters
     ----------
@@ -277,14 +284,19 @@ def _radial_sensors(
     """
     from smartg.smartg import Sensor
 
-    x_offset = sat_height * np.tan(np.deg2rad(vza))
     cos_vaa = np.cos(np.deg2rad(vaa))
     sin_vaa = np.sin(np.deg2rad(vaa))
+    # Perpendicular to vaa: (cos(vaa+90°), sin(vaa+90°)) = (-sin_vaa, cos_vaa)
+    cos_perp = -sin_vaa
+    sin_perp = cos_vaa
+    # Satellite offset to keep the viewing direction fixed at (vza, vaa)
+    dx = sat_height * np.tan(np.deg2rad(vza)) * cos_vaa
+    dy = sat_height * np.tan(np.deg2rad(vza)) * sin_vaa
 
     return [
         Sensor(
-            POSX=float((r + x_offset) * cos_vaa),
-            POSY=float((r + x_offset) * sin_vaa),
+            POSX=float(r * cos_perp + dx),
+            POSY=float(r * sin_perp + dy),
             POSZ=sat_height,
             THDEG=180.0 - vza,
             PHDEG=(vaa + 180.0) % 360.0,
