@@ -60,12 +60,12 @@ class MajaLoader(
         mnt_path: Path = Path("/work/CESBIO/projects/Maja/DTM_120"),
         cache: CacheStore | None = None,
     ) -> None:
+        self.href = href
         self.mnt_path = mnt_path
         super().__init__(
             product_path=product_path,
             bands=bands,
             res=res,
-            href=href,
             as_map=as_map,
             cache=cache,
         )
@@ -143,7 +143,7 @@ class MajaLoader(
         )
         return rho_s
 
-    def aot(self, ref: xr.DataArray) -> xr.DataArray:
+    def _aot(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the AOT, either as map or average."""
         res = ref.adjeff.res
         glob_file = list(self.product_path.glob("*ATB_R2.tif"))
@@ -163,7 +163,7 @@ class MajaLoader(
         mean_val = np.atleast_1d(np.nanmean(arr / 200))
         return xr.DataArray(mean_val, dims="aot", coords=dict(aot=mean_val))
 
-    def h(self, ref: xr.DataArray) -> xr.DataArray:
+    def _h(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the MNT, either as map or average."""
         res = ref.adjeff.res
         tile = str(self.mtd["tile"])
@@ -185,7 +185,7 @@ class MajaLoader(
         mean_val = np.atleast_1d(np.nanmean(arr / 1e3))
         return xr.DataArray(mean_val, dims="h", coords=dict(h=mean_val))
 
-    def rh(self) -> xr.DataArray:
+    def _rh(self) -> xr.DataArray:
         """Return the relative humidity in percent."""
         xml_path = str(self.mtd["xml_path"])
         root = ET.parse(xml_path).getroot()
@@ -205,7 +205,7 @@ class MajaLoader(
             coords=dict(rh=rh_arr),
         )
 
-    def vza_vaa(self, band: SensorBand) -> tuple[xr.DataArray, xr.DataArray]:
+    def _vza_vaa(self, band: SensorBand) -> tuple[xr.DataArray, xr.DataArray]:
         """Return the Viewing Zenith and Azimuth angles."""
         xml_path = str(self.mtd["xml_path"])
         root = ET.parse(xml_path).getroot()
@@ -223,7 +223,7 @@ class MajaLoader(
             )
         raise ValueError(f"Viewing angles for band {band} not found.")
 
-    def sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
+    def _sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
         """Return the Sun Zenith and Azimuth angles."""
         xml_path = str(self.mtd["xml_path"])
         root = ET.parse(xml_path).getroot()

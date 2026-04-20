@@ -32,29 +32,40 @@ class GeometryMixin(ABC):
     ]
 
     @abstractmethod
-    def vza_vaa(self, band: SensorBand) -> tuple[xr.DataArray, xr.DataArray]:
+    def _vza_vaa(self, band: SensorBand) -> tuple[xr.DataArray, xr.DataArray]:
         """Return (Viewing Zenith Angle, Viewing Azimuth Angle) for *band*."""
 
     @abstractmethod
-    def sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
+    def _sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
         """Return (Sun Zenith Angle, Sun Azimuth Angle) for the product."""
 
 
 class AtmosphereMixin(ABC):
     """Mixin for loaders that provide atmospheric state (AOT, humidity).
 
-    Contributes ``aot``, ``rh`` to :attr:`output_vars`.
+    Contributes ``aot``, ``rh`` and ``href`` to :attr:`output_vars`.
     """
 
-    _output_vars_contribution: ClassVar[list[str]] = ["aot", "rh"]
+    _output_vars_contribution: ClassVar[list[str]] = ["aot", "rh", "href"]
+
+    def __init__(self, href: float = 2.0) -> None:
+        self.href = href
 
     @abstractmethod
-    def aot(self, ref: xr.DataArray) -> xr.DataArray:
+    def _aot(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the Aerosol Optical Thickness, as map or scalar."""
 
     @abstractmethod
-    def rh(self) -> xr.DataArray:
+    def _rh(self) -> xr.DataArray:
         """Return the relative humidity in percent."""
+
+    def _href(self) -> xr.DataArray:
+        """Return the reference height of the aerosols as a DataArray."""
+        return xr.DataArray(
+            [self.href],
+            dims="href",
+            coords=dict(href=[self.href]),
+        )
 
 
 class ElevationMixin(ABC):
@@ -66,7 +77,7 @@ class ElevationMixin(ABC):
     _output_vars_contribution: ClassVar[list[str]] = ["h"]
 
     @abstractmethod
-    def h(self, ref: xr.DataArray) -> xr.DataArray:
+    def _h(self, ref: xr.DataArray) -> xr.DataArray:
         """Return the surface elevation, as map or scalar (km)."""
 
 
@@ -87,8 +98,6 @@ class ProductLoader(SceneSource, ABC):
         Bands to load from the product.
     res : float | list[float]
         Target spatial resolution in km (e.g. 0.12 for 120 m).
-    href : float [default=2.0]
-        Height scale of the aerosol (exponentially decreasing AOT model).
     as_map : bool [default=False]
         When ``True``, load 2-D parameters as full spatial maps instead of
         spatially-averaged scalars.
@@ -96,7 +105,7 @@ class ProductLoader(SceneSource, ABC):
         Optional on-disk cache for a next session.
     """
 
-    _BASE_OUTPUT_VARS: ClassVar[list[str]] = ["rho_s", "href"]
+    _BASE_OUTPUT_VARS: ClassVar[list[str]] = ["rho_s"]
 
     @property
     def output_vars(self) -> list[str]:  # type: ignore[override]
@@ -114,7 +123,6 @@ class ProductLoader(SceneSource, ABC):
         product_path: Path,
         bands: list[SensorBand],
         res: float | list[float],
-        href: float = 2.0,
         as_map: bool = False,
         cache: CacheStore | None = None,
     ) -> None:
@@ -126,7 +134,6 @@ class ProductLoader(SceneSource, ABC):
         self.product_path = product_path
         self._build_band_to_res(bands, res)
         self.extract_metadata()
-        self.h_ref = href
         self.as_map = as_map
         super().__init__(bands=bands, cache=cache)
 
@@ -157,19 +164,18 @@ class ProductLoader(SceneSource, ABC):
         _rh: xr.DataArray | None = None
 
         if isinstance(self, GeometryMixin):
-            _sza_saa = self.sza_saa()
+            _sza_saa = self._sza_saa()
         if isinstance(self, AtmosphereMixin):
-            _rh = self.rh()
+            _rh = self._rh()
 
         for band in scene.bands:
             rho_s = self.reflectance(band=band)
             scene[band]["rho_s"] = rho_s
-            scene[band]["href"] = self.href()
 
             if isinstance(self, GeometryMixin):
                 assert _sza_saa is not None
                 sza, saa = _sza_saa
-                vza, vaa = self.vza_vaa(band)
+                vza, vaa = self._vza_vaa(band)
                 scene[band]["vza"] = vza
                 scene[band]["vaa"] = vaa
                 scene[band]["sza"] = sza
@@ -178,17 +184,18 @@ class ProductLoader(SceneSource, ABC):
             if isinstance(self, AtmosphereMixin):
                 assert _rh is not None
                 try:
-                    scene[band]["aot"] = self.aot(ref=rho_s)
+                    scene[band]["aot"] = self._aot(ref=rho_s)
                 except xr.CoordinateValidationError as e:
                     raise ConfigurationError(
                         "Shape of input scene not consistent "
                         "with product 2D output format."
                     ) from e
                 scene[band]["rh"] = _rh
+                scene[band]["href"] = self._href()
 
             if isinstance(self, ElevationMixin):
                 try:
-                    scene[band]["h"] = self.h(ref=rho_s)
+                    scene[band]["h"] = self._h(ref=rho_s)
                 except xr.CoordinateValidationError as e:
                     raise ConfigurationError(
                         "Shape of input scene not consistent "
@@ -202,14 +209,6 @@ class ProductLoader(SceneSource, ABC):
 
     def extract_metadata(self) -> None:
         """Extract metadata from the folder."""
-
-    def href(self) -> xr.DataArray:
-        """Return the aerosol height scale as a scalar DataArray."""
-        return xr.DataArray(
-            [self.h_ref],
-            dims="href",
-            coords=dict(href=[self.h_ref]),
-        )
 
     @abstractmethod
     def reflectance(self, band: SensorBand) -> xr.DataArray:
