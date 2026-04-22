@@ -2,7 +2,6 @@
 
 from typing import ClassVar
 
-import numpy as np
 import xarray as xr
 from structlog import get_logger
 
@@ -11,6 +10,7 @@ import adjeff.utils as utils
 from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
+from ._smartg import tdif_up
 
 logger = get_logger(__name__)
 
@@ -95,98 +95,3 @@ class SmartgSampler_Tdif_up(SceneModuleSweep):
             scene[band]["tdif_up"] = arr.sel(wl=band.wl_nm)
 
         return scene
-
-
-def tdif_up(
-    wl: xr.DataArray,
-    aot: xr.DataArray,
-    rh: xr.DataArray,
-    h: xr.DataArray,
-    href: xr.DataArray,
-    vza: xr.DataArray,
-    species: dict[str, float],
-    afgl_type: str,
-    remove_rayleigh: bool,
-    n_ph: int,
-    saa: np.ndarray,
-) -> xr.DataArray:
-    """Compute the upward diffuse transmittance with Smart-G.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call.
-    saa : np.ndarray
-        Solar azimuth angle(s) [°].
-
-    Returns
-    -------
-    xr.DataArray
-        Upward diffuse transmittance with dims ``(vza, wl, ...)``.
-    """
-    from smartg.smartg import Sensor, Smartg
-
-    logger.info("Computing tdif_up ...", wl=wl, vza=vza)
-
-    # Create an atmosphere for each combination of AtmoParams
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
-    )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    # Launch Smart-G for each atmosphere
-    atm_size = len(batch.index_coord)
-    th_deg = np.atleast_1d(np.squeeze(vza.values))
-    sat_le = {"th_deg": th_deg, "phi_deg": float(saa.flat[0])}
-
-    smartg = Smartg(autoinit=False)
-    res: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        sensor=Sensor(POSZ=0.0, LOC="ATMOS", TYPE=1, FOV=90),
-        le=sat_le,
-        NBPHOTONS=n_ph * atm_size,
-        NF=int(1e3),
-    )["I_up (TOA)"].to_xarray()
-    smartg.clear_context()
-    res = utils.adapt_smartg_output(
-        res,
-        squeeze=["Azimuth angles"],
-        rename={"Zenith angles": "vza"},
-        coords={"vza": vza.values},
-        expand={"vza": vza.values, "wavelength": atm.axes["wavelength"]},
-    )
-
-    res = res.transpose("vza", "wavelength")
-    res = batch.unstack(
-        xr.DataArray(
-            res.values,
-            dims=["vza", "index"],
-            coords={"vza": vza.values, "index": batch.index_coord},
-        )
-    )
-    logger.info("tdif_up successfully calculated.")
-    return res

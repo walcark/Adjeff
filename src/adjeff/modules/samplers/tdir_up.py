@@ -2,7 +2,6 @@
 
 from typing import ClassVar
 
-import numpy as np
 import xarray as xr
 from structlog import get_logger
 
@@ -11,6 +10,7 @@ import adjeff.utils as utils
 from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
+from ._smartg import tdir_up
 
 logger = get_logger(__name__)
 
@@ -76,12 +76,9 @@ class SmartgSampler_Tdir_up(SceneModuleSweep):
         )
 
     def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
-        """Return configuration objects."""
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
-        """Compute the direct upward transmittance + sweep over parameters."""
-        # Ensure that SpetralConfig wavelengths are in scene
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 logger.warning(
@@ -95,7 +92,6 @@ class SmartgSampler_Tdir_up(SceneModuleSweep):
                     band=band,
                 )
 
-        # Compute tdir_up for each parameters
         bundle: utils.ConfigBundle = self._make_bundle()
         tdir_up_arr: xr.DataArray = bundle.apply(
             tdir_up,
@@ -106,70 +102,7 @@ class SmartgSampler_Tdir_up(SceneModuleSweep):
         )
         logger.info("Computed tdir_up.", dims=tdir_up_arr.dims)
 
-        # Add each wavelength to a scene band
         for band in self.spectral_config.bands:
             scene[band]["tdir_up"] = tdir_up_arr.sel(wl=band.wl_nm)
 
         return scene
-
-
-def tdir_up(
-    wl: xr.DataArray,
-    aot: xr.DataArray,
-    rh: xr.DataArray,
-    h: xr.DataArray,
-    href: xr.DataArray,
-    vza: xr.DataArray,
-    species: dict[str, float],
-    afgl_type: str,
-    remove_rayleigh: bool,
-    n_ph: int = int(1e2),
-) -> xr.DataArray:
-    """Compute the direct upward transmittance analytically.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh optical depth is set to zero.
-    n_ph : int, optional
-        Number of photons for the optical depth retrieval, by default 100.
-
-    Returns
-    -------
-    xr.DataArray
-        Direct upward transmittance with dims ``(vza, wl, ...)``.
-    """
-    # Create an atmosphere for each combination of AtmoParams
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
-    )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    # Compute optical depth with Smart-G and reconstruct full dimensions
-    od = utils.compute_optical_depth(atm)
-    od = batch.unstack(
-        xr.DataArray(od, dims=["index"], coords={"index": batch.index_coord}),
-    )
-    logger.info("tdir_up successfully calculated.")
-    return xr.DataArray(xr.apply_ufunc(np.exp, -od / np.cos(np.deg2rad(vza))))

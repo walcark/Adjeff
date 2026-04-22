@@ -1,23 +1,18 @@
-"""Module that computes rho_toa with Smart-G (symmetric radial sampling)."""
+"""Module that computes the atmospheric PSF with Smart-G."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
-import geoclide as gc  # type: ignore[import-untyped]
-import numpy as np
 import xarray as xr
-from smartg.visualizegeo import Entity, Plane, Transformation
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
-from adjeff.core import ImageDict, SensorBand
+from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
-
-if TYPE_CHECKING:
-    pass
+from ._smartg import psf_atm
 
 logger = get_logger(__name__)
 
@@ -87,10 +82,9 @@ class SmartgSampler_PSF_Atm(SceneModuleSweep):
         return (self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
-        """Run the radial rho_toa computation for every band in the scene."""
+        """Run the atmospheric PSF sampling for every band in the scene."""
         bundle: utils.ConfigBundle = self._make_bundle()
 
-        # Sample the Atmospheric PSF for each band
         new_scene = ImageDict({b: xr.Dataset() for b in scene.bands})
         for band in scene.bands:
             logger.info("Start rho_toa computation.", band=band)
@@ -111,99 +105,3 @@ class SmartgSampler_PSF_Atm(SceneModuleSweep):
 
             new_scene[band]["psf_atm"] = psf_atm_arr
         return new_scene
-
-
-def psf_atm(
-    vza: float,
-    vaa: float,
-    aot: xr.DataArray,
-    rh: xr.DataArray,
-    h: xr.DataArray,
-    href: xr.DataArray,
-    rho_s: xr.Dataset,
-    band: SensorBand,
-    species: dict[str, float],
-    afgl_type: str,
-    remove_rayleigh: bool,
-    n_ph: int,
-) -> xr.DataArray:
-    """Sample the atmospheric Point Spread Function."""
-    from smartg.smartg import Smartg
-
-    # Create entity
-    res: float = rho_s["rho_s"].adjeff.res
-    n: int = rho_s["rho_s"].adjeff.n
-    if n % 2 == 0:
-        raise ValueError(
-            f"Image grid size n must be odd (got {n}): a PSF kernel requires "
-            "a well-defined centre pixel."
-        )
-    # SmartG computes cells per half-axis as floor(half_size / TC) then
-    # doubles, so an odd n would yield n-1 cells. Use n+1 (even) for the
-    # Entity and trim the extra edge row/col afterwards.
-    half_size = res * (n + 1) / 2
-
-    sampling_grid = Entity(
-        name="receiver",
-        TC=res,
-        geo=Plane(
-            p1=gc.Point(-half_size, -half_size, 0.0),
-            p2=gc.Point(half_size, -half_size, 0.0),
-            p3=gc.Point(-half_size, half_size, 0.0),
-            p4=gc.Point(half_size, half_size, 0.0),
-        ),
-        transformation=Transformation(
-            rotation=np.array([0.0, 0.0, 0.0]),
-            translation=np.array([1e-5, 1e-5, 1e-5]),
-        ),
-    )
-
-    # Create an atmosphere for each combination of AtmoParams
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=xr.DataArray([band.wl_nm], dims=["wl"]),
-        aot=aot,
-        rh=rh,
-        href=href,
-        h=h,
-    )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    # Launch Smart-G for each atmosphere
-    atm_size = len(batch.index_coord)
-
-    # Computation with Smart-G
-    smartg = Smartg(obj3D=True, autoinit=False)
-    result = smartg.run(
-        wl=band.wl_nm,
-        atm=atm,
-        THVDEG=float(vza),
-        PHVDEG=180.0 - float(vaa),
-        myObjects=[sampling_grid],
-        NBPHOTONS=n_ph * atm_size,
-        NF=1e4,
-    ).to_xarray()
-    smartg.clear_context()
-
-    result = utils.adapt_smartg_output(
-        result["C_Receiver"].isel(Categories=0),
-        rename={"X_Cell_Index": "x", "Y_Cell_Index": "y"},
-        squeeze=["Categories"],
-    )
-
-    result = result.isel(x=slice(None, n), y=slice(None, n))
-
-    # Assign proper spatial km coordinates from the input grid, and strip
-    # the DataArray name so bundle.apply can combine results correctly.
-    result = (
-        result.assign_coords(
-            x=rho_s["rho_s"].coords["x"].values,
-            y=rho_s["rho_s"].coords["y"].values,
-        )
-        / result.sum()
-    )
-    return result.rename(None)

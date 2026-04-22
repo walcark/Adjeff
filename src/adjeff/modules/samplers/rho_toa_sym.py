@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
-import numpy as np
 import xarray as xr
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
-from adjeff.core import GaussGeneralPSF, ImageDict, PSFGrid, SensorBand
-from adjeff.utils import fft_convolve_2D
+from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
+from ._smartg import rho_toa_sym
 from .rho_atm import SmartgSampler_Rho_atm
-
-if TYPE_CHECKING:
-    from smartg.smartg import Sensor
 
 logger = get_logger(__name__)
 
@@ -44,8 +40,6 @@ class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
         Atmospheric parameters — may be full arrays (swept via multi_profiles).
     geo_config : GeoConfig
         Geometry — vza and sza must be single-element (scalar per call).
-    spectral_config : SpectralConfig
-        Bands to process.
     remove_rayleigh : bool
         Whether to suppress Rayleigh scattering.
     afgl_type : str
@@ -86,7 +80,6 @@ class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
         """Run the radial rho_toa computation for every band in the scene."""
         bundle: utils.ConfigBundle = self._make_bundle()
 
-        # First, compute rho_atm if required
         scene = SmartgSampler_Rho_atm(
             atmo_config=self.atmo_config,
             geo_config=self.geo_config,
@@ -97,11 +90,10 @@ class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
             cache=self._cache,
         )(scene)
 
-        # Second, compute rho_toa for each band
         for band in scene.bands:
             logger.info("Start rho_toa computation.", band=band)
             rho_toa_arr: xr.DataArray = bundle.apply(
-                _rho_toa_sym,
+                rho_toa_sym,
                 saa=self.geo_config.saa.item(),
                 vaa=self.geo_config.vaa.item(),
                 rho_s=scene[band],
@@ -118,189 +110,3 @@ class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
             scene[band]["rho_toa"] = rho_toa_arr
 
         return scene
-
-
-def _rho_toa_sym(
-    sza: float,
-    vza: float,
-    aot: xr.DataArray,
-    rh: xr.DataArray,
-    h: xr.DataArray,
-    href: xr.DataArray,
-    vaa: float,
-    saa: float,
-    rho_s: xr.Dataset,
-    band: SensorBand,
-    species: dict[str, float],
-    sat_height: float,
-    afgl_type: str,
-    remove_rayleigh: bool,
-    nr: int,
-    n_ph: int,
-) -> xr.DataArray:
-    """Compute the TOA reflectance from the surface reflectance.
-
-    This code assumes that the input field is symmetric.
-    """
-    from smartg.smartg import Smartg
-
-    if rho_s["rho_s"].adjeff.kind() != "analytical":
-        raise ValueError(
-            "SmartgSampler_Rho_toa_sym requires an analytical rho_s surface. "
-            "Use SmartgSampler_Rho_toa for arbitrary fields. "
-            f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
-        )
-
-    sun_le = {"th_deg": sza, "phi_deg": saa}
-    factory = atmo.SurfaceFactory()
-    surf = factory.surface(rho_s)
-    env = factory.environment(rho_s)
-
-    # Estimate approximate TOA radial profile
-    res: float = rho_s["rho_s"].adjeff.res
-    n: int = rho_s["rho_s"].adjeff.n
-    n = n - 1 if n % 2 == 0 else n
-    approx_psf = GaussGeneralPSF(
-        band=band,
-        grid=PSFGrid(res=res, n=n),
-        sigma=0.00005,
-        n=0.20,
-    )
-    rho_toa_approx = fft_convolve_2D(
-        rho_s["rho_s"],
-        approx_psf.to_dataarray(),
-        padding="reflect",
-        conv_type="same",
-        device="cpu",
-    )
-
-    # Inverse sampling of the profile CDF -> radial sampling points
-    profile = rho_toa_approx.adjeff.radial()
-    r_vals: xr.DataArray = profile.adjeff.radial_adaptive(n=nr, max_gap=0.1)
-
-    # Create an atmosphere for each combination of AtmoParams
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=xr.DataArray([band.wl_nm], dims=["wl"]),
-        aot=aot,
-        rh=rh,
-        href=href,
-        h=h,
-    )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    # Launch Smart-G for each atmosphere
-    atm_size = len(batch.index_coord)
-    sensors = _radial_sensors(r_vals.coords["r"].data, vza, vaa, sat_height)
-
-    smartg = Smartg(autoinit=False)
-    result: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        surf=surf,
-        env=env,
-        sensor=sensors,
-        le=sun_le,
-        NBPHOTONS=n_ph * atm_size * len(sensors),
-        NF=int(1e4),
-        RMIN=1,
-    )["I_up (TOA)"].to_xarray()
-    smartg.clear_context()
-
-    # Adapt output of the Smart-G simulation: (i the Azimuth and Zenith angles
-    # axes of size 1 are squeezed ; (ii) the sensor index is rename as r for
-    # radial distance and (iii) ensure that the wavelength axis exists.
-    result = utils.adapt_smartg_output(
-        result,
-        squeeze=["Azimuth angles", "Zenith angles"],
-        rename={"sensor index": "r"},
-        coords={"r": r_vals.coords["r"]},
-        expand={
-            "r": r_vals.coords["r"],
-            "wavelength": atm.axes["wavelength"],
-        },
-    )
-
-    # Transform the wavelength axis into index to unstack with batch
-    result = utils.adapt_smartg_output(
-        result,
-        rename={"wavelength": "index"},
-        coords={"index": batch.index_coord},
-    )
-
-    # Unstack index to restore original coordinates
-    result = batch.unstack(result)
-
-    # Add pre-computed rho_atm to avoid simulation noise
-    result = result + rho_s["rho_atm"]
-
-    # Reconstruct 2-D field from radial profile: `.compute()` materialises
-    # dask chunks introduced by `+ rho_atm` above, because `to_field` uses
-    # `apply_ufunc` without dask support.
-    # TODO: add dask support to apply_ufunc with parallelize=True.
-    return xr.DataArray(
-        result.compute().adjeff.to_field(rho_s).sel(wl=band.wl_nm)
-    )
-
-
-def _radial_sensors(
-    r_vals: np.ndarray,
-    vza: float,
-    vaa: float,
-    sat_height: float,
-) -> list[Sensor]:
-    """Create position-specific sensors at radial distances from scene centre.
-
-    Ground points are placed along the axis **perpendicular** to the viewing
-    azimuth (vaa + 90°).  This axis is the symmetry plane of the atmospheric
-    PSF: forward- and backward-scatter contributions are equal on both sides,
-    so the sampled radial profile is representative of the azimuthal average
-    even when VZA ≠ 0.  Sampling along vaa itself would bias the profile
-    toward the elongated lobe of the PSF.
-
-    For each ground point ``(gx, gy)`` on the perpendicular axis, the sensor
-    is offset by ``sat_height * tan(vza)`` along the vaa direction so that
-    it looks straight at ``(gx, gy)``.
-
-    Parameters
-    ----------
-    r_vals : np.ndarray
-        Radial distances of ground sampling points [km].
-    vza : float
-        Viewing zenith angle [°].
-    vaa : float
-        Viewing azimuth angle [°].
-    sat_height : float
-        Satellite altitude [km].
-
-    Returns
-    -------
-    list[Sensor]
-        One Smart-G Sensor per radial distance value.
-    """
-    from smartg.smartg import Sensor
-
-    cos_vaa = np.cos(np.deg2rad(vaa))
-    sin_vaa = np.sin(np.deg2rad(vaa))
-    # Perpendicular to vaa: (cos(vaa+90°), sin(vaa+90°)) = (-sin_vaa, cos_vaa)
-    cos_perp = -sin_vaa
-    sin_perp = cos_vaa
-    # Satellite offset to keep the viewing direction fixed at (vza, vaa)
-    dx = sat_height * np.tan(np.deg2rad(vza)) * cos_vaa
-    dy = sat_height * np.tan(np.deg2rad(vza)) * sin_vaa
-
-    return [
-        Sensor(
-            POSX=float(r * cos_perp + dx),
-            POSY=float(r * sin_perp + dy),
-            POSZ=sat_height,
-            THDEG=180.0 - vza,
-            PHDEG=(vaa + 180.0) % 360.0,
-            LOC="ATMOS",
-        )
-        for r in r_vals
-    ]

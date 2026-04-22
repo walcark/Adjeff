@@ -2,7 +2,6 @@
 
 from typing import ClassVar
 
-import numpy as np
 import xarray as xr
 from structlog import get_logger
 
@@ -11,6 +10,7 @@ import adjeff.utils as utils
 from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
+from ._smartg import rho_atm
 
 logger = get_logger(__name__)
 
@@ -110,122 +110,3 @@ class SmartgSampler_Rho_atm(SceneModuleSweep):
             scene[band]["rho_atm"] = arr.sel(wl=band.wl_nm)
 
         return scene
-
-
-def rho_atm(
-    wl: xr.DataArray,
-    aot: xr.DataArray,
-    rh: xr.DataArray,
-    h: xr.DataArray,
-    href: xr.DataArray,
-    vza: xr.DataArray,
-    sza: xr.DataArray,
-    species: dict[str, float],
-    afgl_type: str,
-    remove_rayleigh: bool,
-    n_ph: int,
-    saa: np.ndarray,
-    vaa: np.ndarray,
-    sat_height: float,
-) -> xr.DataArray:
-    """Compute the atmospheric reflectance (path radiance) with Smart-G.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [°], 1-D.
-    sza : xr.DataArray
-        Solar zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call.
-    saa : np.ndarray
-        Solar azimuth angle(s) [°].
-    vaa : np.ndarray
-        Viewing azimuth angle(s) [°].
-    sat_height : float
-        Satellite altitude [km].
-
-    Returns
-    -------
-    xr.DataArray
-        Atmospheric reflectance with dims ``(vza, sza, wl, ...)``.
-    """
-    from smartg.smartg import Smartg
-
-    logger.info("Computing rho_atm ...", wl=wl, vza=vza, sza=sza)
-
-    # Create an atmosphere for each combination of AtmoParams
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
-    )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    # Launch Smart-G for each atmosphere
-    atm_size = len(batch.index_coord)
-    sat_sensor = utils.make_sensors(
-        180.0 - vza, float(vaa.flat[0]), posz=sat_height
-    )
-    sun_le = {
-        "th_deg": np.atleast_1d(sza.values),
-        "phi_deg": float(saa.flat[0]),
-    }
-
-    smartg = Smartg(autoinit=False)
-    res: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        sensor=sat_sensor,
-        le=sun_le,
-        NBPHOTONS=n_ph * atm_size * len(sat_sensor),
-        NF=int(1e3),
-    )["I_up (TOA)"].to_xarray()
-    smartg.clear_context()
-
-    # Adapt output of Smart-G simulation
-    res = utils.adapt_smartg_output(
-        res,
-        squeeze=["Azimuth angles"],
-        rename={"sensor index": "vza", "Zenith angles": "sza"},
-        coords={"vza": vza.values, "sza": sza.values},
-        expand={
-            "vza": vza.values,
-            "sza": sza.values,
-            "wavelength": atm.axes["wavelength"],
-        },
-    )
-
-    res = res.transpose("vza", "sza", "wavelength")
-    res = batch.unstack(
-        xr.DataArray(
-            res.values,
-            dims=["vza", "sza", "index"],
-            coords={
-                "vza": vza.values,
-                "sza": sza.values,
-                "index": batch.index_coord,
-            },
-        )
-    )
-    logger.info("rho_atm successfully calculated.")
-    return res
