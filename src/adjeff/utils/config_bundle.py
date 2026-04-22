@@ -25,6 +25,7 @@ over a set of attributes values.
 
 from __future__ import annotations
 
+import inspect
 import itertools
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -651,22 +652,23 @@ class ConfigBundle:
         ``combine_by_coords`` can reassemble the outputs correctly.
 
         The inner loop iterates over all combinations of vector chunk
-        slices as specified by *chunks*.  At each combination the
-        function is called with the current scalar values followed by
-        the vector arrays (or their slices).
-
-        The function receives scalars as 0-D DataArrays in the order
-        given by *scalars*, followed by vector DataArrays in the order
-        given by *vectors*.  It must return a DataArray whose dimensions
-        are compatible with the vector arrangement it received.
-        Additional keyword arguments are forwarded unchanged.
+        slices as specified by *chunks*.  At each step the function is
+        called with all matching parameters passed as keyword arguments,
+        matched by name against the bundle's scalar and vector arrays.
+        The function may declare its parameters in any order; only the
+        names need to match.  Parameters not present in the bundle are
+        left to *kwargs* or to the function's own defaults.
 
         Parameters
         ----------
         func : Callable[..., xr.DataArray]
-            Function to call at each sweep point.
+            Function to call at each sweep point.  Its parameters are
+            matched by name to the bundle scalars and vectors; it must
+            return a DataArray whose dimensions are compatible with the
+            vector arrangement it received.
         **kwargs : Any
             Extra keyword arguments forwarded to every call of *func*.
+            Must not overlap with any scalar or vector name.
 
         Returns
         -------
@@ -678,9 +680,46 @@ class ConfigBundle:
         ------
         TypeError
             If *func* returns a Dataset instead of a DataArray.
+        ValueError
+            If *kwargs* contains a key that also exists in the bundle
+            scalars or vectors, or if *func* has a required parameter
+            that is neither in the bundle nor in *kwargs*.
         """
         scalar_names = [n for n in self._scalars if n in self._das]
         scalar_das = [self._das[n] for n in scalar_names]
+
+        sig = inspect.signature(func)
+        _VAR_KINDS = {
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        }
+        # Names of concrete (non-variadic) parameters declared by func.
+        concrete_params = {
+            k: p for k, p in sig.parameters.items() if p.kind not in _VAR_KINDS
+        }
+
+        # Detect kwargs keys that would shadow bundle parameters.
+        all_bundle_names = set(self._scalars) | set(self._vectors)
+        collisions = set(kwargs) & all_bundle_names
+        if collisions:
+            raise ValueError(
+                f"kwargs key(s) {sorted(collisions)!r} collide with "
+                "bundle scalar/vector names. Rename them or remove "
+                "them from kwargs."
+            )
+
+        # Detect required parameters that cannot be satisfied.
+        satisfiable = all_bundle_names | set(kwargs)
+        missing_required = {
+            k
+            for k, p in concrete_params.items()
+            if p.default is inspect.Parameter.empty and k not in satisfiable
+        }
+        if missing_required:
+            raise ValueError(
+                f"func has required parameter(s) {sorted(missing_required)!r} "
+                "that are not provided by the bundle or kwargs."
+            )
 
         if scalar_das:
             bcasted = dict(zip(scalar_names, xr.broadcast(*scalar_das)))
@@ -737,7 +776,12 @@ class ConfigBundle:
                 for name in scalar_names
             ]
             for chunk in self._iter_vector_chunks():
-                out = func(*scalar_vals, *chunk.values(), **kwargs)
+                all_named = {**dict(zip(scalar_names, scalar_vals)), **chunk}
+                bound = {
+                    k: all_named[k] for k in concrete_params if k in all_named
+                }
+                out = func(**bound, **kwargs)
+
                 for d, v in step_coords.items():
                     if d not in out.dims:
                         out = out.expand_dims({d: [v]})

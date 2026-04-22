@@ -449,3 +449,9 @@ For very large satellite images (tens of thousands × tens of thousands of pixel
 Step-by-step tutorials covering:
 - Loading MAJA L2A processor output data and running module on the MAJA output attributes.
 - Building custom `SceneModule` subclasses
+
+### (iii) Ensure that each module signs the output
+
+The adjeff accessor relies on the attrs of the xr.DataArray instances. It is therefore important to keep track on all the operations performed on the scene fields. For instance, a sampling module that produces `rho_s` should specify that `rho_s` originates from an estimation process. Another module that loads `rho_s` from a MAJA output folder should specify that it originates from an external source. 
+
+Therefore, some effort should be put into designing specific denominations for signs output from methods. This could be performed by a specific class or from enumations to ensure consistent naming.
