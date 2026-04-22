@@ -77,8 +77,8 @@ class GaussPSF(nn.Module, PSFModule):
 class GaussGeneralPSF(nn.Module, PSFModule):
     """Trainable Generalised Gaussian PSF model.
 
-    The kernel follows ``exp(-( r² / (2σ²) )ⁿ)``, where *n* controls the
-    shape: ``n=0.5`` yields a standard Gaussian.
+    The kernel follows ``exp(-(r/σ)ⁿ)``, where *n* controls the shape:
+    ``n=2`` yields a standard Gaussian, ``n=1`` a Laplacian.
 
     Parameters
     ----------
@@ -87,9 +87,9 @@ class GaussGeneralPSF(nn.Module, PSFModule):
     band : SensorBand
         Spectral band this PSF applies to.
     sigma : float
-        Initial scale parameter [km].
+        Initial scale parameter [km]. Constrained to ``[1e-6, 1.0]``.
     n : float
-        Initial shape exponent. Constrained to ``[0.05, 0.5]``.
+        Initial shape exponent. Constrained to ``[0.1, 0.4]``.
     """
 
     def __init__(
@@ -103,15 +103,15 @@ class GaussGeneralPSF(nn.Module, PSFModule):
             init_value=torch.tensor(sigma, dtype=torch.float32),
             transform=ExpTransform(),
             min_val=1e-6,
-            max_val=1e-1,
+            max_val=1e0,
             name="sigma",
         )
 
         self.n = ConstrainedParameter(
             init_value=torch.tensor(n, dtype=torch.float32),
-            transform=SigmoidTransform(0.05, 0.5),
-            min_val=0.05,
-            max_val=0.5,
+            transform=SigmoidTransform(0.1, 0.4),
+            min_val=0.1,
+            max_val=0.4,
             name="n",
         )
 
