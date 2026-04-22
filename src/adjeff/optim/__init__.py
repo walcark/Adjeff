@@ -2,6 +2,7 @@
 
 from ._config import OptimizerConfig
 from .adam_optimizer import AdamConfig, AdamOptimizer
+from .landscape import energy_radius_landscape, loss_landscape
 from .lbfgs_optimizer import LBFGSConfig, LBFGSOptimizer
 from .loss import Loss
 from .metrics import Metric
@@ -21,4 +22,6 @@ __all__ = [
     "TrainingImages",
     "TrainingSet",
     "TrainingSample",
+    "loss_landscape",
+    "energy_radius_landscape",
 ]
