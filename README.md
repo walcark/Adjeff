@@ -10,7 +10,8 @@
 </p>
 
 <p align="center">
-  A Python library for simulating adjacency effects and improving atmospheric correction of satellite imagery (Sentinel-2).
+  Adjeff is a Python library for simulating adjacency effects and improving atmospheric correction of satellite imagery on sensors like Sentinel-2. It is designed to be used for both research purpose or to generate adjacency effects correction models to be used in operational context.
+
 </p>
 
 ---
@@ -31,27 +32,146 @@
 
 ## 1. What is an adjacency effect?
 
-When a satellite sensor observes the Earth, it does not receive light from a single ground pixel alone. The atmosphere scatters photons laterally: some light that was reflected by *neighbouring* pixels is redirected towards the sensor, mixing with the signal from the target pixel. This contamination is called the **adjacency effect**.
+When a satellite sensor observes the Earth, it does not receive light from a single ground pixel alone. The atmosphere scatters photons laterally: some light that was reflected by *neighbouring* pixels is redirected towards the sensor, mixing with the signal from the target pixel. This contamination is called the **adjacency effect**. For a 2D map of surface reflectance $\rho_s$, the observed top-of-atmosphere (TOA) reflectance map $\rho_{toa}$ can be written as:
 
-For a pixel of surface reflectance $\rho_s(x, y)$, the observed top-of-atmosphere (TOA) reflectance $\rho_{toa}$ can be written as:
-
-$$\rho_{toa}(x, y) = T_{dir\uparrow} \cdot (T_{dir\downarrow} + T_{dif\downarrow}) \cdot \rho_s + \rho_{atm} + \int \rho_s(x', y') \cdot \text{PSF}(x-x', y-y') \, dx' dy'$$
+$$\rho_{toa}= \rho_{atm} + T^\downarrow \frac{T^\uparrow_{dir} \times \rho_s + T^\uparrow_{dif} \times \rho_s \ast P_{5S}}{1 - s \times \rho_s \ast P_{5S}} $$
 
 where:
 
 | Symbol | Meaning |
 |---|---|
-| $T_{dir\downarrow}$ | Direct solar transmittance (Sun → surface) |
-| $T_{dir\uparrow}$ | Direct upward transmittance (surface → sensor) |
-| $T_{dif\downarrow}$ | Diffuse downward transmittance |
-| $T_{dif\uparrow}$ | Diffuse upward transmittance |
+| $T_{dir}^\downarrow$ | Direct solar transmittance (sun → surface) |
+| $T_{dir}^\uparrow$ | Direct upward transmittance (surface → sensor) |
+| $T_{dif}^\downarrow$ | Diffuse downward transmittance |
+| $T_{dif}^\uparrow$ | Diffuse upward transmittance |
 | $\rho_{atm}$ | Intrinsic atmospheric reflectance (path radiance) |
 | $s$ | Spherical albedo (accounts for multiple surface–atmosphere bounces) |
-| PSF | Point spread function encoding the lateral redistribution of energy |
+| $P_{5S}$ | Point spread function encoding the lateral redistribution of energy |
 
-The PSF shape and width depend on the aerosol optical thickness (AOT), the geometry (SZA, VZA), and the wavelength. Correcting adjacency effects therefore requires an accurate simulation of all six radiative quantities above.
+The shape and width of $P_{5S}$ depend on both atmospheric parameters :
+- Aerosol Optical Thickness (aot)
+- Relative Humidity (rh)
+- Wavelength (wl)
+- Aerosol specie 
+- Aerosol vertical distribution (href)
+
+and geometric parameters:
+- Solar zenith and azimuth angles (sza, saa)
+- Viewing zenith and azimuth angles (vza, vaa)
+- The ground elevation (h)
+
+`adjeff` allows to determine the shape of $P_{5S}$ depending on each of those parameters, and allows to evaluate the performance of the retrieved models.
 
 ---
+
+## 2. Description of the tools available in `adjeff`
+
+`adjeff` first goal is to serve as a research tool. It has 3 distincts capacities:
+- apply transformation on images through a pipeline-like process,
+- perform radiative transfer computation of radiative parameters,
+- train optimal $P_{5S}$ model for atmospheric correction.
+
+### 2.1. Pipeline of image transformation
+
+`adjeff` primary object is called an ``ImageDict``. It correspond to a Mapping of sensors bands to ``xr.Dataset`` instances. The idea behind this dictionnary is that each sensor bands may have different resolutions, and thus cannot systematically share a common grid. The ``xr.Dataset`` consist in a collection of ``xr.DataArray`` instances, for example ``rho_s``, ``rho_atm``, ``tdir_up``, etc.
+
+#### 2.1.1 `SceneModule` - the base class to transform ``ImageDict`` instances
+
+The base class used for transformation of ``ImageDict`` instances is called a ``SceneModule``. It implements a ``.forward()`` method that takes an ``ImageDict`` as input and returns and ``ImageDict``. All the ``xr.DataArray`` instance in both the input and output are shared, except for the new fields introduced by the method. All the modules in `adjeff` are thus subclasses of ``SceneModule`` that must define two class attributes in order to work properly.
+
+1) required_vars: variables that must be in the input ImageDict. For instance, if `required_vars = ["rho_s"]`, the following ImageDict:
+
+```python
+ImageDict(
+    S2Band.B02: ['rho_s', 'rho_toa']
+    S2Band.B03: ['rho_s', 'rho_toa']
+    S2Band.B04: ['rho_s', 'rho_toa']
+)
+```
+
+can be used as input, but not this one:
+
+```python
+ImageDict(
+    S2Band.B02: ['rho_unif', 'rho_toa']
+    S2Band.B03: ['rho_unif', 'rho_toa']
+    S2Band.B04: ['rho_unif', 'rho_toa']
+)
+```
+
+2) output_vars: variables that will be written by the SceneModule in the return ImageDict.
+
+For instance, if ``output_vars = ["rho_toa"]``, the input ImageDict:
+
+```python
+ImageDict(
+    S2Band.B02: ['rho_s']
+    S2Band.B03: ['rho_s']
+    S2Band.B04: ['rho_s']
+)
+```
+
+will produce an output of the following shape:
+
+```python
+ImageDict(
+    S2Band.B02: ['rho_s', 'rho_toa']
+    S2Band.B03: ['rho_s', 'rho_toa']
+    S2Band.B04: ['rho_s', 'rho_toa']
+)
+```
+
+When an ``ImageDict`` is transformed by successive modules, it enrich with each parameters computed by those modules. The modules availables in `adjeff` are:
+
+TABLEAU  [Module | Short description | required_vars | output_vars]
+
+The choice of ``xr.DataArray`` for the data representation arise from the need to store information about the parameters used for their computation. For instance, imagine that an image ``rho_toa`` was computed from an input image ``rho_s`` thought a radiative transfer simulation (ex: ``SmartgSampler_Rho_Toa_sym``). The input image ``rho_s`` has dimensions ``[x,y]``. The value of ``rho_toa`` of course depends on atmospheric and geometric parameters. Those parameters are given to the __init__ method of ``SmartgSampler_Rho_Toa_sym``:
+
+```python
+from adjeff.core import gaussian_image_dict
+from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
+
+# Create an analytical Gaussian surface (sigma=0.5 km, 10 m resolution)
+scene = gaussian_image_dict(
+    sigma=0.5,
+    res_km=0.01,
+    rho_min=0.05,
+    rho_max=0.6,
+    bands=bands,
+    n=101,
+)
+
+rho_s = scene[S2Band.B02]["rho_s"]
+print(rho_toa)   # dims: (y, x)
+
+# Simulate TOA (requires GPU)
+module = SmartgSampler_Rho_toa_sym(
+    atmo_config=atmo,
+    geo_config=geo,
+    spectral_config=spectral,
+    remove_rayleigh=False,
+    nr=80,
+    n_ph=int(1e6),
+)
+scene = module(scene)
+
+rho_toa = scene[S2Band.B02]["rho_toa"]
+print(rho_toa)   # dims: (y, x, aot, rh, wl, href, h, ...)
+```
+
+The output image has new dimensions corresponding to the dimensions of the atmospheric and geometric parameters used for the computation. This allows to:
+1. sweep over each value of the input parameters, without returning multiple image instances (no type ambiguity),
+2. keep track of the dependences of an image of parameters.
+
+In order to minimize the footprint of the data, all results are systematically stored as ``zarr`` files and lazy loaded on demand. 
+
+#### 2.1.2. Subclasses of ``SceneModule``
+
+Two subclasses of ``SceneModule`` have been defined in ``adjeff``:
+1. ``SceneSource``: used for operations that don't require input images, for instance ``MajaLoader`` that loads Maja images and parameters from Maja output folders.
+2. ``SceneModuleSweep``: used for operations that may work on multiple input parameters values. For instance, some modules in the library are faster when they process multiple ``aot``, ``rh``, ``h``, etc. values at the same time. This class allows to define without ambiguity the parameters that can be processes as vectors, the parameters that can only be processes as scalars, but also to chunk vector parameters and sweep over all the combinations of parameters.
+
+## 2.2
 
 ## 2. Atmospheric correction with adjeff
 
