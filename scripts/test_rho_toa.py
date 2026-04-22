@@ -15,7 +15,7 @@ import xarray as xr
 
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import S2Band, disk_image_dict
-from adjeff.modules.samplers.rho_toa import SmartgSampler_Rho_toa, _radial_sensors
+from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
 from adjeff.utils.logger import MultilineConsoleRenderer
 
 logging.basicConfig(level=logging.INFO)
@@ -32,23 +32,6 @@ structlog.configure(
 BAND = S2Band.B02
 SAT_HEIGHT = 786.0  # km
 
-
-# ---------------------------------------------------------------------------
-# 1. _radial_sensors
-# ---------------------------------------------------------------------------
-def test_radial_sensors() -> None:
-    print(f"\n{'='*60}")
-    print("  1. _radial_sensors")
-    print(f"{'='*60}")
-
-    r_vals = np.linspace(0.0, 0.5, 6)  # km
-    vza, vaa = 10.0, 120.0
-
-    sensors = _radial_sensors(r_vals, vza=vza, vaa=vaa, sat_height=SAT_HEIGHT)
-
-    print(f"  vza={vza}°  vaa={vaa}°  sat_height={SAT_HEIGHT} km")
-    for r, s in zip(r_vals, sensors):
-        print(s.dict)
 
 
 # ---------------------------------------------------------------------------
@@ -87,14 +70,13 @@ def test_rho_toa_profile() -> None:
         sat_height=SAT_HEIGHT,
     )
 
-    sampler = SmartgSampler_Rho_toa(
+    sampler = SmartgSampler_Rho_toa_sym(
         atmo_config=atmo_cfg,
         geo_config=geo_cfg,
-        spectral_config=spectral_config,
         remove_rayleigh=False,
         afgl_type="afgl_exp_h8km",
         nr=500,
-        n_ph=int(1e5),
+        n_ph=int(1e4),
     )
 
     scene = sampler._compute(scene)
@@ -114,5 +96,4 @@ def test_rho_toa_profile() -> None:
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    test_radial_sensors()
     test_rho_toa_profile()
