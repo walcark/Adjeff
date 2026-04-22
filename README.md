@@ -10,8 +10,9 @@
 </p>
 
 <p align="center">
-  Adjeff is a Python library for simulating adjacency effects and improving atmospheric correction of satellite imagery on sensors like Sentinel-2. It is designed to be used for both research purpose or to generate adjacency effects correction models to be used in operational context.
-
+  Python library for simulating adjacency effects in satellite imagery (Sentinel-2).<br>
+  Forward simulation of TOA reflectance, GPU-accelerated Monte Carlo radiative transfer,<br>
+  and PSF learning for atmospheric correction.
 </p>
 
 ---
@@ -19,559 +20,599 @@
 ## Table of contents
 
 1. [What is an adjacency effect?](#1-what-is-an-adjacency-effect)
-2. [Atmospheric correction with adjeff](#2-atmospheric-correction-with-adjeff)
-3. [Computation philosophy](#3-computation-philosophy)
-4. [Installation](#4-installation)
-5. [Quick start](#5-quick-start)
-6. [Core concepts](#6-core-concepts)
-7. [Configuring Smart-G](#7-configuring-smart-g)
-8. [Running the notebooks](#8-running-the-notebooks)
-9. [Roadmap](#9-roadmap)
+2. [Library overview](#2-library-overview)
+3. [ImageDict — the central data structure](#3-imagedict--the-central-data-structure)
+4. [Image generators](#4-image-generators)
+5. [Atmospheric and geometric configuration](#5-atmospheric-and-geometric-configuration)
+6. [SceneModule — transforming scenes](#6-scenemodule--transforming-scenes)
+7. [SceneSource — creating scenes from scratch](#7-scenesource--creating-scenes-from-scratch)
+8. [Pipeline — chaining modules](#8-pipeline--chaining-modules)
+9. [SceneModuleSweep — parameter sweeps and deduplication](#9-scenemodule-sweep--parameter-sweeps-and-deduplication)
+10. [Smart-G radiative samplers](#10-smart-g-radiative-samplers)
+11. [PSF models and PSFDict](#11-psf-models-and-psfdict)
+12. [Atmospheric correction (5S model)](#12-atmospheric-correction-5s-model)
+13. [PSF optimization](#13-psf-optimization)
+14. [xarray accessor and caching](#14-xarray-accessor-and-caching)
+15. [Installation](#15-installation)
+16. [Roadmap](#16-roadmap)
 
 ---
 
 ## 1. What is an adjacency effect?
 
-When a satellite sensor observes the Earth, it does not receive light from a single ground pixel alone. The atmosphere scatters photons laterally: some light that was reflected by *neighbouring* pixels is redirected towards the sensor, mixing with the signal from the target pixel. This contamination is called the **adjacency effect**. For a 2D map of surface reflectance $\rho_s$, the observed top-of-atmosphere (TOA) reflectance map $\rho_{toa}$ can be written as:
+When a satellite observes the Earth, the atmosphere scatters photons laterally: some light from *neighbouring* pixels is redirected towards the sensor and mixes with the signal from the target pixel. This is the **adjacency effect**.
 
-$$\rho_{toa}= \rho_{atm} + T^\downarrow \frac{T^\uparrow_{dir} \times \rho_s + T^\uparrow_{dif} \times \rho_s \ast P_{5S}}{1 - s \times \rho_s \ast P_{5S}} $$
+For a surface reflectance map $\rho_s$, the observed top-of-atmosphere (TOA) reflectance $\rho_{toa}$ is:
 
-where:
+$$\rho_{toa} = \rho_{atm} + T^\downarrow \frac{T^\uparrow_{dir} \cdot \rho_s + T^\uparrow_{dif} \cdot (\rho_s \ast P)}{1 - s \cdot (\rho_s \ast P)}$$
+
+where $P$ is the **Point Spread Function** (PSF) that encodes the lateral redistribution of energy. Its shape depends on wavelength, aerosol loading, geometry, and ground elevation.
+
+<details>
+<summary>Radiative quantity symbols</summary>
 
 | Symbol | Meaning |
 |---|---|
-| $T_{dir}^\downarrow$ | Direct solar transmittance (sun → surface) |
+| $T_{dir}^\downarrow$ | Direct solar transmittance (Sun → surface) |
 | $T_{dir}^\uparrow$ | Direct upward transmittance (surface → sensor) |
 | $T_{dif}^\downarrow$ | Diffuse downward transmittance |
 | $T_{dif}^\uparrow$ | Diffuse upward transmittance |
 | $\rho_{atm}$ | Intrinsic atmospheric reflectance (path radiance) |
-| $s$ | Spherical albedo (accounts for multiple surface–atmosphere bounces) |
-| $P_{5S}$ | Point spread function encoding the lateral redistribution of energy |
+| $s$ | Spherical albedo |
+| $P$ | Point Spread Function (lateral energy redistribution) |
 
-The shape and width of $P_{5S}$ depend on both atmospheric parameters :
-- Aerosol Optical Thickness (aot)
-- Relative Humidity (rh)
-- Wavelength (wl)
-- Aerosol specie 
-- Aerosol vertical distribution (href)
+</details>
 
-and geometric parameters:
-- Solar zenith and azimuth angles (sza, saa)
-- Viewing zenith and azimuth angles (vza, vaa)
-- The ground elevation (h)
-
-`adjeff` allows to determine the shape of $P_{5S}$ depending on each of those parameters, and allows to evaluate the performance of the retrieved models.
+The PSF width and shape depend on:
+- Aerosol Optical Thickness (`aot`), relative humidity (`rh`), scale height (`href`), species
+- Solar and viewing zenith/azimuth angles (`sza`, `vza`, `saa`, `vaa`)
+- Wavelength (`wl`) and ground elevation (`h`)
 
 ---
 
-## 2. Description of the tools available in `adjeff`
+## 2. Library overview
 
-`adjeff` first goal is to serve as a research tool. It has 3 distincts capacities:
-- apply transformation on images through a pipeline-like process,
-- perform radiative transfer computation of radiative parameters,
-- train optimal $P_{5S}$ model for atmospheric correction.
+`adjeff` has three complementary roles:
 
-### 2.1. Pipeline of image transformation
+| Role | Description |
+|---|---|
+| **Forward simulation** | Given $\rho_s$ and an atmospheric state, compute $\rho_{toa}$ via Monte Carlo radiative transfer |
+| **PSF characterisation** | Determine the shape of $P$ as a function of atmospheric and geometric parameters |
+| **Inverse correction** | Recover $\rho_s$ from $\rho_{toa}$ using a learned PSF model |
 
-`adjeff` primary object is called an ``ImageDict``. It correspond to a Mapping of sensors bands to ``xr.Dataset`` instances. The idea behind this dictionnary is that each sensor bands may have different resolutions, and thus cannot systematically share a common grid. The ``xr.Dataset`` consist in a collection of ``xr.DataArray`` instances, for example ``rho_s``, ``rho_atm``, ``tdir_up``, etc.
-
-#### 2.1.1 `SceneModule` - the base class to transform ``ImageDict`` instances
-
-The base class used for transformation of ``ImageDict`` instances is called a ``SceneModule``. It implements a ``.forward()`` method that takes an ``ImageDict`` as input and returns and ``ImageDict``. All the ``xr.DataArray`` instance in both the input and output are shared, except for the new fields introduced by the method. All the modules in `adjeff` are thus subclasses of ``SceneModule`` that must define two class attributes in order to work properly.
-
-1) required_vars: variables that must be in the input ImageDict. For instance, if `required_vars = ["rho_s"]`, the following ImageDict:
-
-```python
-ImageDict(
-    S2Band.B02: ['rho_s', 'rho_toa']
-    S2Band.B03: ['rho_s', 'rho_toa']
-    S2Band.B04: ['rho_s', 'rho_toa']
-)
-```
-
-can be used as input, but not this one:
-
-```python
-ImageDict(
-    S2Band.B02: ['rho_unif', 'rho_toa']
-    S2Band.B03: ['rho_unif', 'rho_toa']
-    S2Band.B04: ['rho_unif', 'rho_toa']
-)
-```
-
-2) output_vars: variables that will be written by the SceneModule in the return ImageDict.
-
-For instance, if ``output_vars = ["rho_toa"]``, the input ImageDict:
-
-```python
-ImageDict(
-    S2Band.B02: ['rho_s']
-    S2Band.B03: ['rho_s']
-    S2Band.B04: ['rho_s']
-)
-```
-
-will produce an output of the following shape:
-
-```python
-ImageDict(
-    S2Band.B02: ['rho_s', 'rho_toa']
-    S2Band.B03: ['rho_s', 'rho_toa']
-    S2Band.B04: ['rho_s', 'rho_toa']
-)
-```
-
-When an ``ImageDict`` is transformed by successive modules, it enrich with each parameters computed by those modules. The modules availables in `adjeff` are:
-
-TABLEAU  [Module | Short description | required_vars | output_vars]
-
-The choice of ``xr.DataArray`` for the data representation arise from the need to store information about the parameters used for their computation. For instance, imagine that an image ``rho_toa`` was computed from an input image ``rho_s`` thought a radiative transfer simulation (ex: ``SmartgSampler_Rho_Toa_sym``). The input image ``rho_s`` has dimensions ``[x,y]``. The value of ``rho_toa`` of course depends on atmospheric and geometric parameters. Those parameters are given to the __init__ method of ``SmartgSampler_Rho_Toa_sym``:
-
-```python
-from adjeff.core import gaussian_image_dict
-from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
-
-# Create an analytical Gaussian surface (sigma=0.5 km, 10 m resolution)
-scene = gaussian_image_dict(
-    sigma=0.5,
-    res_km=0.01,
-    rho_min=0.05,
-    rho_max=0.6,
-    bands=bands,
-    n=101,
-)
-
-rho_s = scene[S2Band.B02]["rho_s"]
-print(rho_toa)   # dims: (y, x)
-
-# Simulate TOA (requires GPU)
-module = SmartgSampler_Rho_toa_sym(
-    atmo_config=atmo,
-    geo_config=geo,
-    spectral_config=spectral,
-    remove_rayleigh=False,
-    nr=80,
-    n_ph=int(1e6),
-)
-scene = module(scene)
-
-rho_toa = scene[S2Band.B02]["rho_toa"]
-print(rho_toa)   # dims: (y, x, aot, rh, wl, href, h, ...)
-```
-
-The output image has new dimensions corresponding to the dimensions of the atmospheric and geometric parameters used for the computation. This allows to:
-1. sweep over each value of the input parameters, without returning multiple image instances (no type ambiguity),
-2. keep track of the dependences of an image of parameters.
-
-In order to minimize the footprint of the data, all results are systematically stored as ``zarr`` files and lazy loaded on demand. 
-
-#### 2.1.2. Subclasses of ``SceneModule``
-
-Two subclasses of ``SceneModule`` have been defined in ``adjeff``:
-1. ``SceneSource``: used for operations that don't require input images, for instance ``MajaLoader`` that loads Maja images and parameters from Maja output folders.
-2. ``SceneModuleSweep``: used for operations that may work on multiple input parameters values. For instance, some modules in the library are faster when they process multiple ``aot``, ``rh``, ``h``, etc. values at the same time. This class allows to define without ambiguity the parameters that can be processes as vectors, the parameters that can only be processes as scalars, but also to chunk vector parameters and sweep over all the combinations of parameters.
-
-## 2.2
-
-## 2. Atmospheric correction with adjeff
-
-`adjeff` models the forward problem: given a known surface $\rho_s$ and an atmospheric state, what does the satellite observe?
-
-The library provides:
-
-- **Radiative quantity samplers** — six `SceneModule` subclasses that call [Smart-G](https://github.com/hygeos/smartg) (a GPU Monte Carlo radiative transfer code) to compute $T_{dir\downarrow}$, $T_{dir\uparrow}$, $T_{dif\downarrow}$, $T_{dif\uparrow}$, $\rho_{atm}$, and $s$.
-- **TOA simulation** — `SmartgSampler_Rho_toa_sym` combines the radiative quantities with a convolution under the PSF symmetry assumption to produce $\rho_{toa}$.
-- **PSF models** — analytical (Gaussian) and non-analytical PSF representations, usable independently for convolution experiments.
-- **Parameter sweep engine** — efficient vectorised sweeps over atmospheric and angular parameter grids, with automatic spatial deduplication to avoid recomputing identical configurations.
-
-The intended workflow for **inverse atmospheric correction** (i.e. recovering $\rho_s$ from $\rho_{toa}$) is to build a lookup table or a learned model on top of the forward simulations provided by this library.
+The design philosophy is to make multi-parameter sweeps first-class: every configuration object accepts `xr.DataArray` inputs with named dimensions, and the library automatically builds the outer product, deduplicates identical parameter combinations, and reconstructs the full-dimensional result — with no extra code from the user.
 
 ---
 
-## 3. Computation philosophy
+## 3. ImageDict — the central data structure
 
-### Smart-G: always on GPU
-
-All Monte Carlo radiative transfer simulations are delegated to Smart-G, which runs exclusively on GPU via CUDA. There is no CPU fallback for this step. Smart-G handles the full photon transport, including Rayleigh scattering, aerosol scattering, and surface–atmosphere coupling.
-
-The `adjeff` parameter sweep engine (`ConfigBundle` / `SceneModuleSweep`) is designed to maximise GPU occupancy: it deduplicates spatial parameter combinations and batches all unique atmospheric states into a single Smart-G call, avoiding redundant GPU launches.
-
-### Convolutions: CPU or GPU
-
-The convolution step (applying the PSF to a surface image) is implemented via FFT and runs on PyTorch. It can execute on either CPU or GPU depending on the `device` argument passed to `fft_convolve_2D`. For large images, GPU convolution is strongly recommended.
-
-### Environment management: pixi
-
-The project uses [pixi](https://pixi.sh) for reproducible environment management. Two feature sets are available:
-
-| Environment | Command | Notes |
-|---|---|---|
-| `cpu` | `pixi run --environment cpu` | No GPU, PyTorch CPU only |
-| `gpu` | `pixi run --environment gpu` | Requires CUDA 12.6 |
-| `dev` | `pixi run --environment dev` | CPU + dev tools (ruff, mypy, pytest) |
-| `dev-gpu` | `pixi run --environment dev-gpu` | GPU + dev tools |
-
----
-
-## 4. Installation
-
-### Prerequisites
-
-- Python 3.11 or 3.12
-- [pixi](https://pixi.sh) package manager
-- A CUDA 12.6-compatible GPU and driver (for GPU environments)
-- Smart-G auxiliary data (see [§7](#7-configuring-smart-g))
-
-### Clone and install
-
-```bash
-git clone https://github.com/walcark/Adjeff.git
-cd Adjeff
-```
-
-Install the CPU-only environment (no GPU required):
-
-```bash
-pixi install --environment cpu
-```
-
-Or the GPU environment:
-
-```bash
-pixi install --environment gpu
-```
-
-The library is installed in editable mode automatically via the `pyproject.toml` configuration.
-
-### Verify the installation
-
-```bash
-pixi run --environment cpu python -c "import adjeff; print('adjeff OK')"
-```
-
-### Development environment
-
-```bash
-pixi install --environment dev-gpu   # or dev for CPU
-
-# Run the full quality suite
-pixi run --environment dev all       # fmt + lint + type-check + tests
-```
-
----
-
-## 5. Quick start
-
-### Compute all radiative quantities for a single atmospheric state
-
-```python
-import xarray as xr
-from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
-from adjeff.core import ImageDict, S2Band
-from adjeff.modules.samplers import RadiativePipeline
-
-# Define the bands to compute
-bands = [S2Band.B02, S2Band.B03, S2Band.B04]
-
-# Atmospheric state
-atmo = AtmoConfig(
-    aot=xr.DataArray([0.1], dims=["aot"]),       # Aerosol optical thickness
-    h=xr.DataArray([0.0], dims=["h"]),            # Ground elevation [km]
-    rh=xr.DataArray([50.0], dims=["rh"]),         # Relative humidity [%]
-    href=xr.DataArray([2.0], dims=["href"]),       # Aerosol scale height [km]
-    species={"sulphate": 1.0},                    # Aerosol species mix
-)
-
-# Sun/satellite geometry
-geo = GeoConfig(
-    sza=xr.DataArray([30.0], dims=["sza"]),       # Sun zenith angle [°]
-    vza=xr.DataArray([10.0], dims=["vza"]),       # View zenith angle [°]
-    saa=xr.DataArray([120.0], dims=["saa"]),      # Sun azimuth [°]
-    vaa=xr.DataArray([120.0], dims=["vaa"]),      # View azimuth [°]
-)
-
-# Spectral configuration derived from band definitions
-spectral = SpectralConfig.from_bands(bands)
-
-# Empty scene (no surface yet — radiative quantities are atmosphere-only)
-scene = ImageDict({band: xr.Dataset() for band in bands})
-
-# Run all six radiative samplers in sequence
-pipeline = RadiativePipeline(
-    atmo_config=atmo,
-    geo_config=geo,
-    spectral_config=spectral,
-    remove_rayleigh=False,
-)
-scene = pipeline(scene)
-
-# Access results
-print(scene[S2Band.B02]["tdir_down"])   # dims: (wl, aot)
-print(scene[S2Band.B02]["rho_atm"])     # dims: (wl, aot)
-```
-
-### Simulate TOA reflectance from a surface image
-
-```python
-from adjeff.core import gaussian_image_dict
-from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
-
-# Create an analytical Gaussian surface (sigma=0.5 km, 10 m resolution)
-scene = gaussian_image_dict(
-    sigma=0.5,
-    res_km=0.01,
-    rho_min=0.05,
-    rho_max=0.6,
-    bands=bands,
-    n=101,
-)
-
-# Simulate TOA (requires GPU)
-module = SmartgSampler_Rho_toa_sym(
-    atmo_config=atmo,
-    geo_config=geo,
-    spectral_config=spectral,
-    remove_rayleigh=False,
-    nr=80,
-    n_ph=int(1e6),
-)
-scene = module(scene)
-
-rho_toa = scene[S2Band.B02]["rho_toa"]
-print(rho_toa)   # dims: (y, x)
-```
-
-### Parameter sweep over AOT and SZA
-
-All config objects accept xarray `DataArray` inputs with named dimensions. The library automatically builds the outer product and batches the computation:
-
-```python
-atmo_sweep = AtmoConfig(
-    aot=xr.DataArray([0.05, 0.10, 0.20, 0.40], dims=["aot"]),
-    h=xr.DataArray([0.0], dims=["h"]),
-    rh=xr.DataArray([50.0], dims=["rh"]),
-    href=xr.DataArray([2.0], dims=["href"]),
-    species={"sulphate": 1.0},
-)
-
-geo_sweep = GeoConfig(
-    sza=xr.DataArray([20.0, 30.0, 45.0], dims=["sza"]),
-    vza=xr.DataArray([0.0], dims=["vza"]),
-    saa=xr.DataArray([120.0], dims=["saa"]),
-    vaa=xr.DataArray([120.0], dims=["vaa"]),
-)
-
-# The output will carry dims (wl, aot, sza)
-pipeline_sweep = RadiativePipeline(
-    atmo_config=atmo_sweep,
-    geo_config=geo_sweep,
-    spectral_config=spectral,
-    remove_rayleigh=False,
-)
-scene = pipeline_sweep(ImageDict({band: xr.Dataset() for band in bands}))
-
-tdir_down = scene[S2Band.B02]["tdir_down"]
-print(tdir_down.dims)   # ('wl', 'aot', 'sza') or similar
-```
-
----
-
-## 6. Core concepts
-
-### ImageDict
-
-`ImageDict` is the central data structure. It is a dictionary keyed by `SensorBand` instances, each mapping to an `xr.Dataset` that accumulates variables as modules are applied.
+`ImageDict` is the central container. It is a mapping of `SensorBand` → `xr.Dataset`, one dataset per spectral band. Each band can have a different spatial resolution, so a common array is not always possible.
 
 ```python
 from adjeff.core import ImageDict, S2Band
 import xarray as xr
 
 scene = ImageDict({
-    S2Band.B02: xr.Dataset({"rho_s": rho_s_b02}),
-    S2Band.B03: xr.Dataset({"rho_s": rho_s_b03}),
+    S2Band.B02: xr.Dataset({"rho_s": rho_s_b02}),  # 10 m
+    S2Band.B03: xr.Dataset({"rho_s": rho_s_b03}),  # 10 m
+    S2Band.B04: xr.Dataset({"rho_s": rho_s_b04}),  # 10 m
+    S2Band.B8A: xr.Dataset({"rho_s": rho_s_b8a}),  # 20 m
 })
 
-# Access a band dataset
-ds_b02 = scene[S2Band.B02]
+# Access a single band dataset
+ds_b02 = scene[S2Band.B02]           # xr.Dataset
+rho_s  = scene[S2Band.B02]["rho_s"]  # xr.DataArray
 ```
 
-Variables accumulate in-place as modules are applied. Each module declares which variables it `required_vars` and which it adds via `output_vars`, enabling compile-time validation of pipeline chains.
+As modules are applied, variables accumulate inside each dataset — `rho_toa`, `tdir_down`, etc. — without ever duplicating the spatial arrays. Extra parameter dimensions (e.g. `aot`, `wl`) appear as named xarray dimensions on the result arrays.
 
-### SceneModule and Pipeline
-
-`SceneModule` (a `torch.nn.Module` subclass) is the base class for all operations on an `ImageDict`. Modules are chained into a `Pipeline`, which validates the variable dependency graph at construction time:
-
-```python
-from adjeff.modules import Pipeline
-from adjeff.modules.samplers import SmartgSampler_Tdir_down, SmartgSampler_Tdir_up
-
-pipeline = Pipeline([
-    SmartgSampler_Tdir_down(atmo_config=atmo, geo_config=geo, spectral_config=spectral, remove_rayleigh=False),
-    SmartgSampler_Tdir_up(atmo_config=atmo, geo_config=geo, spectral_config=spectral, remove_rayleigh=False),
-])
-scene = pipeline(scene)
-```
-
-### Available radiative samplers
-
-| Class | Output variable | Description |
-|---|---|---|
-| `SmartgSampler_Tdir_down` | `tdir_down` | Direct solar transmittance (Sun → surface) |
-| `SmartgSampler_Tdir_up` | `tdir_up` | Direct upward transmittance (surface → sensor) |
-| `SmartgSampler_Tdif_down` | `tdif_down` | Diffuse downward transmittance |
-| `SmartgSampler_Tdif_up` | `tdif_up` | Diffuse upward transmittance |
-| `SmartgSampler_Rho_atm` | `rho_atm` | Atmospheric path reflectance |
-| `SmartgSampler_Sph_alb` | `sph_alb` | Spherical albedo |
-| `SmartgSampler_Rho_toa_sym` | `rho_toa` | TOA reflectance (requires `rho_s`) |
-| `RadiativePipeline` | all six above | Convenience class chaining all samplers |
-
-### xarray accessor
-
-All DataArrays produced or consumed by adjeff can be accessed via the `.adjeff` accessor:
-
-```python
-# Radial analysis
-profile = rho_s.adjeff.radial()          # azimuthal mean vs radius
-cdf = rho_s.adjeff.radial_cdf()          # area-weighted CDF
-adaptive = profile.adjeff.radial_adaptive(n=50, max_gap=0.5)
-
-# Reconstruct a 2D field from a radial profile
-field_2d = profile.adjeff.to_field(target_dataset)
-
-# Metadata
-print(rho_s.adjeff.kind())     # "analytical" or "arbitrary"
-print(rho_s.adjeff.model())    # "gaussian", "disk", or None
-print(rho_s.adjeff.res)        # pixel size [km]
-```
-
-### Caching
-
-All modules support result caching via `CacheStore`. A shared cache can be passed to a `RadiativePipeline` to avoid recomputing identical inputs across runs:
-
-```python
-from adjeff.utils import CacheStore
-
-cache = CacheStore(path="./adjeff_cache")
-pipeline = RadiativePipeline(..., cache=cache)
-```
-
-Cache keys are built from the module type, its configuration, and a hash of the input arrays, so re-running with the same inputs is a no-op.
-
-### Spatial deduplication
-
-For large images where atmospheric parameters vary spatially (e.g. `aot(x, y)`), the `deduplicate_dims` argument collapses all unique parameter combinations into a compact index before the GPU call, then reconstructs the full spatial result:
-
-```python
-# 1000×1000 image with only 20 unique (aot, sza) pairs
-# → Smart-G runs on 20 points, not 1,000,000
-sampler = SmartgSampler_Tdir_down(
-    atmo_config=atmo_spatial,   # aot has dims ["x", "y"]
-    geo_config=geo_spatial,     # sza has dims ["x", "y"]
-    spectral_config=spectral,
-    remove_rayleigh=False,
-    deduplicate_dims=["x", "y"],
-)
-```
+`SensorBand` is an abstract base; `S2Band` is the Sentinel-2 implementation (`S2Band.B02` … `S2Band.B12`).
 
 ---
 
-## 7. Configuring Smart-G
+## 4. Image generators
 
-Smart-G requires auxiliary data files (molecular absorption databases, aerosol models, etc.) that are **not bundled** with the package. You must download them separately and point Smart-G to their location via an environment variable.
+Several factory functions create custom scenes for experiments:
 
-### Setting SMARTG_DIR_AUXDATA
+```python
+from adjeff.core import gaussian_image_dict, disk_image_dict, random_image_dict
+
+bands = [S2Band.B02, S2Band.B03, S2Band.B04]
+
+# Gaussian bright target on a dark background
+scene = gaussian_image_dict(sigma=0.5, res_km=0.01, rho_min=0.05, rho_max=0.6,
+                            bands=bands, n=101)
+
+# Uniform disk
+scene = disk_image_dict(radius=1.0, res_km=0.01, rho_min=0.05, rho_max=0.6,
+                        bands=bands, n=101)
+
+# Random spatially heterogeneous scene
+scene = random_image_dict(res_km=0.01, bands=bands, n=101)
+```
+
+Each generator returns an `ImageDict` with a `rho_s` variable by default per band, ready to pass to any module that declares `required_vars = ["rho_s"]`.
+
+---
+
+## 5. Atmospheric and geometric configuration
+
+All modules that interact with the atmosphere are configured through three Pydantic objects. Each field can be a scalar or an `xr.DataArray` with a named dimension — that dimension will propagate to the output.
+
+```python
+import xarray as xr
+from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
+
+atmo = AtmoConfig(
+    aot=xr.DataArray([0.05, 0.10, 0.20], dims=["aot"]),  # 3 AOT values
+    h=xr.DataArray([0.0], dims=["h"]),
+    rh=xr.DataArray([50.0], dims=["rh"]),
+    href=xr.DataArray([2.0], dims=["href"]),
+    species={"sulphate": 1.0},
+)
+
+geo = GeoConfig(
+    sza=xr.DataArray([30.0], dims=["sza"]),
+    vza=xr.DataArray([10.0], dims=["vza"]),
+    saa=xr.DataArray([120.0], dims=["saa"]),
+    vaa=xr.DataArray([120.0], dims=["vaa"]),
+)
+
+spectral = SpectralConfig.from_bands(bands)
+```
+
+<details>
+<summary>AtmoConfig fields reference</summary>
+
+| Field | Unit | Description |
+|---|---|---|
+| `aot` | — | Aerosol optical thickness at 550 nm |
+| `h` | km | Ground elevation |
+| `rh` | % | Relative humidity |
+| `href` | km | Aerosol scale height |
+| `species` | dict | Aerosol species mix (weights must sum to 1) |
+
+</details>
+
+<details>
+<summary>GeoConfig fields reference</summary>
+
+| Field | Unit | Description |
+|---|---|---|
+| `vza` | — | Viewing zenith angle [°] |
+| `vaa` | km | Viewing azimuth angle [°]  |
+| `sza` | % | Solar Zenith angle [°]|
+| `saa` | km | solar Azimuth angle [°] |
+
+</details>
+
+
+---
+
+## 6. SceneModule — transforming scenes
+
+`SceneModule` is the base class for every operation on an `ImageDict`. Each subclass declares:
+
+- `required_vars` — variables that must already exist in the input scene
+- `output_vars` — variables it will write into the output scene
+
+```python
+class MyModule(SceneModule):
+    required_vars = ["rho_s"]
+    output_vars   = ["rho_toa"]
+
+    def _compute(self, scene: ImageDict) -> ImageDict:
+        ...
+        return scene
+```
+
+Calling a module enriches the scene without modifying pre-existing variables:
+
+```
+ImageDict(B02: [rho_s])  →  MyModule  →  ImageDict(B02: [rho_s, rho_toa])
+```
+
+`forward()` handles validation, cache lookup, delegation to `_compute()`, and cache save. Subclasses only implement `_compute()`.
+
+<details>
+<summary>Complete module catalogue</summary>
+
+| Class | `required_vars` | `output_vars` | Notes |
+|---|---|---|---|
+| `SmartgSampler_Tdir_down` | — | `tdir_down` | Direct solar transmittance ↓ |
+| `SmartgSampler_Tdir_up` | — | `tdir_up` | Direct transmittance ↑ |
+| `SmartgSampler_Tdif_down` | — | `tdif_down` | Diffuse transmittance ↓ |
+| `SmartgSampler_Tdif_up` | — | `tdif_up` | Diffuse transmittance ↑ |
+| `SmartgSampler_Rho_atm` | — | `rho_atm` | Path reflectance |
+| `SmartgSampler_Sph_alb` | — | `sph_alb` | Spherical albedo |
+| `SmartgSampler_PSF_Atm` | — | `psf_atm` | Atmospheric PSF kernel |
+| `SmartgSampler_Rho_toa_sym` | `rho_s` | `rho_toa` | TOA simulation (GPU) |
+| `RadiativePipeline` | — | all radiative quantities | Convenience chain |
+| `Toa2Unif` | `rho_toa` + all radiative quantities | `rho_unif` | 5S inversion |
+| `Unif2Toa` | `rho_unif` + all radiative quantities | `rho_toa` | 5S forward (no PSF) |
+| `Unif2Surface` | `rho_unif`, `sph_alb`, `tdir_up`, `tdif_up` | `rho_s` | 5S + PSF deconvolution |
+| `MajaLoader` | — | `rho_s`, `aot`, `rh`, geometry… | Loads MAJA L2A output |
+
+</details>
+
+---
+
+## 7. SceneSource — creating scenes from scratch
+
+`SceneSource` specialises `SceneModule` for modules that produce an `ImageDict` from an external source (disk, satellite product) rather than transforming an existing one. The `required_vars` list is always empty, and calling a `SceneSource` without an input scene is valid.
+
+```python
+from adjeff.modules.loaders import MajaLoader
+
+loader = MajaLoader(path="/data/MAJA_L2A/", bands=bands)
+
+scene = loader()        # fresh scene from product
+scene = loader(scene)   # or enrich an existing one
+
+print(list(scene[S2Band.B02].data_vars))
+# ['rho_s', 'aot', 'rh', 'href', 'vza', 'vaa', 'sza', 'saa', 'h']
+```
+
+`ProductLoader` is the abstract base for all product loaders. Mixin classes (`GeometryMixin`, `AtmosphereMixin`, `ElevationMixin`) declare which ancillary variables a loader contributes.
+
+---
+
+## 8. Pipeline — chaining modules
+
+`Pipeline` chains an ordered list of modules and validates at construction that each module's `required_vars` are satisfied by the `output_vars` of the preceding ones.
+
+```python
+from adjeff.modules import Pipeline
+from adjeff.modules.samplers import (
+    SmartgSampler_Tdir_down, SmartgSampler_Tdir_up,
+    SmartgSampler_Rho_atm,  SmartgSampler_Sph_alb,
+)
+
+pipeline = Pipeline([
+    SmartgSampler_Tdir_down(atmo_config=atmo, geo_config=geo,
+                            spectral_config=spectral, remove_rayleigh=False),
+    SmartgSampler_Tdir_up(atmo_config=atmo, geo_config=geo,
+                          spectral_config=spectral, remove_rayleigh=False),
+    SmartgSampler_Rho_atm(atmo_config=atmo, geo_config=geo,
+                          spectral_config=spectral, remove_rayleigh=False),
+    SmartgSampler_Sph_alb(atmo_config=atmo, geo_config=geo,
+                          spectral_config=spectral, remove_rayleigh=False),
+])
+
+scene = pipeline(scene)
+```
+
+If a dependency is missing, a `ValueError` is raised at construction time — not at runtime.
+
+---
+
+## 9. SceneModuleSweep — parameter sweeps and deduplication
+
+`SceneModuleSweep` extends `SceneModule` for computationally intensive modules that must be invoked once per scalar parameter combination. Subclasses declare:
+
+- `scalar_dims` — attributes iterated one value at a time (e.g. `sza`)
+- `vector_dims` — attributes passed as a full array in a single call (e.g. `wl`)
+
+The sweep and assembly logic is handled by `ConfigBundle`, which builds the outer product of all scalar dimensions, calls the core function for each combination, and stacks the results into a single xarray output.
+
+<details>
+<summary>Spatial deduplication</summary>
+
+When atmospheric parameters vary spatially (e.g. `aot(x, y)` from a MAJA product), a large image may contain only a small number of unique parameter values. The `deduplicate_dims` argument collapses them before the GPU call and reconstructs the full spatial map after:
+
+```python
+sampler = SmartgSampler_Tdir_down(
+    atmo_config=atmo_spatial,      # aot has dims ["x", "y"]
+    geo_config=geo_spatial,
+    spectral_config=spectral,
+    remove_rayleigh=False,
+    deduplicate_dims=["x", "y"],   # 1000×1000 image → N unique pairs
+)
+scene = sampler(scene)
+# tdir_down has dims (wl, x, y) — full spatial map, computed on N points
+```
+
+</details>
+
+<details>
+<summary>Chunking large vector dimensions</summary>
+
+The `chunks` argument limits how many values are sent to Smart-G in a single call, bounding GPU memory usage:
+
+```python
+sampler = SmartgSampler_Tdir_down(
+    atmo_config=atmo,
+    geo_config=geo,
+    spectral_config=spectral,
+    remove_rayleigh=False,
+    chunks={"wl": 20},
+)
+```
+
+</details>
+
+---
+
+## 10. Smart-G radiative samplers
+
+All radiative samplers are `SceneModuleSweep` subclasses. They delegate to [Smart-G](https://github.com/hygeos/smartg), a GPU Monte Carlo radiative transfer code, and require CUDA 12.6.
+
+```python
+from adjeff.modules.samplers import RadiativePipeline
+
+pipeline = RadiativePipeline(
+    atmo_config=atmo,
+    geo_config=geo,
+    spectral_config=spectral,
+    remove_rayleigh=False,
+)
+scene = pipeline(ImageDict({b: xr.Dataset() for b in bands}))
+
+print(scene[S2Band.B02]["tdir_down"])  # dims: (wl, aot)
+print(scene[S2Band.B02]["rho_atm"])    # dims: (wl, aot)
+```
+
+`RadiativePipeline` chains the six radiative samplers in the correct order. Use individual sampler classes when only a subset is needed.
+
+### TOA simulation
+
+`SmartgSampler_Rho_toa_sym` combines all radiative quantities with a PSF convolution (under the azimuthal symmetry assumption) to produce $\rho_{toa}$ directly from a surface image:
+
+```python
+from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
+
+module = SmartgSampler_Rho_toa_sym(
+    atmo_config=atmo,
+    geo_config=geo,
+    spectral_config=spectral,
+    remove_rayleigh=False,
+    nr=80,          # radial PSF samples
+    n_ph=int(1e6),  # photons per Smart-G run
+)
+scene = module(scene)  # requires rho_s
+rho_toa = scene[S2Band.B02]["rho_toa"]  # dims: (y, x, aot, wl, ...)
+```
+
+### Smart-G auxiliary data
+
+Smart-G requires auxiliary data files that are not bundled with `adjeff`:
 
 ```bash
 export SMARTG_DIR_AUXDATA=/path/to/smartg/auxdata
 ```
 
-This variable must be set before any Smart-G simulation is run. A good place to put it is your shell configuration file (`~/.bashrc` or `~/.zshrc`) or in a `.env` file loaded at the start of your session.
+---
 
-When using pixi, you can also define it in the `pixi.toml` (not recommended for sensitive paths) or set it in your shell before calling `pixi run`.
+## 11. PSF models and PSFDict
 
-### Verifying the setup
+### Analytical PSF models
+
+All analytical models are `torch.nn.Module` subclasses with constrained trainable parameters (positivity, bounded range enforced via `ConstrainedParameter`).
+
+| Class | Shape | Parameters |
+|---|---|---|
+| `GaussPSF` | Gaussian | `sigma` |
+| `GaussGeneralPSF` | Anisotropic Gaussian | `sigma_x`, `sigma_y`, `theta` |
+| `VoigtPSF` | Voigt (Gauss + Lorentz) | `sigma`, `gamma` |
+| `KingPSF` | King profile | `r_c`, `alpha` |
+| `MoffatGeneralizedPSF` | Generalized Moffat | `alpha`, `beta`, `eta` |
 
 ```python
-import os
-from smartg.smartg import Smartg
+from adjeff.core import GaussPSF, PSFGrid
 
-assert "SMARTG_DIR_AUXDATA" in os.environ, "SMARTG_DIR_AUXDATA is not set"
-smartg = Smartg(autoinit=False)   # should not raise
+psf  = GaussPSF(sigma=0.3)      # sigma in km
+grid = PSFGrid(res_km=0.01, n=101)
+kernel = psf(grid)              # xr.DataArray, dims: (y, x)
 ```
 
-### AFGL atmosphere profiles
+`NonAnalyticalPSF` wraps a fixed numpy kernel (non-trainable) for applying a pre-computed PSF directly.
 
-All radiative samplers accept an `afgl_type` parameter that selects the standard AFGL background atmosphere. The default is `"afgl_exp_h8km"`, which uses an exponential aerosol vertical profile with an 8 km scale height. The available profiles depend on the auxiliary data version installed.
+### PSFDict
+
+`PSFDict` maps `SensorBand` → PSF kernel, in either trainable or frozen mode:
+
+```python
+from adjeff.core import PSFDict
+
+# Trainable (for optimization)
+psf_dict = PSFDict.from_modules({
+    S2Band.B02: GaussPSF(sigma=0.3),
+    S2Band.B03: GaussPSF(sigma=0.25),
+})
+
+# Frozen (export after training, or from pre-computed kernels)
+psf_dict_frozen = psf_dict.to_frozen(grid)
+kernel_b02 = psf_dict_frozen[S2Band.B02]  # xr.DataArray
+```
+
+A `PSFDict` can carry extra dimensions (e.g. `aot`, `rh`) to represent PSFs that vary with atmospheric state.
 
 ---
 
-## 8. Running the notebooks
+## 12. Atmospheric correction (5S model)
 
-The `notebooks/` directory contains step-by-step tutorials. Two dedicated pixi environments bundle JupyterLab, Matplotlib, and ipywidgets alongside the library:
+### Forward model
 
-| Environment | Command | Notes |
-|---|---|---|
-| `notebooks` | `pixi run --environment notebooks jupyter lab` | CPU only, no Smart-G simulations |
-| `notebooks-gpu` | `pixi run --environment notebooks-gpu jupyter lab` | Full GPU support, all notebooks |
+The 5S formula applied by `Unif2Toa` (no adjacency) and `SmartgSampler_Rho_toa_sym` (with PSF convolution):
 
-### Install the notebook environment
+$$\rho_{toa} = \rho_{atm} + (T^\uparrow_{dir} + T^\uparrow_{dif}) \cdot (T^\downarrow_{dir} + T^\downarrow_{dif}) \cdot \frac{\rho_{unif}}{1 - s \cdot \rho_{unif}}$$
 
-```bash
-pixi install --environment notebooks       # CPU
-# or
-pixi install --environment notebooks-gpu   # GPU (requires CUDA 12.6)
+### Inversion — Toa2Unif
+
+`Toa2Unif` inverts the formula analytically to produce the *equivalent uniform reflectance* $\rho_{unif}$ — the reflectance the pixel would have if the surface were spatially uniform:
+
+```python
+from adjeff.modules.classic import Toa2Unif
+
+scene = Toa2Unif()(scene)  # requires rho_toa + all 6 radiative quantities
+rho_unif = scene[S2Band.B02]["rho_unif"]
 ```
 
-### Launch JupyterLab
+### Surface recovery — Unif2Surface
 
-```bash
-# CPU — suitable for notebooks 01 and 02
-pixi run --environment notebooks jupyter lab notebooks/
+`Unif2Surface` deconvolves $\rho_{unif}$ with a PSF to recover the actual surface $\rho_s$:
 
-# GPU — required for notebooks 03 and 04 (Smart-G simulations)
-SMARTG_DIR_AUXDATA=/path/to/smartg/auxdata \
-pixi run --environment notebooks-gpu jupyter lab notebooks/
+```python
+from adjeff.modules.models import Unif2Surface
+
+scene = Unif2Surface(psf_dict=psf_dict_frozen)(scene)
+rho_s_recovered = scene[S2Band.B02]["rho_s"]
 ```
 
-JupyterLab opens in your browser at `http://localhost:8888`. The `notebooks/` folder contains the tutorials in suggested reading order:
+---
 
-| Notebook | GPU required | Description |
-|---|---|---|
-| `01-create-and-display-image.ipynb` | No | `ImageDict`, analytical surfaces, radial profiles |
-| `02-atmospheric-configuration.ipynb` | No | `AtmoConfig`, `GeoConfig`, `SpectralConfig`, parameter sweeps |
+## 13. PSF optimization
 
-### Tip: persistent kernel
+The optimizer learns PSF parameters that best match a set of reference `(rho_s, rho_toa)` image pairs. It runs one independent L-BFGS optimization per atmospheric state combination and assembles the results into a multi-dimensional `PSFDict`.
 
-If you run multiple notebooks in a session and do not want to re-run Smart-G simulations from scratch, pass a shared `CacheStore` at the top of each notebook:
+```python
+from adjeff.optim import LBFGSOptimizer, LBFGSConfig, Loss, TrainingImages
+
+train_images = TrainingImages([scene_1, scene_2, scene_3])
+
+optimizer = LBFGSOptimizer(
+    train_images=train_images,
+    config=LBFGSConfig(
+        min_steps=5,
+        max_steps=50,
+        loss_relative_tolerance=1e-4,
+        loss=Loss("MSE_RAD"),
+    ),
+)
+
+psf_dict = optimizer.run(model)
+```
+
+<details>
+<summary>Available loss functions</summary>
+
+| Loss | Description |
+|---|---|
+| `MSE` | Mean squared error |
+| `RMSE` | Root mean squared error |
+| `MAE` | Mean absolute error |
+| `MSE_RAD` | MSE weighted by radial distance |
+| `RMSE_RAD` | RMSE weighted by radial distance |
+| `MAE_RAD` | MAE weighted by radial distance |
+
+Radial-weighted losses emphasise the wings of the PSF, which carry the adjacency signal.
+
+</details>
+
+---
+
+## 14. xarray accessor and caching
+
+### xarray accessor
+
+All `DataArray` objects produced by `adjeff` can be analysed via the `.adjeff` accessor:
+
+```python
+rho_s = scene[S2Band.B02]["rho_s"]
+
+profile = rho_s.adjeff.radial()       # azimuthal mean vs radius
+cdf     = rho_s.adjeff.radial_cdf()   # area-weighted CDF
+field   = profile.adjeff.to_field(ds) # reconstruct 2D from radial profile
+```
+
+### Caching
+
+Every `SceneModule` accepts a `CacheStore` that persists results as Zarr arrays on disk. Cache keys are derived from the module type, its configuration, and a hash of the inputs — rerunning with identical inputs is a no-op.
 
 ```python
 from adjeff.utils import CacheStore
-cache = CacheStore(path="./adjeff_cache")
-```
 
-Results are keyed on module type + configuration + input hash and are reused automatically on subsequent runs.
+cache = CacheStore(path="./adjeff_cache")
+
+pipeline = RadiativePipeline(
+    atmo_config=atmo, geo_config=geo, spectral_config=spectral,
+    remove_rayleigh=False, cache=cache,
+)
+scene = pipeline(scene)   # computed and cached on first run
+scene = pipeline(scene)   # loaded from cache, no GPU call
+```
 
 ---
 
-## 9. Roadmap
+## 15. Installation
 
-The following features are planned for upcoming releases:
+### Prerequisites
 
-### (i) Dask integration and lazy loading
+- Python 3.11 or 3.12
+- [pixi](https://pixi.sh) ≥ 0.40
+- A CUDA 12.6-compatible GPU and driver (for GPU environments)
+- Smart-G auxiliary data (see below)
 
-For very large satellite images (tens of thousands × tens of thousands of pixels), loading all bands into memory at once is impractical. The planned approach is to integrate Dask into `ImageDict` so that:
-- Arrays are loaded lazily from disk (e.g. from Cloud-Optimized GeoTIFFs or Zarr stores);
-- Module operations are expressed as Dask task graphs and executed on demand;
-- Memory pressure is bounded regardless of image size.
+### Clone
 
-### (ii) Jupyter notebook documentation
+```bash
+git clone https://github.com/walcark/Adjeff.git
+cd Adjeff
+```
 
-Step-by-step tutorials covering:
-- Loading MAJA L2A processor output data and running module on the MAJA output attributes.
-- Building custom `SceneModule` subclasses
+### Environments
 
-### (iii) Ensure that each module signs the output
+| Environment | GPU | Dev tools | Command |
+|---|---|---|---|
+| `cpu` | No | No | `pixi install -e cpu` |
+| `gpu` | Yes | No | `pixi install -e gpu` |
+| `dev` | No | Yes (ruff, mypy, pytest) | `pixi install -e dev` |
+| `dev-gpu` | Yes | Yes | `pixi install -e dev-gpu` |
+| `notebooks` | No | JupyterLab | `pixi install -e notebooks` |
+| `notebooks-gpu` | Yes | JupyterLab | `pixi install -e notebooks-gpu` |
 
-The adjeff accessor relies on the attrs of the xr.DataArray instances. It is therefore important to keep track on all the operations performed on the scene fields. For instance, a sampling module that produces `rho_s` should specify that `rho_s` originates from an estimation process. Another module that loads `rho_s` from a MAJA output folder should specify that it originates from an external source. 
+The library is installed in editable mode automatically from `pyproject.toml`.
 
-Therefore, some effort should be put into designing specific denominations for signs output from methods. This could be performed by a specific class or from enumations to ensure consistent naming.
+### Verify
+
+```bash
+pixi run -e cpu python -c "import adjeff; print('adjeff OK')"
+```
+
+### Smart-G auxiliary data
+
+Smart-G requires auxiliary data files (absorption databases, aerosol models) that are not bundled with `adjeff`. Download them separately and set:
+
+```bash
+export SMARTG_DIR_AUXDATA=/path/to/smartg/auxdata
+```
+
+Add this to `~/.bashrc` or `~/.zshrc` to make it permanent. The variable must be set before any Smart-G simulation is launched.
+
+### Development workflow
+
+```bash
+export SMARTG_DIR_AUXDATA=/path/to/smartg/auxdata
+
+pixi run -e dev fmt          # ruff format
+pixi run -e dev lint         # ruff check
+pixi run -e dev type-check   # mypy strict
+pixi run -e dev test         # pytest (CPU, fast subset)
+pixi run -e dev all          # fmt + lint + type-check + test
+```
+
+### Notebooks
+
+```bash
+# CPU — notebooks 01 and 02
+pixi run -e notebooks jupyter lab notebooks/
+
+# GPU — required for notebooks 03 and 04 (Smart-G simulations)
+SMARTG_DIR_AUXDATA=/path/to/smartg/auxdata \
+pixi run -e notebooks-gpu jupyter lab notebooks/
+```
+
+| Notebook | GPU | Content |
+|---|---|---|
+| `01-create-and-display-image` | No | `ImageDict`, analytical surfaces, radial profiles |
+| `02-atmospheric-configuration` | No | `AtmoConfig`, `GeoConfig`, sweeps |
+| `03-compute-radiative-quantities` | Yes | `RadiativePipeline`, caching |
+| `04-simulate-rho-toa` | Yes | `SmartgSampler_Rho_toa_sym` |
+
+---
+
+## 16. Roadmap
+
+- **Output provenance** — a signing mechanism so every `DataArray` carries a record of the module and parameters that produced it; the `.adjeff` accessor would expose this lineage.
+- **Partial cache reuse** — when only a subset of bands or parameter combinations is missing from the cache, recompute only the missing entries rather than the full set.
+- **Extended notebook tutorials** — loading MAJA L2A products, building custom `SceneModule` subclasses, end-to-end correction workflow.
