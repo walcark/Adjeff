@@ -8,11 +8,11 @@ building the parameter grid and reshaping the returned 1-D arrays.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 import numpy as np
 import torch
-import xarray as xr
 from tqdm import tqdm  # type: ignore[import-untyped]
 
 from adjeff.core import SensorBand
@@ -23,6 +23,7 @@ from adjeff.utils import fft_convolve_2D_torch
 from .loss import Loss
 from .training_set import (
     TrainingImages,
+    TrainingSample,
     iterate_broadcasted_dims,
     training_set,
 )
@@ -30,24 +31,22 @@ from .training_set import (
 
 def _make_forward_fn(
     kernel: torch.Tensor,
-    device: torch.device,
 ) -> Callable[[dict[str, torch.Tensor]], torch.Tensor]:
-    """Unif2Surface forward closure for a fixed kernel."""
+    """Unif2Surface forward closure for a pre-moved kernel."""
 
     def _fwd(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
-        d = device
-        rho_unif = inputs["rho_unif"].to(d)
+        rho_unif = inputs["rho_unif"]
         rho_env = fft_convolve_2D_torch(
             rho_unif,
-            kernel.to(d),
+            kernel,
             padding="reflect",
             conv_type="same",
         )
         return _rho_s_from_rho_env(  # type: ignore[no-any-return]
             rho_unif=rho_unif,
-            sph_alb=inputs["sph_alb"].to(d),
-            tdir_up=inputs["tdir_up"].to(d),
-            tdif_up=inputs["tdif_up"].to(d),
+            sph_alb=inputs["sph_alb"],
+            tdir_up=inputs["tdir_up"],
+            tdif_up=inputs["tdif_up"],
             rho_env=rho_env,
         )
 
@@ -96,8 +95,13 @@ def loss_landscape(
     combos = list(
         iterate_broadcasted_dims(train_images, input_names, target_name, band)
     )
-    training_sets = [
-        training_set(
+
+    # Transfer all training data to the target device exactly once, before
+    # the PSF loop.  TrainingSet.__iter__ does .to() on every call, which
+    # would otherwise cause N_psf redundant host↔device transfers per tensor.
+    prefetched: list[list[TrainingSample]] = []
+    for p in combos:
+        ts = training_set(
             train_images,
             input_names,
             target_name,
@@ -105,17 +109,30 @@ def loss_landscape(
             device=device,
             **p,
         )
-        for p in combos
-    ]
-    n_combos = max(len(training_sets), 1)
+        prefetched.append(list(ts))
 
+    n_combos = max(len(prefetched), 1)
     result = np.zeros(len(psf_modules), dtype=np.float32)
 
     with torch.no_grad():
         for i, psf in tqdm(enumerate(psf_modules), total=len(psf_modules)):
-            kernel = psf.forward()
-            fwd = _make_forward_fn(kernel, dev)
-            total = sum(float(loss(fwd, ts).item()) for ts in training_sets)
+            kernel = psf.forward().to(dev)
+            fwd = _make_forward_fn(kernel)
+            total = 0.0
+            for samples in prefetched:
+                combo_losses = []
+                for sample in samples:
+                    pred = fwd(sample.inputs)
+                    mask = (
+                        sample.inputs.get("rho_unif")
+                        if loss.mask_on == "rho_unif"
+                        else None
+                    )
+                    combo_losses.append(
+                        loss.metric(pred, sample.target, sample.dist, mask)
+                        * sample.weight
+                    )
+                total += float(torch.stack(combo_losses).sum().item())
             result[i] = total / n_combos
 
     return result
@@ -149,24 +166,53 @@ def energy_radius_landscape(
         fractions = [0.10, 0.50, 0.99]
 
     keys = [f"EE{int(f * 100)}%" for f in fractions]
+
+    if not psf_modules:
+        return {k: np.array([], dtype=np.float32) for k in keys}
+
+    # All PSFs in a landscape scan share the same grid.  Compute the radial
+    # binning structure (pixel→bin mapping, bin counts, area weights) once
+    # and reuse it for every kernel, avoiding O(N_psf) redundant meshgrid
+    # and xarray operations.
+    grid = psf_modules[0].grid
+    n = grid.n
+    npix = max(int((n - 1) / math.sqrt(2)) - 1, 2)
+
+    half = (n // 2) * grid.res
+    coords_1d = np.linspace(-half, half, n, dtype=np.float32)
+    XX, YY = np.meshgrid(coords_1d, coords_1d)
+    rr = torch.from_numpy(np.sqrt(XX**2 + YY**2).ravel())
+
+    bins = torch.linspace(0.0, float(rr.max()), npix + 1)
+    inds = (torch.bucketize(rr, bins, right=False) - 1).clamp(0, npix - 1)
+    counts = torch.bincount(inds, minlength=npix).float()
+    bin_mask = counts > 0
+
+    r_centers = (0.5 * (bins[:-1] + bins[1:])).clone()
+    r_centers[0] = 0.0
+    dr = r_centers[1:] - r_centers[:-1]
+    edges = torch.empty(npix + 1, dtype=r_centers.dtype)
+    edges[1:-1] = 0.5 * (r_centers[:-1] + r_centers[1:])
+    edges[0] = r_centers[0] - 0.5 * dr[0]
+    edges[-1] = r_centers[-1] + 0.5 * dr[-1]
+    area = math.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
+
+    r_np = r_centers.numpy()
     ee: dict[str, list[float]] = {k: [] for k in keys}
 
     with torch.no_grad():
         for psf in tqdm(psf_modules, total=len(psf_modules)):
-            coords = psf.grid.as_coords()
-            kernel = psf.forward()
-            da = xr.DataArray(
-                kernel.detach().cpu().numpy(),
-                dims=["y_psf", "x_psf"],
-                coords=coords,
-            )
-            cdf = da.adjeff.radial_cdf()
-            r = cdf.coords["r"].values
-            cdf_vals = cdf.values
+            vv = psf.forward().detach().cpu().ravel().clamp(min=0.0)
+            sum_vals = torch.bincount(inds, weights=vv, minlength=npix)
+            mean_vals = torch.zeros(npix, dtype=torch.float32)
+            mean_vals[bin_mask] = sum_vals[bin_mask] / counts[bin_mask]
+            cdf = torch.cumsum(mean_vals * area, dim=0)
+            if cdf[-1] > 0:
+                cdf = cdf / cdf[-1]
+            cdf_np = cdf.numpy()
 
             for frac, key in zip(fractions, keys):
-                idx = int(np.searchsorted(cdf_vals, frac))
-                idx = min(idx, len(r) - 1)
-                ee[key].append(float(r[idx]))
+                idx = min(int(np.searchsorted(cdf_np, frac)), npix - 1)
+                ee[key].append(float(r_np[idx]))
 
-    return {k: np.array(v) for k, v in ee.items()}
+    return {k: np.array(v, dtype=np.float32) for k, v in ee.items()}
