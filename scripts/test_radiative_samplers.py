@@ -39,12 +39,12 @@ import xarray as xr
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import ImageDict, S2Band
 from adjeff.modules.samplers import (
-    SmartgSampler_Rho_atm,
-    SmartgSampler_Sph_alb,
-    SmartgSampler_Tdif_down,
-    SmartgSampler_Tdif_up,
-    SmartgSampler_Tdir_down,
-    SmartgSampler_Tdir_up,
+    RhoAtmSampler,
+    SphAlbSampler,
+    TdifDownSampler,
+    TdifUpSampler,
+    TdirDownSampler,
+    TdirUpSampler,
 )
 from adjeff.utils.logger import MultilineConsoleRenderer
 
@@ -105,12 +105,12 @@ def test_scalar_all() -> None:
     run(
         "1. All scalar",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
-            SmartgSampler_Tdir_down(geo_config=geo, **common),
-            SmartgSampler_Tdif_up(geo_config=geo, **common),
-            SmartgSampler_Tdif_down(geo_config=geo, **common),
-            SmartgSampler_Rho_atm(geo_config=geo, **common),
-            SmartgSampler_Sph_alb(atmo_config=atmo, spectral_config=spectral_config, **COMMON_SMARTG),
+            TdirUpSampler(geo_config=geo, **common),
+            TdirDownSampler(geo_config=geo, **common),
+            TdifUpSampler(geo_config=geo, **common),
+            TdifDownSampler(geo_config=geo, **common),
+            RhoAtmSampler(geo_config=geo, **common),
+            SphAlbSampler(atmo_config=atmo, spectral_config=spectral_config, **COMMON_SMARTG),
         ],
         make_scene(spectral_config),
     )
@@ -138,9 +138,9 @@ def test_vector_atmo() -> None:
     run(
         "2. Vector atmo (aot×rh sweep), scalar angle",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
-            SmartgSampler_Tdir_down(geo_config=geo, **common),
-            SmartgSampler_Sph_alb(atmo_config=atmo, spectral_config=spectral_config, **COMMON_SMARTG),
+            TdirUpSampler(geo_config=geo, **common),
+            TdirDownSampler(geo_config=geo, **common),
+            SphAlbSampler(atmo_config=atmo, spectral_config=spectral_config, **COMMON_SMARTG),
         ],
         make_scene(spectral_config),
     )
@@ -168,11 +168,11 @@ def test_vector_angular() -> None:
     run(
         "3. Vector angular (vza, sza sweep), scalar atmo",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
-            SmartgSampler_Tdir_down(geo_config=geo, **common),
-            SmartgSampler_Tdif_up(geo_config=geo, **common),
-            SmartgSampler_Tdif_down(geo_config=geo, **common),
-            SmartgSampler_Rho_atm(geo_config=geo, **common),
+            TdirUpSampler(geo_config=geo, **common),
+            TdirDownSampler(geo_config=geo, **common),
+            TdifUpSampler(geo_config=geo, **common),
+            TdifDownSampler(geo_config=geo, **common),
+            RhoAtmSampler(geo_config=geo, **common),
         ],
         make_scene(spectral_config),
     )
@@ -200,8 +200,8 @@ def test_multiband_mixed() -> None:
     run(
         "4. Multi-band + mixed vector (aot, rh, h, sza, vza)",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
-            SmartgSampler_Tdir_down(geo_config=geo, **common),
+            TdirUpSampler(geo_config=geo, **common),
+            TdirDownSampler(geo_config=geo, **common),
         ],
         make_scene(spectral_config),
     )
@@ -234,8 +234,8 @@ def test_large_with_chunks() -> None:
     run(
         "5. Large sweep (8 aot × 5 rh × 4 sza × 2 wl) with chunks={'wl': 4}",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
-            SmartgSampler_Tdir_down(geo_config=geo, **common),
+            TdirUpSampler(geo_config=geo, **common),
+            TdirDownSampler(geo_config=geo, **common),
         ],
         make_scene(spectral_config),
     )
@@ -285,8 +285,8 @@ def test_spatial_dims_analytical() -> None:
     run(
         "6. Spatial [x, y] dims — analytical only (tdir_up, tdir_down)",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
-            SmartgSampler_Tdir_down(geo_config=geo, **common),
+            TdirUpSampler(geo_config=geo, **common),
+            TdirDownSampler(geo_config=geo, **common),
         ],
         make_scene(spectral_config),
     )
@@ -330,7 +330,7 @@ def test_spatial_dims_deduplication() -> None:
     run(
         "7. Spatial [x, y] + deduplicate_dims=['x', 'y']",
         [
-            SmartgSampler_Tdir_up(geo_config=geo, **common),
+            TdirUpSampler(geo_config=geo, **common),
         ],
         make_scene(spectral_config),
     )

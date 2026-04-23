@@ -17,7 +17,7 @@ import scienceplots  # noqa: F401
 
 from adjeff.api import make_full_config, run_forward_pipeline
 from adjeff.core import (
-    GaussGeneralPSF,
+    GeneralizedGaussianPSF,
     PSFGrid,
     S2Band,
     disk_image_dict,
@@ -101,7 +101,7 @@ def main() -> None:
     sigma_vals = np.logspace(-6, 0, N_SAMPLES).astype(np.float32)
     n_vals = np.linspace(0.1, 0.4, N_SAMPLES).astype(np.float32)
     psf_modules = [
-        GaussGeneralPSF(grid, BAND, sigma=float(s), n=float(n))
+        GeneralizedGaussianPSF(grid, BAND, sigma=float(s), n=float(n))
         for s in sigma_vals
         for n in n_vals
     ]

@@ -57,11 +57,18 @@ class MajaLoader(
         res: float | list[float],
         href: float = 2.0,
         as_map: bool = False,
-        mnt_path: Path = Path("/work/CESBIO/projects/Maja/DTM_120"),
+        mnt_path: Path | None = None,
         cache: CacheStore | None = None,
     ) -> None:
+        if mnt_path is None:
+            from adjeff.exceptions import ConfigurationError
+
+            raise ConfigurationError(
+                "MajaLoader requires mnt_path (path to the DEM folder). "
+                "Example: mnt_path=Path('/data/dtm')."
+            )
         self.href = href
-        self.mnt_path = mnt_path
+        self.mnt_path: Path = mnt_path
         super().__init__(
             product_path=product_path,
             bands=bands,

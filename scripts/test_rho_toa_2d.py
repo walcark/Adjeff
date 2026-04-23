@@ -1,10 +1,10 @@
-"""End-to-end test for SmartgSampler_Rho_toa (2D, no symmetry assumption).
+"""End-to-end test for RhoToaSampler (2D, no symmetry assumption).
 
 Sections
 --------
 1. _grid_sensors      — check sensor (x, y) positions for a small grid.
 2. custom_environment — build an Albedo_map from a small random scene.
-3. SmartgSampler_Rho_toa — full run on an arbitrary scene, visualisation
+3. RhoToaSampler — full run on an arbitrary scene, visualisation
                             of rho_s vs rho_toa for all AOT values.
 4. Sym vs 2D comparison — run both samplers on the same Gaussian scene
                            and compare radial profiles.
@@ -23,7 +23,7 @@ import xarray as xr
 from adjeff.atmosphere import AtmoConfig, GeoConfig
 from adjeff.core import S2Band, gaussian_image_dict, random_image_dict
 from adjeff.modules.samplers.rho_toa import (
-    SmartgSampler_Rho_toa,
+    RhoToaSampler,
 )
 from adjeff.utils import CacheStore
 from adjeff.utils.logger import MultilineConsoleRenderer
@@ -72,7 +72,7 @@ geo_cfg = GeoConfig(
 
 def test_rho_toa_2d() -> None:
     print(f"\n{'='*60}")
-    print("  3. SmartgSampler_Rho_toa — arbitrary scene")
+    print("  3. RhoToaSampler — arbitrary scene")
     print(f"{'='*60}")
 
     # Build an arbitrary scene: random reflectance map in [0.05, 0.60]
@@ -85,7 +85,7 @@ def test_rho_toa_2d() -> None:
         analytical=False
     )
 
-    sampler = SmartgSampler_Rho_toa(
+    sampler = RhoToaSampler(
         atmo_config=atmo_cfg,
         geo_config=geo_cfg,
         remove_rayleigh=False,
@@ -114,7 +114,7 @@ def test_rho_toa_2d() -> None:
         )
         axes[i + 1].set_title(f"rho_toa  AOT={aot_val}")
 
-    plt.suptitle(f"SmartgSampler_Rho_toa — {S2Band.B02}  (nx=30, ny=30, arbitrary scene)")
+    plt.suptitle(f"RhoToaSampler — {S2Band.B02}  (nx=30, ny=30, arbitrary scene)")
     plt.tight_layout()
     plt.savefig("/tmp/rho_toa_2d_arbitrary.png", dpi=120)
     logger.info("Figure saved.", path="/tmp/rho_toa_2d_arbitrary.png")

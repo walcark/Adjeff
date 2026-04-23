@@ -48,7 +48,7 @@ from adjeff.api import (
     run_forward_pipeline,
 )
 from adjeff.core import (
-    GaussGeneralPSF,
+    GeneralizedGaussianPSF,
     KingPSF,
     S2Band,
     SensorBand,
@@ -120,7 +120,7 @@ CAMS_SPECIES: list[str] = [
 # PSF models to generate LUTs for
 MODELS: dict[str, dict[str, Any]] = {
     "gauss_general": {
-        "cls": GaussGeneralPSF,
+        "cls": GeneralizedGaussianPSF,
         "init_params": {"sigma": 0.1, "n": 0.25},
     },
     "king": {

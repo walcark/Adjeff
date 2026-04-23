@@ -1,7 +1,7 @@
-"""Comparison of rho_s predictions: GaussGeneralPSF vs Gauss-330.
+"""Comparison of rho_s predictions: GeneralizedGaussianPSF vs Gauss-330.
 
 Three disk training fields (radii 1, 5, 50 km) are run through the
-forward pipeline.  A GaussGeneralPSF is then optimised with RMSE_RAD
+forward pipeline.  A GeneralizedGaussianPSF is then optimised with RMSE_RAD
 loss, and its predictions are compared to a fixed Gauss-330m reference.
 """
 
@@ -18,7 +18,7 @@ from adjeff.api import (
     run_forward_pipeline,
 )
 from adjeff.core import (
-    GaussGeneralPSF,
+    GeneralizedGaussianPSF,
     GaussPSF,
     PSFDict,
     PSFGrid,
@@ -77,10 +77,10 @@ def main() -> None:
 
     train_images = TrainingImages(images=scenes, weights=[1.0, 1.0, 1.0])
 
-    # Optimise GaussGeneralPSF
+    # Optimise GeneralizedGaussianPSF
     model = make_model(
         Unif2Surface,
-        GaussGeneralPSF,
+        GeneralizedGaussianPSF,
         [BAND],
         res_km=RES_KM,
         n=N,

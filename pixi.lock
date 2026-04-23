@@ -3457,8 +3457,8 @@ packages:
   timestamp: 1744137672556
 - pypi: ./
   name: adjeff
-  version: 0.2.0
-  sha256: d2bd97b14e65225082c43368b3670fb1b956bafda91e852f7e0a9013e8c65894
+  version: 0.3.0
+  sha256: 5e75004eb6715142f88ea53cd7bfd2f1519b12bf3c4ff2f4032e3b04d9648e7b
   requires_python: '>=3.11,<3.13'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/affine-2.4.0-pyhd8ed1ab_1.conda

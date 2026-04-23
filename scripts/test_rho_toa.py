@@ -2,7 +2,7 @@
 
 Covers:
 - _radial_sensors          : sensor positions for a set of radial distances
-- SmartgSampler_Rho_toa    : _compute() called on a gaussian ImageDict so we
+- RhoToaSampler    : _compute() called on a gaussian ImageDict so we
                              can observe the intermediate radial profile printed
                              inside rho_toa() at its current breakpoint
 """
@@ -15,7 +15,7 @@ import xarray as xr
 
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import S2Band, disk_image_dict
-from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
+from adjeff.modules.samplers import RhoToaSymSampler
 from adjeff.utils.logger import MultilineConsoleRenderer
 
 logging.basicConfig(level=logging.INFO)
@@ -35,12 +35,12 @@ SAT_HEIGHT = 786.0  # km
 
 
 # ---------------------------------------------------------------------------
-# 2. SmartgSampler_Rho_toa — observe the approximate radial profile
+# 2. RhoToaSampler — observe the approximate radial profile
 # ---------------------------------------------------------------------------
 def test_rho_toa_profile() -> None:
     """Call _compute() on a gaussian scene to reach print(profile) / sys.exit()."""
     print(f"\n{'='*60}")
-    print("  2. SmartgSampler_Rho_toa — radial profile observation")
+    print("  2. RhoToaSampler — radial profile observation")
     print(f"{'='*60}")
 
     spectral_config = SpectralConfig.from_bands([BAND])
@@ -70,7 +70,7 @@ def test_rho_toa_profile() -> None:
         sat_height=SAT_HEIGHT,
     )
 
-    sampler = SmartgSampler_Rho_toa_sym(
+    sampler = RhoToaSymSampler(
         atmo_config=atmo_cfg,
         geo_config=geo_cfg,
         remove_rayleigh=False,
