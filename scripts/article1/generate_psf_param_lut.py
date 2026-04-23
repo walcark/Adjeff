@@ -57,6 +57,8 @@ from adjeff.core import (
 from adjeff.core._psf import PSFModule
 from adjeff.modules.models.unif2surface import Unif2Surface
 from adjeff.optim import Loss, TrainingImages
+from adjeff.optim.adam_optimizer import AdamConfig
+from adjeff.optim.lbfgs_optimizer import LBFGSConfig
 from adjeff.optim.metrics import Metric
 from adjeff.utils import CacheStore
 
@@ -205,10 +207,18 @@ def _optimize_psf(
         model,
         train_images,
         LOSS,
-        adam_min_steps=ADAM_MIN_STEPS,
-        adam_max_steps=ADAM_MAX_STEPS,
-        lbfgs_min_steps=LBFGS_MIN_STEPS,
-        lbfgs_max_steps=LBFGS_MAX_STEPS,
+        adam_config=AdamConfig(
+            min_steps=ADAM_MIN_STEPS,
+            max_steps=ADAM_MAX_STEPS,
+            loss_relative_tolerance=1e-4,
+            loss=LOSS,
+        ),
+        lbfgs_config=LBFGSConfig(
+            min_steps=LBFGS_MIN_STEPS,
+            max_steps=LBFGS_MAX_STEPS,
+            loss_relative_tolerance=1e-6,
+            loss=LOSS,
+        ),
         device=device,
     )
 

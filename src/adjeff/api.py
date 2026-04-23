@@ -760,13 +760,8 @@ def optimize_adam_lbfgs(
     model: PSFConvModule,
     train_images: TrainingImages,
     loss: Loss,
-    adam_min_steps: int = 5,
-    adam_max_steps: int = 20,
-    adam_lr: float = 1e-2,
-    adam_tolerance: float = 1e-4,
-    lbfgs_min_steps: int = 5,
-    lbfgs_max_steps: int = 30,
-    lbfgs_tolerance: float = 1e-6,
+    adam_config: AdamConfig | None = None,
+    lbfgs_config: LBFGSConfig | None = None,
     device: str = "cuda",
 ) -> PSFDict:
     """Optimize a model's PSF with an Adam warm-up followed by L-BFGS.
@@ -779,20 +774,16 @@ def optimize_adam_lbfgs(
         Collection of reference scenes.
     loss : Loss
         Loss function instance (e.g. ``Loss(Metric.RMSE_RAD)``).
-    adam_min_steps : int
-        Minimum Adam steps before early stopping (default 5).
-    adam_max_steps : int
-        Maximum Adam steps (default 20).
-    adam_lr : float
-        Adam learning rate (default ``1e-2``).
-    adam_tolerance : float
-        Relative loss tolerance for Adam early stopping (default ``1e-4``).
-    lbfgs_min_steps : int
-        Minimum L-BFGS steps before early stopping (default 5).
-    lbfgs_max_steps : int
-        Maximum L-BFGS steps (default 30).
-    lbfgs_tolerance : float
-        Relative loss tolerance for L-BFGS early stopping (default ``1e-6``).
+        Used as default loss in *adam_config* and *lbfgs_config* when those
+        are ``None``.
+    adam_config : AdamConfig or None, optional
+        Adam stage configuration.  When ``None``, defaults to
+        ``AdamConfig(min_steps=5, max_steps=20,
+        loss_relative_tolerance=1e-4, loss=loss, lr=1e-2)``.
+    lbfgs_config : LBFGSConfig or None, optional
+        L-BFGS stage configuration.  When ``None``, defaults to
+        ``LBFGSConfig(min_steps=5, max_steps=30,
+        loss_relative_tolerance=1e-6, loss=loss)``.
     device : str
         PyTorch device (default ``"cuda"``).
 
@@ -802,26 +793,23 @@ def optimize_adam_lbfgs(
         Frozen PSFDict with optimised kernels stacked over all atmospheric
         combos found in *train_images*.
     """
+    if adam_config is None:
+        adam_config = AdamConfig(
+            min_steps=5,
+            max_steps=20,
+            loss_relative_tolerance=1e-4,
+            loss=loss,
+            lr=1e-2,
+        )
+    if lbfgs_config is None:
+        lbfgs_config = LBFGSConfig(
+            min_steps=5,
+            max_steps=30,
+            loss_relative_tolerance=1e-6,
+            loss=loss,
+        )
     optimizer = OptimizerPipeline(
-        stages=[
-            AdamStage(
-                AdamConfig(
-                    min_steps=adam_min_steps,
-                    max_steps=adam_max_steps,
-                    loss_relative_tolerance=adam_tolerance,
-                    loss=loss,
-                    lr=adam_lr,
-                )
-            ),
-            LBFGSStage(
-                LBFGSConfig(
-                    min_steps=lbfgs_min_steps,
-                    max_steps=lbfgs_max_steps,
-                    loss_relative_tolerance=lbfgs_tolerance,
-                    loss=loss,
-                )
-            ),
-        ],
+        stages=[AdamStage(adam_config), LBFGSStage(lbfgs_config)],
         train_images=train_images,
         device=device,
     )
