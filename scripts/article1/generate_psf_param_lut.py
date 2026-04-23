@@ -1,6 +1,6 @@
-"""Generate PSF parameter LUTs (GaussGeneral + King) for all CAMS species.
+"""Generate PSF parameter LUTs (GaussGeneral + King) for one CAMS species.
 
-Writes one netCDF file per PSF model per CAMS species to OUT_DIR:
+Writes one netCDF file per PSF model to OUT_DIR:
     gauss_general_psf_{species}.nc   (variables: sigma, n)
     king_psf_{species}.nc            (variables: sigma, gamma)
 
@@ -15,7 +15,7 @@ Atmospheric : aot in [0.0, 0.1, …, 0.8]
               h   in [0.0, 3.0] km
               href in [2.0, 4.0] km
 Geometric   : sza=40°, vza=0° (fixed)
-Species     : all 8 CAMS OPAC species, one file each
+Species     : one CAMS OPAC species (passed via --species)
 
 Training scenes
 ---------------
@@ -24,6 +24,7 @@ Three Gaussian reflectance fields with sigma = 1, 5, 50 km at 120 m resolution.
 Usage
 -----
     python generate_psf_param_lut.py \\
+        --species sulphate \\
         --cache-dir /path/to/cache \\
         [--output-dir /path/to/output] \\
         [--device cuda]
@@ -40,8 +41,12 @@ import numpy as np
 import structlog
 import xarray as xr
 
-from adjeff.api import make_full_config, make_model, optimize_adam_lbfgs
-from adjeff.api import run_forward_pipeline
+from adjeff.api import (
+    make_full_config,
+    make_model,
+    optimize_adam_lbfgs,
+    run_forward_pipeline,
+)
 from adjeff.core import (
     GaussGeneralPSF,
     KingPSF,
@@ -74,8 +79,6 @@ BANDS: list[SensorBand] = [
     S2Band.B12,
 ]
 
-BANDS = BANDS[:1]
-
 # Fixed geometry
 SZA: float = 40.0
 VZA: float = 0.0
@@ -87,11 +90,6 @@ AOT_VALUES: list[float] = np.round(np.arange(0.0, 0.9, 0.1), 1).tolist()
 RH_VALUES: list[float] = [50.0, 90.0, 95.0]
 H_VALUES: list[float] = [0.0, 3.0]
 HREF_VALUES: list[float] = [2.0, 4.0]
-
-AOT_VALUES: list[float] = [0.0, 0.1]
-RH_VALUES: list[float] = [50.0]
-H_VALUES: list[float] = [0.0]
-HREF_VALUES: list[float] = [2.0]
 
 # Training scenes (Gaussian fields at three spatial scales)
 GAUSSIAN_SIGMAS: list[float] = [1.0, 5.0, 50.0]
@@ -246,8 +244,7 @@ def _make_lut_dataset(
             stacked[pname].append(da.expand_dims({"band": [band.wl_nm]}))
 
     ds_vars: dict[str, xr.DataArray] = {
-        pname: xr.concat(stacked[pname], dim="band")
-        for pname in param_names
+        pname: xr.concat(stacked[pname], dim="band") for pname in param_names
     }
 
     return xr.Dataset(
@@ -271,64 +268,74 @@ def _make_lut_dataset(
 # ---------------------------------------------------------------------------
 
 
-def main(cache_dir: Path, output_dir: Path, device: str = "cuda") -> None:
+def main(
+    species_name: str,
+    cache_dir: Path,
+    output_dir: Path,
+    device: str = "cuda",
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     cache = CacheStore(str(cache_dir))
 
-    n_total = len(CAMS_SPECIES) * len(MODELS)
+    n_total = len(MODELS)
     task_idx = 0
 
-    for species_name in CAMS_SPECIES:
-        logger.info("Building training images.", species=species_name)
-        train_images = _build_training_images(
-            species={species_name: 1.0},
-            cache=cache,
-        )
+    logger.info("Building training images.", species=species_name)
+    train_images = _build_training_images(
+        species={species_name: 1.0},
+        cache=cache,
+    )
 
-        for model_name, model_cfg in MODELS.items():
-            task_idx += 1
-            out_path = output_dir / f"{model_name}_psf_{species_name}.nc"
+    for model_name, model_cfg in MODELS.items():
+        task_idx += 1
+        out_path = output_dir / f"{model_name}_psf_{species_name}.nc"
 
-            if out_path.exists():
-                logger.info(
-                    "LUT already exists, skipping.",
-                    model=model_name,
-                    species=species_name,
-                    path=str(out_path),
-                )
-                continue
-
+        if out_path.exists():
             logger.info(
-                "Starting PSF optimisation.",
-                model=model_name,
-                species=species_name,
-                progress=f"{task_idx}/{n_total}",
-            )
-
-            params_by_band = _optimize_psf(
-                train_images=train_images,
-                psf_cls=model_cfg["cls"],
-                init_params=model_cfg["init_params"],
-                device=device,
-            )
-
-            ds = _make_lut_dataset(params_by_band, model_name, species_name)
-            ds.to_netcdf(out_path)
-            logger.info(
-                "LUT saved.",
+                "LUT already exists, skipping.",
                 model=model_name,
                 species=species_name,
                 path=str(out_path),
-                dims=dict(ds.dims),
             )
+            continue
+
+        logger.info(
+            "Starting PSF optimisation.",
+            model=model_name,
+            species=species_name,
+            progress=f"{task_idx}/{n_total}",
+        )
+
+        params_by_band = _optimize_psf(
+            train_images=train_images,
+            psf_cls=model_cfg["cls"],
+            init_params=model_cfg["init_params"],
+            device=device,
+        )
+
+        ds = _make_lut_dataset(params_by_band, model_name, species_name)
+        ds.to_netcdf(out_path)
+        logger.info(
+            "LUT saved.",
+            model=model_name,
+            species=species_name,
+            path=str(out_path),
+            dims=dict(ds.dims),
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
             "Generate PSF parameter LUTs (GaussGeneral + King) "
-            "for all CAMS OPAC species."
+            "for one CAMS OPAC species."
         ),
+    )
+    parser.add_argument(
+        "--species",
+        required=True,
+        choices=CAMS_SPECIES,
+        help="CAMS OPAC aerosol species to process.",
     )
     parser.add_argument(
         "--cache-dir",
@@ -352,6 +359,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(
+        species_name=args.species,
         cache_dir=args.cache_dir,
         output_dir=args.output_dir,
         device=args.device,
