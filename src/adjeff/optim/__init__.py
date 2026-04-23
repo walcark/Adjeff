@@ -1,9 +1,9 @@
 """Optimisation utilities for PSF training."""
 
 from ._config import OptimizerConfig
-from .adam_optimizer import AdamConfig, AdamOptimizer
+from .adam_optimizer import AdamConfig, AdamOptimizer, AdamStage
 from .landscape import energy_radius_landscape, loss_landscape
-from .lbfgs_optimizer import LBFGSConfig, LBFGSOptimizer
+from .lbfgs_optimizer import LBFGSConfig, LBFGSOptimizer, LBFGSStage
 from .loss import Loss
 from .metrics import Metric
 from .optimizer import OptimizerPipeline, SingleStageOptimizer
@@ -14,8 +14,10 @@ __all__ = [
     "Metric",
     "AdamConfig",
     "AdamOptimizer",
+    "AdamStage",
     "LBFGSConfig",
     "LBFGSOptimizer",
+    "LBFGSStage",
     "OptimizerConfig",
     "OptimizerPipeline",
     "SingleStageOptimizer",

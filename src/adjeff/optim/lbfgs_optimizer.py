@@ -46,7 +46,7 @@ class LBFGSConfig(OptimizerConfig):
     line_search_fn: str = "strong_wolfe"
 
 
-class _LBFGSStage(_ComboStage):
+class LBFGSStage(_ComboStage):
     """Runs L-BFGS optimisation for a single atmospheric combo."""
 
     def __init__(self, config: LBFGSConfig) -> None:
@@ -140,7 +140,7 @@ class LBFGSOptimizer(SingleStageOptimizer):
         device: str = "cuda",
     ) -> None:
         super().__init__(
-            stage=_LBFGSStage(config),
+            stage=LBFGSStage(config),
             train_images=train_images,
             device=device,
         )

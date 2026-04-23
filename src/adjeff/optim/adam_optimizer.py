@@ -31,7 +31,7 @@ class AdamConfig(OptimizerConfig):
     lr: float = 1e-2
 
 
-class _AdamStage(_ComboStage):
+class AdamStage(_ComboStage):
     """Runs Adam gradient descent for a single atmospheric combo."""
 
     def __init__(self, config: AdamConfig) -> None:
@@ -114,7 +114,7 @@ class AdamOptimizer(SingleStageOptimizer):
         device: str = "cuda",
     ) -> None:
         super().__init__(
-            stage=_AdamStage(config),
+            stage=AdamStage(config),
             train_images=train_images,
             device=device,
         )

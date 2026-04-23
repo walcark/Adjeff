@@ -75,7 +75,7 @@ def loss_landscape(
         Band to evaluate.
     psf_modules : list[PSFModule]
         Any :class:`~adjeff.core._psf.PSFModule` instances
-        (e.g. :class:`~adjeff.core.GaussGeneralPSF`,
+        (e.g. :class:`~adjeff.core.GeneralizedGaussianPSF`,
         :class:`~adjeff.core.KingPSF`, …).
     loss : Loss
         Loss function instance.
