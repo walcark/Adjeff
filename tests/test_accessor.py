@@ -124,27 +124,27 @@ def test_radial_upsample(flat_da):
 
 def test_radial_cdf_normalized(flat_da):
     """radial_cdf with normalize=True ends at 1.0."""
-    cdf = flat_da.adjeff.radial_cdf()
+    cdf = flat_da.adjeff.radial("cdf")
     assert cdf.values[-1] == pytest.approx(1.0, abs=1e-5)
 
 
 def test_radial_cdf_monotone(flat_da):
     """radial_cdf is non-decreasing."""
-    cdf = flat_da.adjeff.radial_cdf()
+    cdf = flat_da.adjeff.radial("cdf")
     diffs = np.diff(cdf.values)
     assert np.all(diffs >= -1e-6)
 
 
 def test_radial_std_nonnegative(flat_da):
     """radial_std values are >= 0 (ignoring NaN)."""
-    result = flat_da.adjeff.radial_std()
+    result = flat_da.adjeff.radial("std")
     values = result.values[~np.isnan(result.values)]
     assert np.all(values >= 0.0)
 
 
 def test_radial_std_constant_field_is_zero(flat_da):
     """A constant field has zero azimuthal dispersion."""
-    result = flat_da.adjeff.radial_std()
+    result = flat_da.adjeff.radial("std")
     values = result.values[~np.isnan(result.values)]
     assert np.allclose(values, 0.0, atol=1e-5)
 
@@ -156,7 +156,7 @@ def test_radial_std_constant_field_is_zero(flat_da):
 
 def test_radial_adaptive_count(disk_da):
     """radial_adaptive returns exactly n samples before gap-filling."""
-    result = disk_da.adjeff.radial_adaptive(n=20)
+    result = disk_da.adjeff.radial("adaptive", n=20)
     assert isinstance(result, xr.DataArray)
     assert "r" in result.dims
     assert result.sizes["r"] >= 20
@@ -164,7 +164,7 @@ def test_radial_adaptive_count(disk_da):
 
 def test_radial_adaptive_concentrates_near_edge(disk_da):
     """Adaptive sampling places more points near the disk edge (r~10)."""
-    result = disk_da.adjeff.radial_adaptive(n=30)
+    result = disk_da.adjeff.radial("adaptive", n=30)
     r = result.coords["r"].values
     # Density near the disk edge (8–12) should be higher than far from it
     near_edge = np.sum((r >= 8) & (r <= 12))
@@ -175,7 +175,7 @@ def test_radial_adaptive_concentrates_near_edge(disk_da):
 def test_radial_adaptive_max_gap(disk_da):
     """max_gap ensures no two consecutive samples exceed the given distance."""
     max_gap = 3.0
-    result = disk_da.adjeff.radial_adaptive(n=10, max_gap=max_gap)
+    result = disk_da.adjeff.radial("adaptive", n=10, max_gap=max_gap)
     r = result.coords["r"].values
     gaps = np.diff(r)
     assert np.all(gaps <= max_gap + 1e-6)
@@ -184,7 +184,7 @@ def test_radial_adaptive_max_gap(disk_da):
 def test_radial_adaptive_from_profile(disk_da):
     """radial_adaptive on a 1-D 'r' DataArray skips recomputing azimuthal mean."""
     profile = disk_da.adjeff.radial()
-    result = profile.adjeff.radial_adaptive(n=15)
+    result = profile.adjeff.radial("adaptive", n=15)
     assert "r" in result.dims
     assert result.sizes["r"] >= 15
 

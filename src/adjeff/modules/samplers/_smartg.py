@@ -817,7 +817,7 @@ def rho_toa_sym(
     )
 
     profile = rho_toa_approx.adjeff.radial()
-    r_vals: xr.DataArray = profile.adjeff.radial_adaptive(n=nr, max_gap=0.1)
+    r_vals: xr.DataArray = profile.adjeff.radial("adaptive", n=nr, max_gap=0.1)
 
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=xr.DataArray([band.wl_nm], dims=["wl"]),

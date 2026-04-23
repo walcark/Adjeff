@@ -192,7 +192,7 @@ def main() -> None:
         prof = kernel.adjeff.radial()
         r = prof.coords["r"].values
         v = prof.values
-        cdf = kernel.adjeff.radial_cdf()
+        cdf = kernel.adjeff.radial("cdf")
         v_cdf = cdf.values
 
         opts = dict(linewidth=1.3)
