@@ -7,7 +7,7 @@ import xarray as xr
 
 from adjeff.core._psf import PSFGrid
 from adjeff.core.analytical_psf import (
-    GaussGeneralPSF,
+    GeneralizedGaussianPSF,
     GaussPSF,
     KingPSF,
     MoffatGeneralizedPSF,
@@ -147,17 +147,17 @@ def test_gauss_param_dict(gauss_psf):
 
 
 # ---------------------------------------------------------------------------
-# GaussGeneralPSF
+# GeneralizedGaussianPSF
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def gauss_general_psf(grid, band) -> GaussGeneralPSF:
-    return GaussGeneralPSF(grid=grid, band=band, sigma=1.0, n=0.3)
+def gauss_general_psf(grid, band) -> GeneralizedGaussianPSF:
+    return GeneralizedGaussianPSF(grid=grid, band=band, sigma=1.0, n=0.3)
 
 
 def test_gauss_general_forward_shape(gauss_general_psf, grid):
-    """GaussGeneralPSF.forward must return a valid normalised kernel."""
+    """GeneralizedGaussianPSF.forward must return a valid normalised kernel."""
     _assert_kernel_valid(gauss_general_psf.forward(), grid.n)
 
 
@@ -169,14 +169,14 @@ def test_gauss_general_forward_peak_at_center(gauss_general_psf, grid):
 
 
 def test_gauss_general_to_dataarray(gauss_general_psf, grid, band):
-    """GaussGeneralPSF.to_dataarray must return a valid annotated DataArray."""
+    """GeneralizedGaussianPSF.to_dataarray must return a valid annotated DataArray."""
     da = gauss_general_psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == "GaussianGeneral"
+    assert da.attrs["adjeff:model"] == "GeneralizedGaussian"
 
 
 def test_gauss_general_param_dict(gauss_general_psf):
-    """GaussGeneralPSF.param_dict must return keys 'sigma' and 'n'."""
+    """GeneralizedGaussianPSF.param_dict must return keys 'sigma' and 'n'."""
     p = gauss_general_psf.param_dict()
     assert set(p.keys()) == {"sigma", "n"}
     assert all(isinstance(v, float) for v in p.values())

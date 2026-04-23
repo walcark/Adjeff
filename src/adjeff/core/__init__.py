@@ -2,8 +2,8 @@
 
 from ._psf import PSFGrid
 from .analytical_psf import (
-    GaussGeneralPSF,
     GaussPSF,
+    GeneralizedGaussianPSF,
     KingPSF,
     MoffatGeneralizedPSF,
     VoigtPSF,
@@ -21,7 +21,7 @@ from .psf_dict import PSFDict, init_psf_dict
 
 __all__ = [
     "PSFGrid",
-    "GaussGeneralPSF",
+    "GeneralizedGaussianPSF",
     "GaussPSF",
     "KingPSF",
     "MoffatGeneralizedPSF",

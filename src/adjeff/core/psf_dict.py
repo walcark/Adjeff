@@ -293,5 +293,5 @@ def init_psf_dict(
             )[band]
         else:
             params = cast(dict[str, float], init_parameters)
-        modules[band] = model(grid=grid, band=band, **params)  # type: ignore[call-arg]
+        modules[band] = model(grid=grid, band=band, **params)
     return PSFDict.from_modules(modules)

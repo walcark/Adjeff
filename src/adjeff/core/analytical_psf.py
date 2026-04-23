@@ -1,15 +1,16 @@
 """Implement analytical subclasses of PSFModule.
 
-Each subclass is a torch.nn.Module with trainable nn.Parameters.
-Each subclass implements the PSFModule protocol (forward + to_dataarray).
+Each subclass is a trainable PSFModule with ConstrainedParameter fields.
+The common to_dataarray(), grid/band init, and nn.Module wiring are all
+inherited from PSFModule — subclasses only declare their parameters,
+forward(), and param_dict().
 """
 
 from __future__ import annotations
 
-import numpy as np
+from typing import ClassVar
+
 import torch
-import torch.nn as nn
-import xarray as xr
 
 from adjeff.utils import ConstrainedParameter, ExpTransform, SigmoidTransform
 
@@ -17,7 +18,7 @@ from ._psf import PSFGrid, PSFModule
 from .bands import SensorBand
 
 
-class GaussPSF(nn.Module, PSFModule):
+class GaussPSF(PSFModule):
     """Trainable Gaussian PSF model with constrained sigma.
 
     Parameters
@@ -30,11 +31,10 @@ class GaussPSF(nn.Module, PSFModule):
         Initial Gaussian standard deviation [km].
     """
 
-    def __init__(self, grid: PSFGrid, band: SensorBand, sigma: float) -> None:
-        nn.Module.__init__(self)
-        self.grid = grid
-        self.band = band
+    _model_name: ClassVar[str] = "Gaussian"
 
+    def __init__(self, grid: PSFGrid, band: SensorBand, sigma: float) -> None:
+        super().__init__(grid, band)
         self.sigma = ConstrainedParameter(
             init_value=torch.tensor(sigma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -54,27 +54,8 @@ class GaussPSF(nn.Module, PSFModule):
         """Return ``{"sigma": <value>}``."""
         return {"sigma": float(self.sigma.value)}
 
-    @torch.no_grad()
-    def to_dataarray(self) -> xr.DataArray:
-        """Return the Gaussian kernel as a DataArray."""
-        kernel = self.forward().detach().cpu().numpy()
-        coords = self.grid.as_coords()
-        return xr.DataArray(
-            kernel,
-            dims=["y_psf", "x_psf"],
-            coords=coords,
-            attrs={
-                "adjeff:kind": "analytical",
-                "adjeff:model": "Gaussian",
-                "adjeff:params": {
-                    "sigma": float(self.sigma.value),
-                },
-                "band": self.band,
-            },
-        )
 
-
-class GaussGeneralPSF(nn.Module, PSFModule):
+class GeneralizedGaussianPSF(PSFModule):
     """Trainable Generalised Gaussian PSF model.
 
     The kernel follows ``exp(-(r/σ)ⁿ)``, where *n* controls the shape:
@@ -92,13 +73,12 @@ class GaussGeneralPSF(nn.Module, PSFModule):
         Initial shape exponent. Constrained to ``[0.1, 0.4]``.
     """
 
+    _model_name: ClassVar[str] = "GeneralizedGaussian"
+
     def __init__(
         self, grid: PSFGrid, band: SensorBand, sigma: float, n: float
     ) -> None:
-        nn.Module.__init__(self)
-        self.grid = grid
-        self.band = band
-
+        super().__init__(grid, band)
         self.sigma = ConstrainedParameter(
             init_value=torch.tensor(sigma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -106,7 +86,6 @@ class GaussGeneralPSF(nn.Module, PSFModule):
             max_val=1e0,
             name="sigma",
         )
-
         self.n = ConstrainedParameter(
             init_value=torch.tensor(n, dtype=torch.float32),
             transform=SigmoidTransform(0.1, 0.4),
@@ -119,37 +98,15 @@ class GaussGeneralPSF(nn.Module, PSFModule):
         """Return normalised Generalised Gaussian kernel on the grid."""
         X, Y = self.grid.meshgrid()
         r = torch.sqrt(X**2 + Y**2)
-        sigma = self.sigma.value
-        n = self.n.value
-        kernel = torch.exp(-((r / sigma) ** n))
+        kernel = torch.exp(-((r / self.sigma.value) ** self.n.value))
         return kernel / kernel.sum()
 
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "n": <value>}``."""
         return {"sigma": float(self.sigma.value), "n": float(self.n.value)}
 
-    @torch.no_grad()
-    def to_dataarray(self) -> xr.DataArray:
-        """Return the Gaussian Generalized kernel as a DataArray."""
-        kernel = self.forward().detach().cpu().numpy()
-        coords = self.grid.as_coords()
-        return xr.DataArray(
-            kernel,
-            dims=["y_psf", "x_psf"],
-            coords=coords,
-            attrs={
-                "adjeff:kind": "analytical",
-                "adjeff:model": "GaussianGeneral",
-                "adjeff:params": {
-                    "sigma": float(self.sigma.value),
-                    "n": float(self.n.value),
-                },
-                "band": self.band,
-            },
-        )
 
-
-class VoigtPSF(nn.Module, PSFModule):
+class VoigtPSF(PSFModule):
     """Trainable pseudo-Voigt PSF kernel.
 
     Linearly mixes a Gaussian (width *sigma*) and a Lorentzian (width
@@ -167,6 +124,10 @@ class VoigtPSF(nn.Module, PSFModule):
         Initial Lorentzian half-width [km].
     """
 
+    _model_name: ClassVar[str] = "Voigt"
+
+    _FWHM_GAUSS_FACTOR: float = 2.0 * (2.0 * 0.6931471805599453) ** 0.5
+
     def __init__(
         self,
         grid: PSFGrid,
@@ -174,10 +135,7 @@ class VoigtPSF(nn.Module, PSFModule):
         sigma: float,
         gamma: float,
     ) -> None:
-        nn.Module.__init__(self)
-        self.grid = grid
-        self.band = band
-
+        super().__init__(grid, band)
         self.sigma = ConstrainedParameter(
             init_value=torch.tensor(sigma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -185,7 +143,6 @@ class VoigtPSF(nn.Module, PSFModule):
             max_val=50.0,
             name="sigma",
         )
-
         self.gamma = ConstrainedParameter(
             init_value=torch.tensor(gamma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -196,8 +153,7 @@ class VoigtPSF(nn.Module, PSFModule):
 
     def _eta(self) -> torch.Tensor:
         """Return the pseudo-Voigt mixing parameter eta."""
-        FG = 2.0 * torch.sqrt(torch.tensor(2.0 * np.log(2.0)))
-        FG = FG * self.sigma.value
+        FG = self._FWHM_GAUSS_FACTOR * self.sigma.value
         FL = 2.0 * self.gamma.value
         F = (
             FG**5
@@ -227,28 +183,8 @@ class VoigtPSF(nn.Module, PSFModule):
             "gamma": float(self.gamma.value),
         }
 
-    @torch.no_grad()
-    def to_dataarray(self) -> xr.DataArray:
-        """Return the Voigt kernel as a DataArray."""
-        kernel = self.forward().detach().cpu().numpy()
-        coords = self.grid.as_coords()
-        return xr.DataArray(
-            kernel,
-            dims=["y_psf", "x_psf"],
-            coords=coords,
-            attrs={
-                "adjeff:kind": "analytical",
-                "adjeff:model": "Voigt",
-                "adjeff:params": {
-                    "sigma": float(self.sigma.value),
-                    "gamma": float(self.gamma.value),
-                },
-                "band": self.band,
-            },
-        )
 
-
-class KingPSF(nn.Module, PSFModule):
+class KingPSF(PSFModule):
     """Trainable King profile PSF kernel.
 
     The kernel follows ``(1 + r² / (2σ²γ))^{-γ}``, producing a
@@ -266,6 +202,8 @@ class KingPSF(nn.Module, PSFModule):
         Initial power-law index.
     """
 
+    _model_name: ClassVar[str] = "King"
+
     def __init__(
         self,
         grid: PSFGrid,
@@ -273,10 +211,7 @@ class KingPSF(nn.Module, PSFModule):
         sigma: float,
         gamma: float,
     ) -> None:
-        nn.Module.__init__(self)
-        self.grid = grid
-        self.band = band
-
+        super().__init__(grid, band)
         self.sigma = ConstrainedParameter(
             init_value=torch.tensor(sigma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -284,7 +219,6 @@ class KingPSF(nn.Module, PSFModule):
             max_val=1e2,
             name="sigma",
         )
-
         self.gamma = ConstrainedParameter(
             init_value=torch.tensor(gamma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -308,28 +242,8 @@ class KingPSF(nn.Module, PSFModule):
             "gamma": float(self.gamma.value),
         }
 
-    @torch.no_grad()
-    def to_dataarray(self) -> xr.DataArray:
-        """Return the King kernel as a DataArray."""
-        kernel = self.forward().detach().cpu().numpy()
-        coords = self.grid.as_coords()
-        return xr.DataArray(
-            kernel,
-            dims=["y_psf", "x_psf"],
-            coords=coords,
-            attrs={
-                "adjeff:kind": "analytical",
-                "adjeff:model": "King",
-                "adjeff:params": {
-                    "sigma": float(self.sigma.value),
-                    "gamma": float(self.gamma.value),
-                },
-                "band": self.band,
-            },
-        )
 
-
-class MoffatGeneralizedPSF(nn.Module, PSFModule):
+class MoffatGeneralizedPSF(PSFModule):
     """Trainable Generalised Moffat PSF kernel.
 
     The kernel follows ``(1 + (r/α)^{2β})^{-γ}``.  Setting *beta* = 1
@@ -349,6 +263,8 @@ class MoffatGeneralizedPSF(nn.Module, PSFModule):
         Initial outer power-law index, by default 1.0.
     """
 
+    _model_name: ClassVar[str] = "MoffatGeneralized"
+
     def __init__(
         self,
         grid: PSFGrid,
@@ -357,10 +273,7 @@ class MoffatGeneralizedPSF(nn.Module, PSFModule):
         beta: float,
         gamma: float = 1.0,
     ) -> None:
-        nn.Module.__init__(self)
-        self.grid = grid
-        self.band = band
-
+        super().__init__(grid, band)
         self.alpha = ConstrainedParameter(
             init_value=torch.tensor(alpha, dtype=torch.float32),
             transform=ExpTransform(),
@@ -368,7 +281,6 @@ class MoffatGeneralizedPSF(nn.Module, PSFModule):
             max_val=50.0,
             name="alpha",
         )
-
         self.beta = ConstrainedParameter(
             init_value=torch.tensor(beta, dtype=torch.float32),
             transform=ExpTransform(),
@@ -376,7 +288,6 @@ class MoffatGeneralizedPSF(nn.Module, PSFModule):
             max_val=50.0,
             name="beta",
         )
-
         self.gamma = ConstrainedParameter(
             init_value=torch.tensor(gamma, dtype=torch.float32),
             transform=ExpTransform(),
@@ -401,24 +312,3 @@ class MoffatGeneralizedPSF(nn.Module, PSFModule):
             "beta": float(self.beta.value),
             "gamma": float(self.gamma.value),
         }
-
-    @torch.no_grad()
-    def to_dataarray(self) -> xr.DataArray:
-        """Return the Moffat Generalized kernel as a DataArray."""
-        kernel = self.forward().detach().cpu().numpy()
-        coords = self.grid.as_coords()
-        return xr.DataArray(
-            kernel,
-            dims=["y_psf", "x_psf"],
-            coords=coords,
-            attrs={
-                "adjeff:kind": "analytical",
-                "adjeff:model": "MoffatGeneralized",
-                "adjeff:params": {
-                    "alpha": float(self.alpha.value),
-                    "beta": float(self.beta.value),
-                    "gamma": float(self.gamma.value),
-                },
-                "band": self.band,
-            },
-        )

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 import torch
+import torch.nn as nn
 import xarray as xr
 
 from .bands import SensorBand
@@ -54,48 +57,65 @@ class PSFGrid:
         return X, Y
 
 
-class PSFModule:
-    """Abstract base for all PSF nn.Module subclasses.
+class PSFModule(nn.Module, ABC):
+    """Abstract base for all PSF models.
 
-    Subclasses must be torch.nn.Module subclasses. They must implement
-    the forward() method based on their parameters, and return a 2D
-    kernel.
+    Subclasses must define:
+
+    - ``_model_name``: display name stored in DataArray ``adjeff:model`` attr.
+    - :meth:`forward`: return a normalised 2-D kernel tensor.
+
+    :meth:`param_dict` returns ``{}`` by default; override in parametric
+    subclasses to expose current parameter values.
+
+    :meth:`to_dataarray` is fully implemented here using :meth:`forward` and
+    :meth:`param_dict` — subclasses only override it when the attrs layout
+    differs (e.g. :class:`~adjeff.core.NonAnalyticalPSF`).
 
     Parameters
     ----------
     grid : PSFGrid
-        The grid to use for the coordinates of the PSF.
+        Spatial sampling configuration.
     band : SensorBand
-        The spectral band of interest for the PSF.
+        Spectral band this PSF applies to.
     """
 
-    grid: PSFGrid
-    band: SensorBand
+    _model_name: ClassVar[str] = ""
 
-    def forward(self) -> "torch.Tensor":
+    def __init__(self, grid: PSFGrid, band: SensorBand) -> None:
+        super().__init__()
+        self.grid = grid
+        self.band = band
+
+    @abstractmethod
+    def forward(self) -> torch.Tensor:
         """Return normalised 2D PSF kernel."""
-        raise NotImplementedError
 
     def param_dict(self) -> dict[str, float]:
         """Return current parameter values as a plain ``{name: value}`` dict.
 
         Returns an empty dict for non-parametric PSFs (e.g.
-        :class:`~adjeff.core.non_analytical_psf.NonAnalyticalPSF`).
+        :class:`~adjeff.core.NonAnalyticalPSF`).
         Analytical subclasses override this method.
         """
         return {}
 
     @torch.no_grad()
     def to_dataarray(self) -> xr.DataArray:
-        """Return the kernel as DataArray."""
+        """Return the kernel as a DataArray with metadata attrs."""
         kernel = self.forward().detach().cpu().numpy()
         coords = self.grid.as_coords()
+        params = self.param_dict()
+        attrs: dict[str, object] = {
+            "adjeff:kind": "analytical",
+            "adjeff:model": self._model_name,
+            "band": self.band,
+        }
+        if params:
+            attrs["adjeff:params"] = params
         return xr.DataArray(
             kernel,
             dims=["y_psf", "x_psf"],
             coords=coords,
-            attrs={
-                "adjeff:kind": "analytical",
-                "band": self.band,
-            },
+            attrs=attrs,
         )

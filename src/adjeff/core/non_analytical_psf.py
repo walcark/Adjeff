@@ -5,16 +5,17 @@ The subclass implements the PSFModule protocol (forward + to_dataarray).
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 import torch
-import torch.nn as nn
 import xarray as xr
 
 from ._psf import PSFGrid, PSFModule
 from .bands import SensorBand
 
 
-class NonAnalyticalPSF(nn.Module, PSFModule):
+class NonAnalyticalPSF(PSFModule):
     """PSF defined by a fixed kernel tensor derived from a Smart-G output.
 
     Parameters do not require gradients — this PSF is not trained.
@@ -34,6 +35,8 @@ class NonAnalyticalPSF(nn.Module, PSFModule):
         Optional provenance tag stored in ``adjeff:source`` attribute.
     """
 
+    _model_name: ClassVar[str] = "NonAnalytical"
+
     def __init__(
         self,
         grid: PSFGrid,
@@ -41,9 +44,7 @@ class NonAnalyticalPSF(nn.Module, PSFModule):
         kernel: np.ndarray | torch.Tensor,
         source: str = "SmartG",
     ) -> None:
-        nn.Module.__init__(self)
-        self.grid = grid
-        self.band = band
+        super().__init__(grid, band)
         self._source = source
         self._kernel: torch.Tensor
 
