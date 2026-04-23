@@ -364,6 +364,7 @@ def run_forward_pipeline(
     afgl_type: str = ...,
     nr: int = ...,
     n_ph: int = ...,
+    radiative_chunks: dict[str, int] | None = ...,
 ) -> ImageDict: ...
 
 
@@ -378,6 +379,7 @@ def run_forward_pipeline(
     afgl_type: str = ...,
     nr: int = ...,
     n_ph: int = ...,
+    radiative_chunks: dict[str, int] | None = ...,
 ) -> list[ImageDict]: ...
 
 
@@ -391,6 +393,7 @@ def run_forward_pipeline(
     afgl_type: str = "afgl_exp_h8km",
     nr: int = 500,
     n_ph: int = int(1e5),
+    radiative_chunks: dict[str, int] | None = None,
 ) -> ImageDict | list[ImageDict]:
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
 
@@ -426,6 +429,9 @@ def run_forward_pipeline(
         Radial sampling points for rho_toa (default 500).
     n_ph : int
         Photon count per sensor for rho_toa (default ``1e5``).
+    radiative_chunks : dict[str, int] or None
+        Chunk sizes forwarded to :class:`~adjeff.modules.RadiativePipeline`,
+        e.g. ``{"wl": 4, "aot": 3}``. ``None`` disables chunking.
 
     Returns
     -------
@@ -440,6 +446,7 @@ def run_forward_pipeline(
         remove_rayleigh=remove_rayleigh,
         afgl_type=afgl_type,
         cache=cache,
+        chunks=radiative_chunks,
     )
     rho_toa = SmartgSampler_Rho_toa_sym(
         atmo_config=atmo_config,

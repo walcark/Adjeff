@@ -102,6 +102,9 @@ N: int = 1999
 # Smart-G photon count (reduce for quick tests, raise for production)
 N_PH: int = int(1e5)
 
+# Chunking for the RadiativePipeline (limits GPU memory per Smart-G call)
+RADIATIVE_CHUNKS: dict[str, int] = {"wl": 4, "aot": 3}
+
 # CAMS OPAC aerosol species
 CAMS_SPECIES: list[str] = [
     "ammonium",
@@ -176,6 +179,7 @@ def _build_training_images(
             **cfg,
             n_ph=N_PH,
             cache=cache,
+            radiative_chunks=RADIATIVE_CHUNKS,
         )
         scenes.append(scene)
     return TrainingImages(images=scenes, weights=GAUSSIAN_WEIGHTS)
