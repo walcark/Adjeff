@@ -15,7 +15,7 @@ from ._smartg import sph_alb
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Sph_alb(SceneModuleSweep):
+class SphAlbSampler(SceneModuleSweep):
     """Sample the spherical albedo of the atmosphere with Smart-G.
 
     Computes ``sph_alb`` — the fraction of the upwelling flux reflected

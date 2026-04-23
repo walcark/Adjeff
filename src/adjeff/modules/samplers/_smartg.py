@@ -17,7 +17,7 @@ from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
-from adjeff.core import GaussGeneralPSF, PSFGrid, SensorBand
+from adjeff.core import GeneralizedGaussianPSF, PSFGrid, SensorBand
 from adjeff.utils import fft_convolve_2D
 
 if TYPE_CHECKING:
@@ -609,7 +609,7 @@ def rho_toa(
 
     if rho_s["rho_s"].adjeff.kind() != "arbitrary":
         raise ValueError(
-            "SmartgSampler_Rho_toa requires an arbitrary rho_s surface "
+            "RhoToaSampler requires an arbitrary rho_s surface "
             "(use gaussian_image_dict(..., analytical=False) or equivalent). "
             f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
         )
@@ -789,8 +789,8 @@ def rho_toa_sym(
 
     if rho_s["rho_s"].adjeff.kind() != "analytical":
         raise ValueError(
-            "SmartgSampler_Rho_toa_sym requires an analytical rho_s surface. "
-            "Use SmartgSampler_Rho_toa for arbitrary fields. "
+            "RhoToaSymSampler requires an analytical rho_s surface. "
+            "Use RhoToaSampler for arbitrary fields. "
             f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
         )
 
@@ -802,7 +802,7 @@ def rho_toa_sym(
     res: float = rho_s["rho_s"].adjeff.res
     n: int = rho_s["rho_s"].adjeff.n
     n = n - 1 if n % 2 == 0 else n
-    approx_psf = GaussGeneralPSF(
+    approx_psf = GeneralizedGaussianPSF(
         band=band,
         grid=PSFGrid(res=res, n=n),
         sigma=0.00005,

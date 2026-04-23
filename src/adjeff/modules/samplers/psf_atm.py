@@ -17,7 +17,7 @@ from ._smartg import psf_atm
 logger = get_logger(__name__)
 
 
-class SmartgSampler_PSF_Atm(SceneModuleSweep):
+class PsfAtmSampler(SceneModuleSweep):
     """Compute the atmospheric PSF of the 5S model.
 
     For each band, the module samples the PSF using a Smart-G Entity object.

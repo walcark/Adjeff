@@ -15,12 +15,12 @@ from ._smartg import tdir_up
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Tdir_up(SceneModuleSweep):
+class TdirUpSampler(SceneModuleSweep):
     """Sample direct upward transmittance analytically from optical depth.
 
     Computes ``tdir_up = exp(-OD / cos(vza))`` where the optical depth
     ``OD`` is retrieved from Smart-G.  See also
-    :class:`SmartgSampler_Tdir_down` for the downward counterpart.
+    :class:`TdirDownSampler` for the downward counterpart.
 
     Parameters
     ----------

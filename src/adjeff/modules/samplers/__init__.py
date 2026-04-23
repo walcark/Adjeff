@@ -1,25 +1,25 @@
 """Define all the Smart-G based samplers available."""
 
-from .psf_atm import SmartgSampler_PSF_Atm
+from .psf_atm import PsfAtmSampler
 from .radiatives import RadiativePipeline
-from .rho_atm import SmartgSampler_Rho_atm
-from .rho_toa import SmartgSampler_Rho_toa
-from .rho_toa_sym import SmartgSampler_Rho_toa_sym
-from .sph_alb import SmartgSampler_Sph_alb
-from .tdif_down import SmartgSampler_Tdif_down
-from .tdif_up import SmartgSampler_Tdif_up
-from .tdir_down import SmartgSampler_Tdir_down
-from .tdir_up import SmartgSampler_Tdir_up
+from .rho_atm import RhoAtmSampler
+from .rho_toa import RhoToaSampler
+from .rho_toa_sym import RhoToaSymSampler
+from .sph_alb import SphAlbSampler
+from .tdif_down import TdifDownSampler
+from .tdif_up import TdifUpSampler
+from .tdir_down import TdirDownSampler
+from .tdir_up import TdirUpSampler
 
 __all__ = [
-    "SmartgSampler_PSF_Atm",
+    "PsfAtmSampler",
     "RadiativePipeline",
-    "SmartgSampler_Rho_atm",
-    "SmartgSampler_Rho_toa",
-    "SmartgSampler_Rho_toa_sym",
-    "SmartgSampler_Sph_alb",
-    "SmartgSampler_Tdif_down",
-    "SmartgSampler_Tdif_up",
-    "SmartgSampler_Tdir_down",
-    "SmartgSampler_Tdir_up",
+    "RhoAtmSampler",
+    "RhoToaSampler",
+    "RhoToaSymSampler",
+    "SphAlbSampler",
+    "TdifDownSampler",
+    "TdifUpSampler",
+    "TdirDownSampler",
+    "TdirUpSampler",
 ]

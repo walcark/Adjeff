@@ -15,7 +15,7 @@ from ._smartg import tdif_down
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Tdif_down(SceneModuleSweep):
+class TdifDownSampler(SceneModuleSweep):
     """Sample downward diffuse transmittance with Smart-G.
 
     Computes ``tdif_down`` — the diffuse fraction of the solar flux

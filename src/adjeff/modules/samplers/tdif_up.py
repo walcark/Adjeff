@@ -15,7 +15,7 @@ from ._smartg import tdif_up
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Tdif_up(SceneModuleSweep):
+class TdifUpSampler(SceneModuleSweep):
     """Sample upward diffuse transmittance with Smart-G.
 
     Computes ``tdif_up`` — the diffuse component of the upward flux

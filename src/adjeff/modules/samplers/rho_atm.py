@@ -15,7 +15,7 @@ from ._smartg import rho_atm
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Rho_atm(SceneModuleSweep):
+class RhoAtmSampler(SceneModuleSweep):
     """Sample atmospheric reflectance (path radiance) with Smart-G.
 
     Computes ``rho_atm`` — the reflectance of the atmosphere alone (no

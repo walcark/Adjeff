@@ -6,12 +6,12 @@ from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.utils import CacheStore
 
 from ..pipeline import Pipeline
-from .rho_atm import SmartgSampler_Rho_atm
-from .sph_alb import SmartgSampler_Sph_alb
-from .tdif_down import SmartgSampler_Tdif_down
-from .tdif_up import SmartgSampler_Tdif_up
-from .tdir_down import SmartgSampler_Tdir_down
-from .tdir_up import SmartgSampler_Tdir_up
+from .rho_atm import RhoAtmSampler
+from .sph_alb import SphAlbSampler
+from .tdif_down import TdifDownSampler
+from .tdif_up import TdifUpSampler
+from .tdir_down import TdirDownSampler
+from .tdir_up import TdirUpSampler
 
 
 class RadiativePipeline(Pipeline):
@@ -84,9 +84,9 @@ class RadiativePipeline(Pipeline):
         )
         super().__init__(
             [
-                SmartgSampler_Tdir_down(**common),
-                SmartgSampler_Tdir_up(**common),
-                SmartgSampler_Sph_alb(
+                TdirDownSampler(**common),
+                TdirUpSampler(**common),
+                SphAlbSampler(
                     atmo_config=atmo_config,
                     spectral_config=spectral_config,
                     remove_rayleigh=remove_rayleigh,
@@ -96,8 +96,8 @@ class RadiativePipeline(Pipeline):
                     chunks=chunks,
                     deduplicate_dims=deduplicate_dims,
                 ),
-                SmartgSampler_Tdif_up(**common, n_ph=n_ph_tdif_up),
-                SmartgSampler_Tdif_down(**common, n_ph=n_ph_tdif_down),
-                SmartgSampler_Rho_atm(**common, n_ph=n_ph_rho_atm),
+                TdifUpSampler(**common, n_ph=n_ph_tdif_up),
+                TdifDownSampler(**common, n_ph=n_ph_tdif_down),
+                RhoAtmSampler(**common, n_ph=n_ph_rho_atm),
             ]
         )

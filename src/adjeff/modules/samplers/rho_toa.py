@@ -22,12 +22,12 @@ from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
 from ._smartg import rho_toa
-from .rho_atm import SmartgSampler_Rho_atm
+from .rho_atm import RhoAtmSampler
 
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Rho_toa(SceneModuleSweep):
+class RhoToaSampler(SceneModuleSweep):
     """Compute rho_toa by 2D grid sampling without symmetry assumption.
 
     The full 2D surface reflectance map is encoded as an ``Albedo_map``
@@ -100,7 +100,7 @@ class SmartgSampler_Rho_toa(SceneModuleSweep):
         """Run the 2D rho_toa computation for every band in the scene."""
         bundle: utils.ConfigBundle = self._make_bundle()
 
-        scene = SmartgSampler_Rho_atm(
+        scene = RhoAtmSampler(
             atmo_config=self.atmo_config,
             geo_config=self.geo_config,
             spectral_config=atmo.SpectralConfig.from_bands(scene.bands),

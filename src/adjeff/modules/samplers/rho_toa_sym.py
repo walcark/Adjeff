@@ -13,12 +13,12 @@ from adjeff.core import ImageDict
 
 from ..scene_module_sweep import SceneModuleSweep
 from ._smartg import rho_toa_sym
-from .rho_atm import SmartgSampler_Rho_atm
+from .rho_atm import RhoAtmSampler
 
 logger = get_logger(__name__)
 
 
-class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
+class RhoToaSymSampler(SceneModuleSweep):
     """Compute rho_toa by radial sampling under the symmetric PSF assumption.
 
     For each band, the module:
@@ -80,7 +80,7 @@ class SmartgSampler_Rho_toa_sym(SceneModuleSweep):
         """Run the radial rho_toa computation for every band in the scene."""
         bundle: utils.ConfigBundle = self._make_bundle()
 
-        scene = SmartgSampler_Rho_atm(
+        scene = RhoAtmSampler(
             atmo_config=self.atmo_config,
             geo_config=self.geo_config,
             spectral_config=atmo.SpectralConfig.from_bands(scene.bands),

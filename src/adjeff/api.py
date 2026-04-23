@@ -41,12 +41,12 @@ from adjeff.exceptions import MissingVariableError
 from adjeff.modules.classic.toa_to_unif import Toa2Unif
 from adjeff.modules.loaders.maja_loader import MajaLoader
 from adjeff.modules.models.psf_conv_module import PSFConvModule
-from adjeff.modules.samplers.psf_atm import SmartgSampler_PSF_Atm
+from adjeff.modules.samplers.psf_atm import PsfAtmSampler
 from adjeff.modules.samplers.radiatives import RadiativePipeline
-from adjeff.modules.samplers.rho_toa_sym import SmartgSampler_Rho_toa_sym
+from adjeff.modules.samplers.rho_toa_sym import RhoToaSymSampler
 from adjeff.optim import Loss, OptimizerPipeline, TrainingImages
-from adjeff.optim.adam_optimizer import AdamConfig, _AdamStage
-from adjeff.optim.lbfgs_optimizer import LBFGSConfig, _LBFGSStage
+from adjeff.optim.adam_optimizer import AdamConfig, AdamStage
+from adjeff.optim.lbfgs_optimizer import LBFGSConfig, LBFGSStage
 from adjeff.utils import CacheStore
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ class FullConfig(TypedDict):
 
     Keys match the keyword arguments expected by
     :class:`~adjeff.modules.samplers.RadiativePipeline` and
-    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa_sym`, so the dict
+    :class:`~adjeff.modules.samplers.RhoToaSymSampler`, so the dict
     can be unpacked directly with ``**cfg``.
     """
 
@@ -247,7 +247,7 @@ def make_full_config(
     The returned dict has keys ``"atmo_config"``, ``"geo_config"``,
     ``"spectral_config"`` and can be unpacked directly with ``**cfg`` into
     :class:`~adjeff.modules.samplers.RadiativePipeline` and
-    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa_sym`.
+    :class:`~adjeff.modules.samplers.RhoToaSymSampler`.
 
     Parameters
     ----------
@@ -398,7 +398,7 @@ def run_forward_pipeline(
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
 
     Chains :class:`~adjeff.modules.samplers.RadiativePipeline`,
-    :class:`~adjeff.modules.samplers.SmartgSampler_Rho_toa_sym`, and
+    :class:`~adjeff.modules.samplers.RhoToaSymSampler`, and
     :class:`~adjeff.modules.classic.Toa2Unif` in sequence.
 
     The config arguments match the keys of :func:`make_full_config`, so the
@@ -448,7 +448,7 @@ def run_forward_pipeline(
         cache=cache,
         chunks=radiative_chunks,
     )
-    rho_toa = SmartgSampler_Rho_toa_sym(
+    rho_toa = RhoToaSymSampler(
         atmo_config=atmo_config,
         geo_config=geo_config,
         remove_rayleigh=remove_rayleigh,
@@ -478,7 +478,7 @@ def load_maja(
     product_path: Path,
     bands: list[SensorBand],
     res: float | list[float],
-    mnt_path: Path = Path("/work/CESBIO/projects/Maja/DTM_120"),
+    mnt_path: Path | None = None,
     href: float = 2.0,
     as_map: bool = False,
     cache: CacheStore | None = None,
@@ -501,8 +501,9 @@ def load_maja(
         Bands to load.
     res : float or list[float]
         Target spatial resolution in km (e.g. ``0.12`` for 120 m).
-    mnt_path : Path
-        Folder containing the DEM at 20 m resolution.
+    mnt_path : Path or None
+        Folder containing the DEM at 20 m resolution.  Must be provided;
+        ``None`` raises :class:`~adjeff.exceptions.ConfigurationError`.
     href : float
         Aerosol scale height [km] (default ``2.0``).
     as_map : bool
@@ -536,6 +537,13 @@ def load_maja(
         Scene with ``rho_s`` and atmospheric/geometric variables, plus
         radiative quantities when *compute_radiatives* is ``True``.
     """
+    if mnt_path is None:
+        from adjeff.exceptions import ConfigurationError
+
+        raise ConfigurationError(
+            "load_maja requires mnt_path (path to the DEM folder). "
+            "Example: mnt_path=Path('/data/dtm')."
+        )
     loader = MajaLoader(
         product_path=product_path,
         bands=bands,
@@ -689,7 +697,7 @@ def sample_psf_atm(
     Internally builds a constant input scene to carry the spatial grid
     (only ``res`` and ``n`` matter to the sampler — the reflectance values
     are irrelevant), runs
-    :class:`~adjeff.modules.samplers.SmartgSampler_PSF_Atm`, then wraps the
+    :class:`~adjeff.modules.samplers.PsfAtmSampler`, then wraps the
     resulting ``psf_atm`` DataArrays into a :class:`~adjeff.core.PSFDict`.
 
     Requires a CUDA GPU (delegates to Smart-G).
@@ -729,7 +737,7 @@ def sample_psf_atm(
         bands=bands,
         n=n,
     )
-    sampler = SmartgSampler_PSF_Atm(
+    sampler = PsfAtmSampler(
         atmo_config=atmo_config,
         geo_config=geo_config,
         remove_rayleigh=remove_rayleigh,
@@ -796,7 +804,7 @@ def optimize_adam_lbfgs(
     """
     optimizer = OptimizerPipeline(
         stages=[
-            _AdamStage(
+            AdamStage(
                 AdamConfig(
                     min_steps=adam_min_steps,
                     max_steps=adam_max_steps,
@@ -805,7 +813,7 @@ def optimize_adam_lbfgs(
                     lr=adam_lr,
                 )
             ),
-            _LBFGSStage(
+            LBFGSStage(
                 LBFGSConfig(
                     min_steps=lbfgs_min_steps,
                     max_steps=lbfgs_max_steps,
