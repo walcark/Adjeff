@@ -39,7 +39,7 @@ structlog.configure(
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig  # noqa: E402
 from adjeff.core import S2Band, random_image_dict  # noqa: E402
 from adjeff.modules import SceneModuleSweep  # noqa: E402
-from adjeff.utils import ConfigBundle  # noqa: E402
+from adjeff.sweep import SweepBundle  # noqa: E402
 from adjeff.utils import ConfigProtocol  # noqa: E402
 
 
@@ -94,7 +94,11 @@ sep("1 · Aggregation — scalars from two configs, non-DA attrs in other")
 atmo1 = AtmoConfig(aot=0.2, h=2.0, rh=50.0, href=2.0, species={"aerosol": 1.0})
 geo1 = GeoConfig(sza=30.0, vza=10.0, saa=120.0, vaa=0.0)
 
-b1 = ConfigBundle([atmo1, geo1], scalars=["aot", "sza", "vza"], vectors=[])
+b1 = SweepBundle.from_configs(
+    configs=[atmo1, geo1],
+    scalar_names=["aot", "sza", "vza"],
+    vector_names=[]
+)
 
 print(f"\naot : dims={list(b1.arrays['aot'].dims)}, values={b1.arrays['aot'].values}")
 print(f"sza : dims={list(b1.arrays['sza'].dims)}, values={b1.arrays['sza'].values}")
@@ -119,7 +123,11 @@ sep("2 · 1D sweep — aot over 4 values, xarray outer-broadcasts with sza")
 atmo2 = AtmoConfig(
     aot=[0.05, 0.10, 0.20, 0.40], h=2.0, rh=50.0, href=2.0, species={"aerosol": 1.0}
 )
-b2 = ConfigBundle([atmo2, geo1], scalars=["aot", "sza"], vectors=[])
+b2 = SweepBundle.from_configs(
+    configs=[atmo2, geo1],
+    scalar_names=["aot", "sza"],
+    vector_names=[]
+)
 
 result2 = b2.arrays["aot"] * 10.0 + b2.arrays["sza"] * 0.1
 print(f"\naot : {b2.arrays['aot'].values}")
@@ -142,7 +150,11 @@ check(
 sep("3 · Vector dim — wl passed as full 1D array (SpectralConfig)")
 
 spectral3 = SpectralConfig.from_bands([S2Band.B02, S2Band.B03, S2Band.B04])
-b3 = ConfigBundle([atmo1, spectral3], scalars=["aot"], vectors=["wl"])
+b3 = SweepBundle.from_configs(
+    configs=[atmo1, spectral3],
+    scalar_names=["aot"],
+    vector_names=["wl"]
+)
 
 result3 = b3.arrays["aot"] + b3.arrays["wl"] * 0.001
 print(f"\nwl  : dims={list(b3.arrays['wl'].dims)}, values={b3.arrays['wl'].values}")
@@ -235,7 +247,11 @@ print("absorbed into 'index' → aot is demoted from vector to scalar.")
 
 # aot takes N_AOT unique values (constant along y)
 atmo6 = AtmoConfig(aot=aot_2d, h=2.0, rh=50.0, href=2.0, species={"aerosol": 1.0})
-b6 = ConfigBundle([atmo6], scalars=[], vectors=["aot"], deduplicate_dims=["x", "y"])
+b6 = SweepBundle.from_configs(
+    configs=[atmo6],
+    scalar_names=[],
+    vector_names=["aot"],, deduplicate_dims=["x", "y"]
+)
 
 print(f"\n_vectors before dedup: ['aot']")
 print(f"_scalars after  dedup: {b6._scalars}")
@@ -264,7 +280,8 @@ b7 = ConfigBundle(
     [atmo4, geo4, spectral7],
     scalars=["aot", "sza"],
     vectors=["wl"],
-    deduplicate_dims=["x", "y"],
+    # deduplicate: use UniqueIndex.build() first
+    # deduplicate_dims=["x", "y"],
 )
 t_bundle = time.perf_counter() - t0
 

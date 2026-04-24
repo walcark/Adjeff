@@ -87,8 +87,6 @@ def rho_atm(
     """
     from smartg.smartg import Smartg
 
-    logger.info("Computing rho_atm ...", wl=wl, vza=vza, sza=sza)
-
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=wl, aot=aot, rh=rh, href=href, h=h
     )
@@ -143,7 +141,6 @@ def rho_atm(
             },
         )
     )
-    logger.info("rho_atm successfully calculated.")
     return res
 
 
@@ -194,8 +191,6 @@ def tdir_down(
     xr.DataArray
         Direct downward transmittance with dims ``(sza, wl, ...)``.
     """
-    logger.info("Computing tdir_down ...", wl=wl, sza=sza)
-
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=wl, aot=aot, rh=rh, href=href, h=h
     )
@@ -214,7 +209,6 @@ def tdir_down(
             coords={"index": batch.index_coord},
         )
     )
-    logger.info("tdir_down successfully calculated.")
     return xr.DataArray(np.exp(-od / np.cos(np.deg2rad(sza))))
 
 
@@ -279,7 +273,6 @@ def tdir_up(
     od = batch.unstack(
         xr.DataArray(od, dims=["index"], coords={"index": batch.index_coord}),
     )
-    logger.info("tdir_up successfully calculated.")
     return xr.DataArray(xr.apply_ufunc(np.exp, -od / np.cos(np.deg2rad(vza))))
 
 
@@ -338,8 +331,6 @@ def tdif_down(
     """
     from smartg.smartg import Smartg
 
-    logger.info("Computing tdif_down ...", wl=wl, sza=sza)
-
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=wl, aot=aot, rh=rh, href=href, h=h
     )
@@ -382,7 +373,6 @@ def tdif_down(
             coords={"sza": sza.values, "index": batch.index_coord},
         )
     )
-    logger.info("tdif_down successfully calculated.")
     return res
 
 
@@ -438,8 +428,6 @@ def tdif_up(
     """
     from smartg.smartg import Sensor, Smartg
 
-    logger.info("Computing tdif_up ...", wl=wl, vza=vza)
-
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=wl, aot=aot, rh=rh, href=href, h=h
     )
@@ -480,7 +468,6 @@ def tdif_up(
             coords={"vza": vza.values, "index": batch.index_coord},
         )
     )
-    logger.info("tdif_up successfully calculated.")
     return res
 
 
@@ -530,8 +517,6 @@ def sph_alb(
     """
     from smartg.smartg import Sensor, Smartg
 
-    logger.info("Computing sph_alb ...", wl=wl)
-
     batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
         wl=wl, aot=aot, rh=rh, href=href, h=h
     )
@@ -565,7 +550,6 @@ def sph_alb(
             coords={"index": batch.index_coord},
         )
     )
-    logger.info("sph_alb successfully calculated.")
     return res
 
 

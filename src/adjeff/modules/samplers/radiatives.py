@@ -69,7 +69,7 @@ class RadiativePipeline(Pipeline):
         n_ph_tdif_up: int = int(3e7),
         n_ph_tdif_down: int = int(3e7),
         cache: CacheStore | None = None,
-        chunks: dict[str, int] | None = None,
+        sweep_chunks: dict[str, int] | None = None,
         deduplicate_dims: list[str] | None = None,
     ) -> None:
         common: dict[str, Any] = dict(
@@ -79,7 +79,7 @@ class RadiativePipeline(Pipeline):
             remove_rayleigh=remove_rayleigh,
             afgl_type=afgl_type,
             cache=cache,
-            chunks=chunks,
+            sweep_chunks=sweep_chunks,
             deduplicate_dims=deduplicate_dims,
         )
         super().__init__(
@@ -93,7 +93,7 @@ class RadiativePipeline(Pipeline):
                     afgl_type=afgl_type,
                     n_ph=n_ph_sph_alb,
                     cache=cache,
-                    chunks=chunks,
+                    sweep_chunks=sweep_chunks,
                     deduplicate_dims=deduplicate_dims,
                 ),
                 TdifUpSampler(**common, n_ph=n_ph_tdif_up),

@@ -39,8 +39,8 @@ class TdifDownSampler(SceneModuleSweep):
         Number of photons per Smart-G call, by default ``3e7``.
     cache : CacheStore or None, optional
         Result cache; ``None`` disables caching.
-    chunks : dict[str, int] or None, optional
-        Chunk sizes for vector dimensions.
+    sweep_chunks : dict[str, int] or None, optional
+        Chunk sizes for Smart-G calls within this module.
     deduplicate_dims : list[str] or None, optional
         Spatial dimensions to deduplicate before sweeping.
     """
@@ -59,7 +59,7 @@ class TdifDownSampler(SceneModuleSweep):
         afgl_type: str = "afgl_exp_h8km",
         n_ph: int = int(3e7),
         cache: utils.CacheStore | None = None,
-        chunks: dict[str, int] | None = None,
+        sweep_chunks: dict[str, int] | None = None,
         deduplicate_dims: list[str] | None = None,
     ) -> None:
         self.spectral_config = spectral_config
@@ -69,7 +69,9 @@ class TdifDownSampler(SceneModuleSweep):
         self.remove_rayleigh = remove_rayleigh
         self.n_ph = n_ph
         super().__init__(
-            cache=cache, chunks=chunks, deduplicate_dims=deduplicate_dims
+            cache=cache,
+            sweep_chunks=sweep_chunks,
+            deduplicate_dims=deduplicate_dims,
         )
 
     def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
@@ -80,8 +82,7 @@ class TdifDownSampler(SceneModuleSweep):
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
 
-        bundle: utils.ConfigBundle = self._make_bundle()
-        arr: xr.DataArray = bundle.apply(
+        arr: xr.DataArray = self._apply_bundle(
             tdif_down,
             species=self.atmo_config.species,
             afgl_type=self.afgl_type,
@@ -90,7 +91,6 @@ class TdifDownSampler(SceneModuleSweep):
             saa=self.geo_config.saa.values,
             sat_height=self.geo_config.sat_height,
         )
-        logger.info("Computed tdif_down.", dims=arr.dims)
 
         for band in self.spectral_config.bands:
             scene[band]["tdif_down"] = arr.sel(wl=band.wl_nm)

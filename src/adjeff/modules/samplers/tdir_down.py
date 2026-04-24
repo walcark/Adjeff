@@ -41,8 +41,8 @@ class TdirDownSampler(SceneModuleSweep):
         by default ``1e2``.
     cache : CacheStore or None, optional
         Result cache; ``None`` disables caching.
-    chunks : dict[str, int] or None, optional
-        Chunk sizes for vector dimensions.
+    sweep_chunks : dict[str, int] or None, optional
+        Chunk sizes for Smart-G calls within this module.
     deduplicate_dims : list[str] or None, optional
         Spatial dimensions to deduplicate before sweeping.
     """
@@ -61,7 +61,7 @@ class TdirDownSampler(SceneModuleSweep):
         afgl_type: str = "afgl_exp_h8km",
         n_ph: int = int(1e2),
         cache: utils.CacheStore | None = None,
-        chunks: dict[str, int] | None = None,
+        sweep_chunks: dict[str, int] | None = None,
         deduplicate_dims: list[str] | None = None,
     ) -> None:
         self.spectral_config = spectral_config
@@ -71,7 +71,9 @@ class TdirDownSampler(SceneModuleSweep):
         self.remove_rayleigh = remove_rayleigh
         self.n_ph = n_ph
         super().__init__(
-            cache=cache, chunks=chunks, deduplicate_dims=deduplicate_dims
+            cache=cache,
+            sweep_chunks=sweep_chunks,
+            deduplicate_dims=deduplicate_dims,
         )
 
     def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
@@ -82,15 +84,13 @@ class TdirDownSampler(SceneModuleSweep):
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
 
-        bundle: utils.ConfigBundle = self._make_bundle()
-        arr: xr.DataArray = bundle.apply(
+        arr: xr.DataArray = self._apply_bundle(
             tdir_down,
             species=self.atmo_config.species,
             afgl_type=self.afgl_type,
             remove_rayleigh=self.remove_rayleigh,
             n_ph=self.n_ph,
         )
-        logger.info("Computed tdir_down.", dims=arr.dims)
 
         for band in self.spectral_config.bands:
             scene[band]["tdir_down"] = arr.sel(wl=band.wl_nm)

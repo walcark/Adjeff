@@ -103,22 +103,17 @@ class SceneModule:
 
         cached = self._cache.load_vars(key, scene.bands, self.output_vars)
         if cached is not None:
-            log.info(
-                "cache hit — skipping compute",
-                bands=scene.bands,
-                vars=self.output_vars,
-            )
             for band, var_map in cached.items():
                 ds = scene[band]
                 for var_name, da in var_map.items():
                     ds[var_name] = da
+            log.info("done", bands=[str(b) for b in scene.bands], cached=True)
             return scene
 
-        log.info("Starting compute", bands=scene.bands)
         scene = self._compute(scene)
-        log.info("Computation finished", vars=self.output_vars)
         self._stamp_provenance(scene, key)
         self._cache.save_vars(key, scene, self.output_vars)
+        log.info("done", bands=[str(b) for b in scene.bands], cached=False)
         return scene
 
     @abstractmethod

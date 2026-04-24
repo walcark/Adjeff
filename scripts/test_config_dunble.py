@@ -1,6 +1,6 @@
 from adjeff.core import S2Band
 from adjeff.atmosphere import SpectralConfig, AtmoConfig, GeoConfig
-from adjeff.utils import ConfigBundle
+from adjeff.sweep import SweepBundle
 
 import xarray as xr
 
@@ -23,10 +23,9 @@ geo: GeoConfig = GeoConfig(
 
 print(atm)
 
-bundle: ConfigBundle = ConfigBundle(
+bundle: SweepBundle = SweepBundle.from_configs(
     configs=[spec, atm, geo],
-    scalars=["rh", "h"],
-    vectors=["aot", "href", "sza", "vza", "saa", "vaa"],
-    deduplicate_dims=None
+    scalar_names=["rh", "h"],
+    vector_names=["aot", "href", "sza", "vza", "saa", "vaa"],
 )
 

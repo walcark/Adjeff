@@ -40,8 +40,8 @@ class TdirUpSampler(SceneModuleSweep):
         by default ``1e9``.
     cache : CacheStore or None, optional
         Result cache; ``None`` disables caching.
-    chunks : dict[str, int] or None, optional
-        Chunk sizes for vector dimensions.
+    sweep_chunks : dict[str, int] or None, optional
+        Chunk sizes for Smart-G calls within this module.
     deduplicate_dims : list[str] or None, optional
         Spatial dimensions to deduplicate before sweeping.
     """
@@ -60,7 +60,7 @@ class TdirUpSampler(SceneModuleSweep):
         afgl_type: str = "afgl_exp_h8km",
         n_ph: int = int(1e9),
         cache: utils.CacheStore | None = None,
-        chunks: dict[str, int] | None = None,
+        sweep_chunks: dict[str, int] | None = None,
         deduplicate_dims: list[str] | None = None,
     ) -> None:
         self.spectral_config = spectral_config
@@ -71,7 +71,7 @@ class TdirUpSampler(SceneModuleSweep):
         self.n_ph = n_ph
         super().__init__(
             cache=cache,
-            chunks=chunks,
+            sweep_chunks=sweep_chunks,
             deduplicate_dims=deduplicate_dims,
         )
 
@@ -92,15 +92,13 @@ class TdirUpSampler(SceneModuleSweep):
                     band=band,
                 )
 
-        bundle: utils.ConfigBundle = self._make_bundle()
-        tdir_up_arr: xr.DataArray = bundle.apply(
+        tdir_up_arr: xr.DataArray = self._apply_bundle(
             tdir_up,
             species=self.atmo_config.species,
             afgl_type=self.afgl_type,
             remove_rayleigh=self.remove_rayleigh,
             n_ph=self.n_ph,
         )
-        logger.info("Computed tdir_up.", dims=tdir_up_arr.dims)
 
         for band in self.spectral_config.bands:
             scene[band]["tdir_up"] = tdir_up_arr.sel(wl=band.wl_nm)

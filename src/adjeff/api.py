@@ -446,7 +446,7 @@ def run_forward_pipeline(
         remove_rayleigh=remove_rayleigh,
         afgl_type=afgl_type,
         cache=cache,
-        chunks=radiative_chunks,
+        sweep_chunks=radiative_chunks,
     )
     rho_toa = RhoToaSymSampler(
         atmo_config=atmo_config,

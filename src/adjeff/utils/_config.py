@@ -149,77 +149,45 @@ class _Config(BaseModel):
         return xr.Dataset(self._arrays)
 
     def unique(self, dims: list[str]) -> tuple[Self, xr.DataArray]:
-        """Deduplicate the fields living on `dims`, and keep other intact.
+        """Deduplicate fields living on *dims*, keep others intact.
 
         Parameters
         ----------
         dims : list[str]
-            Dimensions on which to compute unique.
+            Dimensions on which to compute uniqueness.
 
         Returns
         -------
         config_unique : _Config
-            Dataset with fields on `dims` reduced to a single `index` dimension
-            and fields out of `dims` kept unchanged.
-        inverse_map : DataArray(dims)
-            Keeps to index of each pixels to rebuild a DataArray computed on
-            index.
+            Config with fields on *dims* reduced to a single ``"index"``
+            dimension; fields not on *dims* are kept unchanged.
+        inverse_map : DataArray
+            Maps each original grid point to its unique-index position.
+            Use ``result.isel(index=inverse_map)`` to reconstruct the
+            original spatial layout.
         """
+        from adjeff.sweep._dedup import UniqueIndex
+
         arrays = self._arrays
         others = {
             k: getattr(self, k)
             for k in type(self).model_fields
             if k not in arrays
         }
-
-        # Split DataArrays between those living on `dims` and the rest
-        varying: dict[str, xr.DataArray] = {
-            k: v for k, v in arrays.items() if any(d in v.dims for d in dims)
-        }
-        kept: dict[str, xr.DataArray] = {
+        kept = {
             k: v
             for k, v in arrays.items()
             if not any(d in v.dims for d in dims)
         }
+        to_dedup = {k: v for k, v in arrays.items() if k not in kept}
 
-        # Strip coords on target dims before creating the Dataset: different
-        # fields can have value-based coords on the same dim, which would cause
-        # xarray to silently align/reindex on label rather than position when
-        # building the Dataset.
-        varying_stripped = {
-            k: v.drop_vars([d for d in dims if d in v.coords], errors="ignore")
-            for k, v in varying.items()
-        }
-
-        # Broadcast before stack to handle partial dimensions
-        ds = xr.Dataset(varying_stripped)
-        broadcasted = dict(
-            zip(varying, xr.broadcast(*[ds[k] for k in varying]))
+        dedup, reindexed = UniqueIndex.build(to_dedup, dims)
+        unique_config: Self = type(self)(
+            **{k: reindexed[k] for k in to_dedup},
+            **kept,
+            **others,
         )
-        stacked = xr.Dataset(broadcasted).stack(index=dims)
-        values = np.stack([stacked[k].values for k in varying], axis=1)
-        unique_rows, inverse_indices = np.unique(
-            values,
-            axis=0,
-            return_inverse=True,
-        )
-
-        # Create the unique atmosphere configuration
-        unique_params = {
-            name: xr.DataArray(unique_rows[:, i], dims=["index"])
-            for i, name in enumerate(varying)
-        }
-        unique_atm: Self = type(self)(**unique_params, **kept, **others)
-
-        # Create the inverse map — positional only, no coords to avoid
-        # duplicate-label issues when the original dim has repeated values.
-        ref = next(iter(broadcasted.values()))
-        inverse_map = xr.DataArray(
-            inverse_indices.reshape([ref.sizes[d] for d in dims]),
-            dims=dims,
-        )
-
-        return unique_atm, inverse_map
+        return unique_config, dedup.inverse_map
 
     def iter(self, n_batch: int, dim: str) -> Iterator[Self]:
         """Yield sub-configs by slicing *dim* into chunks of size *n_batch*.

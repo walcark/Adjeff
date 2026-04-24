@@ -98,7 +98,7 @@ class RhoToaSampler(SceneModuleSweep):
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Run the 2D rho_toa computation for every band in the scene."""
-        bundle: utils.ConfigBundle = self._make_bundle()
+        bundle, _ = self._make_bundle()
 
         scene = RhoAtmSampler(
             atmo_config=self.atmo_config,
@@ -111,7 +111,6 @@ class RhoToaSampler(SceneModuleSweep):
         )(scene)
 
         for band in scene.bands:
-            logger.info("Start rho_toa (2D) computation.", band=band)
             rho_toa_arr: xr.DataArray = bundle.apply(
                 rho_toa,
                 saa=self.geo_config.saa.item(),

@@ -38,8 +38,8 @@ class SphAlbSampler(SceneModuleSweep):
         Number of photons per Smart-G call, by default ``2e7``.
     cache : CacheStore or None, optional
         Result cache; ``None`` disables caching.
-    chunks : dict[str, int] or None, optional
-        Chunk sizes for vector dimensions.
+    sweep_chunks : dict[str, int] or None, optional
+        Chunk sizes for Smart-G calls within this module.
     deduplicate_dims : list[str] or None, optional
         Spatial dimensions to deduplicate before sweeping.
     """
@@ -57,7 +57,7 @@ class SphAlbSampler(SceneModuleSweep):
         afgl_type: str = "afgl_exp_h8km",
         n_ph: int = int(2e7),
         cache: utils.CacheStore | None = None,
-        chunks: dict[str, int] | None = None,
+        sweep_chunks: dict[str, int] | None = None,
         deduplicate_dims: list[str] | None = None,
     ) -> None:
         self.spectral_config = spectral_config
@@ -67,7 +67,7 @@ class SphAlbSampler(SceneModuleSweep):
         self.n_ph = n_ph
         super().__init__(
             cache=cache,
-            chunks=chunks,
+            sweep_chunks=sweep_chunks,
             deduplicate_dims=deduplicate_dims,
         )
 
@@ -79,15 +79,13 @@ class SphAlbSampler(SceneModuleSweep):
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
 
-        bundle: utils.ConfigBundle = self._make_bundle()
-        arr: xr.DataArray = bundle.apply(
+        arr: xr.DataArray = self._apply_bundle(
             sph_alb,
             species=self.atmo_config.species,
             afgl_type=self.afgl_type,
             remove_rayleigh=self.remove_rayleigh,
             n_ph=self.n_ph,
         )
-        logger.info("Computed sph_alb.", dims=arr.dims)
 
         for band in self.spectral_config.bands:
             scene[band]["sph_alb"] = arr.sel(wl=band.wl_nm)
