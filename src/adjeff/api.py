@@ -41,6 +41,7 @@ from adjeff.exceptions import MissingVariableError
 from adjeff.modules.classic.toa_to_unif import Toa2Unif
 from adjeff.modules.loaders.maja_loader import MajaLoader
 from adjeff.modules.models.psf_conv_module import PSFConvModule
+from adjeff.modules.pipeline import Pipeline
 from adjeff.modules.samplers.psf_atm import PsfAtmSampler
 from adjeff.modules.samplers.radiatives import RadiativePipeline
 from adjeff.modules.samplers.rho_toa_sym import RhoToaSymSampler
@@ -365,6 +366,7 @@ def run_forward_pipeline(
     nr: int = ...,
     n_ph: int = ...,
     radiative_chunks: dict[str, int] | None = ...,
+    stream_dims: dict[str, int] | None = ...,
 ) -> ImageDict: ...
 
 
@@ -380,6 +382,7 @@ def run_forward_pipeline(
     nr: int = ...,
     n_ph: int = ...,
     radiative_chunks: dict[str, int] | None = ...,
+    stream_dims: dict[str, int] | None = ...,
 ) -> list[ImageDict]: ...
 
 
@@ -394,6 +397,7 @@ def run_forward_pipeline(
     nr: int = 500,
     n_ph: int = int(1e5),
     radiative_chunks: dict[str, int] | None = None,
+    stream_dims: dict[str, int] | None = None,
 ) -> ImageDict | list[ImageDict]:
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
 
@@ -430,8 +434,15 @@ def run_forward_pipeline(
     n_ph : int
         Photon count per sensor for rho_toa (default ``1e5``).
     radiative_chunks : dict[str, int] or None
-        Chunk sizes forwarded to :class:`~adjeff.modules.RadiativePipeline`,
-        e.g. ``{"wl": 4, "aot": 3}``. ``None`` disables chunking.
+        Chunk sizes for Smart-G calls inside
+        :class:`~adjeff.modules.RadiativePipeline`,
+        e.g. ``{"wl": 4}``. ``None`` disables chunking.
+    stream_dims : dict[str, int] or None
+        Dimensions to stream over for memory management, e.g.
+        ``{"aot": 3}``.  When a dimension exists in the scene's DataArrays,
+        the pipeline processes that many values at a time through the full
+        chain (radiatives → rho_toa → Toa2Unif), preventing OOM on large
+        scenes.  ``None`` disables streaming.
 
     Returns
     -------
@@ -457,14 +468,14 @@ def run_forward_pipeline(
         nr=nr,
         n_ph=n_ph,
     )
-    toa2unif = Toa2Unif()
-
-    def _run(s: ImageDict) -> ImageDict:
-        return toa2unif(rho_toa(radiative(s)))
+    pipeline = Pipeline(
+        [radiative, rho_toa, Toa2Unif()],  # type: ignore[list-item]
+        stream_dims=stream_dims,
+    )
 
     if isinstance(scene, list):
-        return [_run(s) for s in scene]
-    return _run(scene)
+        return [pipeline(s) for s in scene]
+    return pipeline(scene)
 
 
 # ---------------------------------------------------------------------------
