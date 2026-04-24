@@ -74,10 +74,8 @@ class _Optimizer(abc.ABC):
         PSFDict
             Kernels stacked over all optimised atmospheric combos.
         """
-        logger.info("Building combo training sets.")
         combo_sets = self._build_combo_sets(model)
         n_combos = len(combo_sets)
-        logger.info("Combo training sets ready.", n_combos=n_combos)
 
         initial_params = save_all_params(model)
 
@@ -91,9 +89,8 @@ class _Optimizer(abc.ABC):
         for combo_idx, (combo, band_sets) in enumerate(combo_sets):
             combo_str = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
             logger.info(
-                "Starting combo optimisation.",
-                combo=combo_str,
-                progress=f"{combo_idx + 1}/{n_combos}",
+                f"combo {combo_idx + 1}/{n_combos}",
+                params=combo_str or "—",
             )
 
             restore_all_params(model, initial_params)
@@ -109,9 +106,8 @@ class _Optimizer(abc.ABC):
                     )
 
             logger.info(
-                "Combo optimisation finished.",
-                combo=combo_str,
-                best_loss=f"{self.best_loss:.6g}",
+                f"combo {combo_idx + 1}/{n_combos} done",
+                best_loss=f"{self.best_loss:.4g}",
                 steps=self.nloop,
             )
 
@@ -127,7 +123,7 @@ class _Optimizer(abc.ABC):
                 }
 
         logger.info(
-            "All combos optimised.",
+            "optimisation complete",
             n_combos=n_combos,
             bands=[str(b) for b in stacked],
         )

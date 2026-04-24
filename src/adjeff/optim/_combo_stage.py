@@ -15,6 +15,19 @@ from ._config import OptimizerConfig
 from .training_set import TrainingSet
 
 # ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
+
+
+def _loss_delta(previous: float, current: float, step: int) -> str:
+    """Return a formatted relative loss change string, or '' on first step."""
+    if step == 0 or previous >= float("inf"):
+        return ""
+    pct = 100.0 * (previous - current) / max(abs(previous), 1e-9)
+    return f"  Δ={pct:+.1f}%"
+
+
+# ---------------------------------------------------------------------------
 # Parameter snapshot helpers
 # ---------------------------------------------------------------------------
 

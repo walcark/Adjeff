@@ -10,7 +10,12 @@ import torch
 from adjeff.core.bands import SensorBand
 from adjeff.modules.scene_module import TrainableSceneModule
 
-from ._combo_stage import _ComboStage, restore_all_params, save_all_params
+from ._combo_stage import (
+    _ComboStage,
+    _loss_delta,
+    restore_all_params,
+    save_all_params,
+)
 from ._config import OptimizerConfig
 from .optimizer import SingleStageOptimizer
 from .training_set import TrainingImages, TrainingSet
@@ -86,11 +91,10 @@ class LBFGSStage(_ComboStage):
             params = save_all_params(model)
             self.record(loss, params)
 
+            delta = _loss_delta(self.previous_loss, loss, self.nloop)
             logger.info(
-                "L-BFGS step.",
-                combo=combo_str,
-                step=self.nloop + 1,
-                loss=f"{loss:.6g}",
+                f"L-BFGS  {self.nloop + 1}/{self.config.max_steps}"
+                f"  loss={loss:.4g}{delta}"
             )
 
             if loss < self.best_loss:
