@@ -192,6 +192,7 @@ def _optimize_psf(
     psf_cls: type[PSFModule],
     init_params: dict[str, float],
     device: str,
+    zarr_path: Path | None = None,
 ) -> dict[SensorBand, dict[str, xr.DataArray]]:
     """Optimise *psf_cls* on *train_images* and return per-band param DataArrays."""
     model = make_model(
@@ -220,6 +221,7 @@ def _optimize_psf(
             loss=LOSS,
         ),
         device=device,
+        zarr_path=zarr_path,
     )
 
     result: dict[SensorBand, dict[str, xr.DataArray]] = {}
@@ -325,6 +327,7 @@ def main(
             psf_cls=model_cfg["cls"],
             init_params=model_cfg["init_params"],
             device=device,
+            zarr_path=cache_dir / "psf_kernels" / model_name / species_name,
         )
 
         ds = _make_lut_dataset(params_by_band, model_name, species_name)
