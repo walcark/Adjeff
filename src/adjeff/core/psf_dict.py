@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Any, cast
 
 import xarray as xr
@@ -237,6 +240,81 @@ class PSFDict:
     def kernel(self, band: SensorBand) -> xr.DataArray:
         """Alias for to_dataarray()."""
         return self.to_dataarray(band)
+
+    # ------------------------------------------------------------------
+    # Zarr serialisation
+    # ------------------------------------------------------------------
+
+    def to_zarr(self, path: str | Path) -> None:
+        """Persist all band Datasets to a zarr store.
+
+        Each band is written to ``<path>/<band>/`` using chunk size 1 on
+        all non-spatial dimensions so that a single atmospheric combo can
+        be read without loading the whole array.
+
+        Parameters
+        ----------
+        path : str or Path
+            Root directory.  Created if it does not exist.
+
+        Raises
+        ------
+        RuntimeError
+            If called on a trainable PSFDict (call :meth:`to_frozen` first).
+        """
+        if self.is_trainable:
+            raise RuntimeError(
+                "to_zarr() requires a frozen PSFDict. Call to_frozen() first."
+            )
+        path = Path(path)
+        for band, ds in self._data.items():
+            PSFDict._write_band_zarr(path / str(band), ds)
+
+    @classmethod
+    def open_zarr(
+        cls,
+        path: str | Path,
+        bands: list[SensorBand],
+    ) -> "PSFDict":
+        """Load a zarr-backed PSFDict without reading data into RAM.
+
+        Parameters
+        ----------
+        path : str or Path
+            Root directory written by :meth:`to_zarr`.
+        bands : list[SensorBand]
+            Bands to load (must match those written to *path*).
+
+        Returns
+        -------
+        PSFDict
+            Frozen PSFDict whose DataArrays are backed by zarr on disk.
+        """
+        path = Path(path)
+        obj: PSFDict = cls.__new__(cls)
+        obj._modules = None
+        obj._data = {band: xr.open_zarr(path / str(band)) for band in bands}
+        return obj
+
+    @staticmethod
+    def _write_band_zarr(dest: Path, ds: xr.Dataset) -> None:
+        """Atomically write *ds* to zarr at *dest*.
+
+        Uses chunk size 1 on all non-spatial dimensions (``y_psf``,
+        ``x_psf``) so that single-combo slices can be read cheaply.
+        Writes first to a temporary directory then renames, matching the
+        pattern used by :class:`~adjeff.utils.CacheStore`.
+        """
+        spatial = {"y_psf", "x_psf"}
+        all_dims = {str(d) for da in ds.data_vars.values() for d in da.dims}
+        chunks = {d: 1 if d not in spatial else -1 for d in all_dims}
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
+            tmp_path = Path(tmp) / "data.zarr"
+            ds.chunk(chunks).to_zarr(tmp_path, mode="w")
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.move(str(tmp_path), str(dest))
 
     def _cache_dict(self) -> dict[str, Any]:
         """Return a joblib-hashable representation of all kernel data.

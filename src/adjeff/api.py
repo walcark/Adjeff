@@ -774,6 +774,7 @@ def optimize_adam_lbfgs(
     adam_config: AdamConfig | None = None,
     lbfgs_config: LBFGSConfig | None = None,
     device: str = "cuda",
+    zarr_path: str | Path | None = None,
 ) -> PSFDict:
     """Optimize a model's PSF with an Adam warm-up followed by L-BFGS.
 
@@ -797,6 +798,11 @@ def optimize_adam_lbfgs(
         loss_relative_tolerance=1e-6, loss=loss)``.
     device : str
         PyTorch device (default ``"cuda"``).
+    zarr_path : str or Path or None, optional
+        When provided, each band's stacked kernel is written to zarr as
+        it is reconstructed and immediately freed from RAM.  The returned
+        PSFDict is backed by zarr on disk (lazy, minimal RAM footprint).
+        When ``None`` (default), kernels are kept in memory.
 
     Returns
     -------
@@ -824,4 +830,4 @@ def optimize_adam_lbfgs(
         train_images=train_images,
         device=device,
     )
-    return optimizer.run(model)
+    return optimizer.run(model, zarr_path=zarr_path)

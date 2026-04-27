@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import abc
+from pathlib import Path
 
 import structlog
+import torch
 import xarray as xr
 
 from adjeff.core import PSFDict
@@ -57,7 +59,11 @@ class _Optimizer(abc.ABC):
         self.best_loss = float("inf")
         self.nloop = 0
 
-    def run(self, model: TrainableSceneModule) -> PSFDict:
+    def run(
+        self,
+        model: TrainableSceneModule,
+        zarr_path: str | Path | None = None,
+    ) -> PSFDict:
         """Optimise all PSFs in *model* and return a :class:`PSFDict`.
 
         One independent call to :meth:`_run_combo` is made per atmospheric
@@ -68,38 +74,64 @@ class _Optimizer(abc.ABC):
         ----------
         model : TrainableSceneModule
             Model whose PSFs are to be optimised.
+        zarr_path : str or Path or None
+            When provided, each band's stacked kernel is written to zarr
+            as it is reconstructed and freed from RAM.  The returned
+            PSFDict is backed by zarr on disk (lazy, no kernel data in
+            RAM).  When ``None`` (default), kernels are kept in memory.
 
         Returns
         -------
         PSFDict
             Kernels stacked over all optimised atmospheric combos.
         """
-        combo_sets = self._build_combo_sets(model)
-        n_combos = len(combo_sets)
+        zpath: Path | None = Path(zarr_path) if zarr_path is not None else None
+
+        input_names = model.required_vars
+        target_name = model.output_vars[0]
+        bands: list[SensorBand] = [
+            psf.band for psf in model.psf_modules.values()
+        ]
+
+        combos = self._build_combos(model)
+        n_combos = len(combos)
 
         initial_params = save_all_params(model)
 
-        kernel_pieces: dict[
-            str, list[tuple[dict[str, float], xr.DataArray]]
-        ] = {band_id: [] for band_id in model.psf_modules}
+        param_snapshots: list[dict[str, dict[str, torch.Tensor]]] = []
         param_pieces: dict[
             str, dict[str, list[tuple[dict[str, float], float]]]
         ] = {band_id: {} for band_id in model.psf_modules}
 
-        for combo_idx, (combo, band_sets) in enumerate(combo_sets):
+        for combo_idx, combo in enumerate(combos):
             combo_str = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
             logger.info(
                 f"combo {combo_idx + 1}/{n_combos}",
                 params=combo_str or "—",
             )
 
+            band_sets: list[tuple[SensorBand, TrainingSet]] = [
+                (
+                    band,
+                    training_set(
+                        self.train_images,
+                        input_names,
+                        target_name,
+                        band,
+                        device=self.device,
+                        **combo,
+                    ),
+                )
+                for band in bands
+            ]
+
             restore_all_params(model, initial_params)
             self._reset_state()
             self._run_combo(model, band_sets, combo_str)
+            del band_sets
 
+            param_snapshots.append(save_all_params(model))
             for band_id, psf in model.psf_modules.items():
-                da = psf.to_dataarray()
-                kernel_pieces[band_id].append((combo, da))
                 for pname, pval in psf.param_dict().items():
                     param_pieces[band_id].setdefault(pname, []).append(
                         (combo, pval)
@@ -111,22 +143,52 @@ class _Optimizer(abc.ABC):
                 steps=self.nloop,
             )
 
+        # Reconstruct kernels one band at a time so peak memory is
+        # n_combos * kernel_size rather than n_bands * n_combos * kernel_size.
+        # When zarr_path is set, each band is flushed to disk immediately and
+        # freed from RAM — the returned PSFDict is fully lazy.
         stacked: dict[SensorBand, xr.DataArray] = {}
         stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
-        for band_id, pieces in kernel_pieces.items():
-            band: SensorBand = model.psf_modules[band_id].band
-            stacked[band] = self._stack_kernels(pieces)
-            if param_pieces[band_id]:
-                stacked_params[band] = {
+        for band_id, psf in model.psf_modules.items():
+            band: SensorBand = psf.band
+            kernel_pieces: list[tuple[dict[str, float], xr.DataArray]] = []
+            for combo_idx, combo in enumerate(combos):
+                restore_all_params(model, param_snapshots[combo_idx])
+                kernel_pieces.append((combo, psf.to_dataarray()))
+            stacked_kernel = self._stack_kernels(kernel_pieces)
+            del kernel_pieces
+
+            band_params: dict[str, xr.DataArray] | None = (
+                {
                     pname: self._stack_param(combo_vals)
                     for pname, combo_vals in param_pieces[band_id].items()
                 }
+                if param_pieces[band_id]
+                else None
+            )
+
+            if zpath is not None:
+                ds_vars: dict[str, xr.DataArray] = {"kernel": stacked_kernel}
+                if band_params:
+                    ds_vars.update(
+                        {f"param_{p}": da for p, da in band_params.items()}
+                    )
+                PSFDict._write_band_zarr(
+                    zpath / str(band), xr.Dataset(ds_vars)
+                )
+                del stacked_kernel
+            else:
+                stacked[band] = stacked_kernel
+                if band_params:
+                    stacked_params[band] = band_params
 
         logger.info(
             "optimisation complete",
             n_combos=n_combos,
-            bands=[str(b) for b in stacked],
+            bands=[str(b) for b in (bands if zpath else stacked)],
         )
+        if zpath is not None:
+            return PSFDict.open_zarr(zpath, bands)
         return PSFDict.from_kernels(
             stacked,
             params=stacked_params if stacked_params else None,
@@ -144,40 +206,20 @@ class _Optimizer(abc.ABC):
         Must set ``self.best_loss`` and ``self.nloop`` for logging.
         """
 
-    def _build_combo_sets(
+    def _build_combos(
         self, model: TrainableSceneModule
-    ) -> list[tuple[dict[str, float], list[tuple[SensorBand, TrainingSet]]]]:
-        """Pre-build one (band, TrainingSet) group per atmospheric combo."""
+    ) -> list[dict[str, float]]:
+        """Return the list of atmospheric combos to iterate over."""
         input_names = model.required_vars
         target_name = model.output_vars[0]
         bands: list[SensorBand] = [
             psf.band for psf in model.psf_modules.values()
         ]
-        combos = list(
+        return list(
             iterate_broadcasted_dims(
                 self.train_images, input_names, target_name, bands[0]
             )
         )
-        return [
-            (
-                combo,
-                [
-                    (
-                        band,
-                        training_set(
-                            self.train_images,
-                            input_names,
-                            target_name,
-                            band,
-                            device=self.device,
-                            **combo,
-                        ),
-                    )
-                    for band in bands
-                ],
-            )
-            for combo in combos
-        ]
 
     @staticmethod
     def _stack_param(
