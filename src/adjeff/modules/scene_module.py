@@ -113,6 +113,15 @@ class SceneModule:
         scene = self._compute(scene)
         self._stamp_provenance(scene, key)
         self._cache.save_vars(key, scene, self.output_vars)
+        # Replace in-memory arrays with lazy Zarr-backed views so large
+        # outputs (e.g. rho_toa at all atmospheric combos) are not kept
+        # fully in RAM when the caller stores multiple scenes.
+        lazy = self._cache.load_vars(key, scene.bands, self.output_vars)
+        if lazy is not None:
+            for band, var_map in lazy.items():
+                ds = scene[band]
+                for var_name, da in var_map.items():
+                    ds[var_name] = da
         log.info("done", bands=[str(b) for b in scene.bands], cached=False)
         return scene
 

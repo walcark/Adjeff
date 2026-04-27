@@ -85,9 +85,17 @@ class CacheStore:
             dest = self._cache_dir / key / f"{band}.zarr"
             dest.parent.mkdir(parents=True, exist_ok=True)
 
+            # Chunk size 1 along every non-spatial dimension so that
+            # selecting a single atmospheric combo (aot, rh, …) reads only
+            # the required slice rather than the full array.
+            spatial = {"x", "y"}
+            chunks = {
+                str(d): 1 if str(d) not in spatial else -1 for d in subset.dims
+            }
+
             with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
                 tmp_path = Path(tmp) / "data.zarr"
-                subset.to_zarr(tmp_path, mode="w")
+                subset.chunk(chunks).to_zarr(tmp_path, mode="w")
                 if dest.exists():
                     shutil.rmtree(dest)
                 shutil.move(str(tmp_path), str(dest))
