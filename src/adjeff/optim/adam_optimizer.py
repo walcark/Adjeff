@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import structlog
 import torch
+import torch.nn as nn
 
 from adjeff.core.bands import SensorBand
 from adjeff.modules.scene_module import TrainableSceneModule
@@ -51,10 +53,12 @@ class AdamStage(_ComboStage):
     ) -> None:
         """Adam optimisation loop for one combo."""
         best_params = save_all_params(model)
-        adam = torch.optim.Adam(
-            model.parameters(),
-            lr=self.config.lr,
-        )
+        params_to_opt = [
+            p
+            for b, _ in band_sets
+            for p in cast(nn.Module, model.psf_modules[b.id]).parameters()
+        ]
+        adam = torch.optim.Adam(params_to_opt, lr=self.config.lr)
 
         while self.nloop < self.config.max_steps:
             adam.zero_grad(set_to_none=True)

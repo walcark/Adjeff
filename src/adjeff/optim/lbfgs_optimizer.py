@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import structlog
 import torch
+import torch.nn as nn
 
 from adjeff.core.bands import SensorBand
 from adjeff.modules.scene_module import TrainableSceneModule
@@ -66,9 +68,13 @@ class LBFGSStage(_ComboStage):
     ) -> None:
         """L-BFGS optimisation loop for one combo."""
         best_params = save_all_params(model)
-
+        params_to_opt = [
+            p
+            for b, _ in band_sets
+            for p in cast(nn.Module, model.psf_modules[b.id]).parameters()
+        ]
         opt = torch.optim.LBFGS(
-            params=list(model.parameters()),
+            params=params_to_opt,
             lr=self.config.learning_rate,
             max_iter=self.config.max_iter,
             history_size=self.config.history_size,

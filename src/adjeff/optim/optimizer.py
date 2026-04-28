@@ -66,9 +66,11 @@ class _Optimizer(abc.ABC):
     ) -> PSFDict:
         """Optimise all PSFs in *model* and return a :class:`PSFDict`.
 
-        One independent call to :meth:`_run_combo` is made per atmospheric
-        combo found in *train_images*.  The model is reset to its initial
-        parameter state before each combo.
+        One independent call to :meth:`_run_combo` is made per
+        (atmospheric combo × band) pair found in *train_images*.  Each
+        band's PSF is optimised independently so that wavelength-dependent
+        effects are captured correctly.  The model is reset to its initial
+        state before each (combo, band) run.
 
         Parameters
         ----------
@@ -93,55 +95,64 @@ class _Optimizer(abc.ABC):
             psf.band for psf in model.psf_modules.values()
         ]
 
-        combos = self._build_combos(model)
-        n_combos = len(combos)
+        atmo_combos = self._build_combos(model)
+        n_atmo = len(atmo_combos)
+        n_combos = n_atmo * len(bands)
 
         initial_params = save_all_params(model)
 
-        param_snapshots: list[dict[str, dict[str, torch.Tensor]]] = []
+        # Snapshots keyed by (band_id, atmo_idx) for kernel reconstruction.
+        param_snapshots: dict[
+            tuple[str, int], dict[str, dict[str, torch.Tensor]]
+        ] = {}
         param_pieces: dict[
             str, dict[str, list[tuple[dict[str, float], float]]]
         ] = {band_id: {} for band_id in model.psf_modules}
 
-        for combo_idx, combo in enumerate(combos):
-            combo_str = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
-            logger.info(
-                f"combo {combo_idx + 1}/{n_combos}",
-                params=combo_str or "—",
-            )
-
-            band_sets: list[tuple[SensorBand, TrainingSet]] = [
-                (
-                    band,
-                    training_set(
-                        self.train_images,
-                        input_names,
-                        target_name,
-                        band,
-                        device=self.device,
-                        **combo,
-                    ),
+        combo_counter = 0
+        for atmo_idx, combo in enumerate(atmo_combos):
+            for band in bands:
+                combo_counter += 1
+                combo_str = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
+                logger.info(
+                    f"combo {combo_counter}/{n_combos}",
+                    params=combo_str or "—",
+                    band=str(band),
                 )
-                for band in bands
-            ]
 
-            restore_all_params(model, initial_params)
-            self._reset_state()
-            self._run_combo(model, band_sets, combo_str)
-            del band_sets
+                band_sets: list[tuple[SensorBand, TrainingSet]] = [
+                    (
+                        band,
+                        training_set(
+                            self.train_images,
+                            input_names,
+                            target_name,
+                            band,
+                            device=self.device,
+                            **combo,
+                        ),
+                    )
+                ]
 
-            param_snapshots.append(save_all_params(model))
-            for band_id, psf in model.psf_modules.items():
-                for pname, pval in psf.param_dict().items():
-                    param_pieces[band_id].setdefault(pname, []).append(
+                restore_all_params(model, initial_params)
+                self._reset_state()
+                self._run_combo(model, band_sets, combo_str)
+                del band_sets
+
+                param_snapshots[(band.id, atmo_idx)] = save_all_params(model)
+                for pname, pval in (
+                    model.psf_modules[band.id].param_dict().items()
+                ):
+                    param_pieces[band.id].setdefault(pname, []).append(
                         (combo, pval)
                     )
 
-            logger.info(
-                f"combo {combo_idx + 1}/{n_combos} done",
-                best_loss=f"{self.best_loss:.4g}",
-                steps=self.nloop,
-            )
+                logger.info(
+                    f"combo {combo_counter}/{n_combos} done",
+                    best_loss=f"{self.best_loss:.4g}",
+                    steps=self.nloop,
+                    band=str(band),
+                )
 
         # Reconstruct kernels one band at a time so peak memory is
         # n_combos * kernel_size rather than n_bands * n_combos * kernel_size.
@@ -150,10 +161,10 @@ class _Optimizer(abc.ABC):
         stacked: dict[SensorBand, xr.DataArray] = {}
         stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
         for band_id, psf in model.psf_modules.items():
-            band: SensorBand = psf.band
+            b: SensorBand = psf.band
             kernel_pieces: list[tuple[dict[str, float], xr.DataArray]] = []
-            for combo_idx, combo in enumerate(combos):
-                restore_all_params(model, param_snapshots[combo_idx])
+            for atmo_idx, combo in enumerate(atmo_combos):
+                restore_all_params(model, param_snapshots[(band_id, atmo_idx)])
                 kernel_pieces.append((combo, psf.to_dataarray()))
             stacked_kernel = self._stack_kernels(kernel_pieces)
             del kernel_pieces
@@ -173,18 +184,18 @@ class _Optimizer(abc.ABC):
                     ds_vars.update(
                         {f"param_{p}": da for p, da in band_params.items()}
                     )
-                PSFDict._write_band_zarr(
-                    zpath / str(band), xr.Dataset(ds_vars)
-                )
+                PSFDict._write_band_zarr(zpath / str(b), xr.Dataset(ds_vars))
                 del stacked_kernel
             else:
-                stacked[band] = stacked_kernel
+                stacked[b] = stacked_kernel
                 if band_params:
-                    stacked_params[band] = band_params
+                    stacked_params[b] = band_params
 
         logger.info(
             "optimisation complete",
-            n_combos=n_combos,
+            n_atmo_combos=n_atmo,
+            n_bands=len(bands),
+            n_combos_total=n_combos,
             bands=[str(b) for b in (bands if zpath else stacked)],
         )
         if zpath is not None:
