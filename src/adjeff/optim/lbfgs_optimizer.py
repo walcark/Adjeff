@@ -86,7 +86,14 @@ class LBFGSStage(_ComboStage):
             return loss
 
         while self.nloop < self.config.max_steps:
-            loss_tensor = opt.step(closure)  # type: ignore[no-untyped-call]
+            try:
+                loss_tensor = opt.step(closure)  # type: ignore[no-untyped-call]
+            except IndexError:
+                # PyTorch strong-Wolfe line search can raise IndexError when
+                # the bracket collapses on a numerically flat loss surface.
+                # Treat as convergence and exit cleanly.
+                logger.info("L-BFGS line search degenerated — stopping early")
+                break
             loss = float(loss_tensor.item())
             params = save_all_params(model)
             self.record(loss, params)
