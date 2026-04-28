@@ -212,17 +212,21 @@ def training_set(
     """
     ipts: list[dict[str, torch.Tensor]] = [
         {
-            name: _safe_sel(im[band][name], params).adjeff.to_tensor()
+            name: _safe_sel(im[band][name], params)
+            .adjeff.to_tensor()
+            .to(device=device)
             for name in input_names
         }
         for im in train.images
     ]
     tgts: list[torch.Tensor] = [
-        _safe_sel(im[band][target_name], params).adjeff.to_tensor()
+        _safe_sel(im[band][target_name], params)
+        .adjeff.to_tensor()
+        .to(device=device)
         for im in train.images
     ]
     dists: list[torch.Tensor] = [
-        _safe_sel(im[band][target_name], params).adjeff.dists
+        _safe_sel(im[band][target_name], params).adjeff.dists.to(device=device)
         for im in train.images
     ]
 
