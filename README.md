@@ -219,14 +219,15 @@ ImageDict(B02: [rho_s])  →  MyModule  →  ImageDict(B02: [rho_s, rho_toa])
 
 | Class | `required_vars` | `output_vars` | Notes |
 |---|---|---|---|
-| `SmartgSampler_Tdir_down` | — | `tdir_down` | Direct solar transmittance ↓ |
-| `SmartgSampler_Tdir_up` | — | `tdir_up` | Direct transmittance ↑ |
-| `SmartgSampler_Tdif_down` | — | `tdif_down` | Diffuse transmittance ↓ |
-| `SmartgSampler_Tdif_up` | — | `tdif_up` | Diffuse transmittance ↑ |
-| `SmartgSampler_Rho_atm` | — | `rho_atm` | Path reflectance |
-| `SmartgSampler_Sph_alb` | — | `sph_alb` | Spherical albedo |
-| `SmartgSampler_PSF_Atm` | — | `psf_atm` | Atmospheric PSF kernel |
-| `SmartgSampler_Rho_toa_sym` | `rho_s` | `rho_toa` | TOA simulation (GPU) |
+| `TdirDownSampler` | — | `tdir_down` | Direct solar transmittance ↓ |
+| `TdirUpSampler` | — | `tdir_up` | Direct transmittance ↑ |
+| `TdifDownSampler` | — | `tdif_down` | Diffuse transmittance ↓ |
+| `TdifUpSampler` | — | `tdif_up` | Diffuse transmittance ↑ |
+| `RhoAtmSampler` | — | `rho_atm` | Path reflectance |
+| `SphAlbSampler` | — | `sph_alb` | Spherical albedo |
+| `PsfAtmSampler` | — | `psf_atm` | Atmospheric PSF kernel |
+| `RhoToaSampler` | `rho_s` | `rho_toa` | TOA simulation (GPU) |
+| `RhoToaSymSampler` | `rho_s` | `rho_toa` | TOA simulation, azimuthal symmetry (GPU) |
 | `RadiativePipeline` | — | all radiative quantities | Convenience chain |
 | `Toa2Unif` | `rho_toa` + all radiative quantities | `rho_unif` | 5S inversion |
 | `Unif2Toa` | `rho_unif` + all radiative quantities | `rho_toa` | 5S forward (no PSF) |
@@ -264,19 +265,19 @@ print(list(scene[S2Band.B02].data_vars))
 ```python
 from adjeff.modules import Pipeline
 from adjeff.modules.samplers import (
-    SmartgSampler_Tdir_down, SmartgSampler_Tdir_up,
-    SmartgSampler_Rho_atm,  SmartgSampler_Sph_alb,
+    TdirDownSampler, TdirUpSampler,
+    RhoAtmSampler,   SphAlbSampler,
 )
 
 pipeline = Pipeline([
-    SmartgSampler_Tdir_down(atmo_config=atmo, geo_config=geo,
-                            spectral_config=spectral, remove_rayleigh=False),
-    SmartgSampler_Tdir_up(atmo_config=atmo, geo_config=geo,
-                          spectral_config=spectral, remove_rayleigh=False),
-    SmartgSampler_Rho_atm(atmo_config=atmo, geo_config=geo,
-                          spectral_config=spectral, remove_rayleigh=False),
-    SmartgSampler_Sph_alb(atmo_config=atmo, geo_config=geo,
-                          spectral_config=spectral, remove_rayleigh=False),
+    TdirDownSampler(atmo_config=atmo, geo_config=geo,
+                    spectral_config=spectral, remove_rayleigh=False),
+    TdirUpSampler(atmo_config=atmo, geo_config=geo,
+                  spectral_config=spectral, remove_rayleigh=False),
+    RhoAtmSampler(atmo_config=atmo, geo_config=geo,
+                  spectral_config=spectral, remove_rayleigh=False),
+    SphAlbSampler(atmo_config=atmo, geo_config=geo,
+                  spectral_config=spectral, remove_rayleigh=False),
 ])
 
 scene = pipeline(scene)
@@ -301,7 +302,7 @@ The sweep and assembly logic is handled by `ConfigBundle`, which builds the oute
 When atmospheric parameters vary spatially (e.g. `aot(x, y)` from a MAJA product), a large image may contain only a small number of unique parameter values. The `deduplicate_dims` argument collapses them before the GPU call and reconstructs the full spatial map after:
 
 ```python
-sampler = SmartgSampler_Tdir_down(
+sampler = TdirDownSampler(
     atmo_config=atmo_spatial,      # aot has dims ["x", "y"]
     geo_config=geo_spatial,
     spectral_config=spectral,
@@ -320,7 +321,7 @@ scene = sampler(scene)
 The `chunks` argument limits how many values are sent to Smart-G in a single call, bounding GPU memory usage:
 
 ```python
-sampler = SmartgSampler_Tdir_down(
+sampler = TdirDownSampler(
     atmo_config=atmo,
     geo_config=geo,
     spectral_config=spectral,
@@ -356,12 +357,12 @@ print(scene[S2Band.B02]["rho_atm"])    # dims: (wl, aot)
 
 ### TOA simulation
 
-`SmartgSampler_Rho_toa_sym` combines all radiative quantities with a PSF convolution (under the azimuthal symmetry assumption) to produce $\rho_{toa}$ directly from a surface image:
+`RhoToaSymSampler` combines all radiative quantities with a PSF convolution (under the azimuthal symmetry assumption) to produce $\rho_{toa}$ directly from a surface image:
 
 ```python
-from adjeff.modules.samplers import SmartgSampler_Rho_toa_sym
+from adjeff.modules.samplers import RhoToaSymSampler
 
-module = SmartgSampler_Rho_toa_sym(
+module = RhoToaSymSampler(
     atmo_config=atmo,
     geo_config=geo,
     spectral_config=spectral,
@@ -392,13 +393,13 @@ All analytical models are `torch.nn.Module` subclasses with constrained trainabl
 | Class | Shape | Parameters |
 |---|---|---|
 | `GaussPSF` | Gaussian | `sigma` |
-| `GaussGeneralPSF` | Anisotropic Gaussian | `sigma_x`, `sigma_y`, `theta` |
+| `GeneralizedGaussianPSF` | Anisotropic Gaussian | `sigma_x`, `sigma_y`, `theta` |
 | `VoigtPSF` | Voigt (Gauss + Lorentz) | `sigma`, `gamma` |
 | `KingPSF` | King profile | `r_c`, `alpha` |
 | `MoffatGeneralizedPSF` | Generalized Moffat | `alpha`, `beta`, `eta` |
 
 ```python
-from adjeff.core import GaussPSF, PSFGrid
+from adjeff.core import GaussPSF, GeneralizedGaussianPSF, PSFGrid
 
 psf  = GaussPSF(sigma=0.3)      # sigma in km
 grid = PSFGrid(res_km=0.01, n=101)
@@ -412,16 +413,16 @@ kernel = psf(grid)              # xr.DataArray, dims: (y, x)
 `PSFDict` maps `SensorBand` → PSF kernel, in either trainable or frozen mode:
 
 ```python
-from adjeff.core import PSFDict
+from adjeff.core import PSFDict, init_psf_dict
 
 # Trainable (for optimization)
-psf_dict = PSFDict.from_modules({
+psf_dict = init_psf_dict({
     S2Band.B02: GaussPSF(sigma=0.3),
     S2Band.B03: GaussPSF(sigma=0.25),
 })
 
 # Frozen (export after training, or from pre-computed kernels)
-psf_dict_frozen = psf_dict.to_frozen(grid)
+psf_dict_frozen = psf_dict.to_frozen()
 kernel_b02 = psf_dict_frozen[S2Band.B02]  # xr.DataArray
 ```
 
@@ -433,7 +434,7 @@ A `PSFDict` can carry extra dimensions (e.g. `aot`, `rh`) to represent PSFs that
 
 ### Forward model
 
-The 5S formula applied by `Unif2Toa` (no adjacency) and `SmartgSampler_Rho_toa_sym` (with PSF convolution):
+The 5S formula applied by `Unif2Toa` (no adjacency) and `RhoToaSymSampler` (with PSF convolution):
 
 $$\rho_{toa} = \rho_{atm} + (T^\uparrow_{dir} + T^\uparrow_{dif}) \cdot (T^\downarrow_{dir} + T^\downarrow_{dif}) \cdot \frac{\rho_{unif}}{1 - s \cdot \rho_{unif}}$$
 
@@ -466,7 +467,7 @@ rho_s_recovered = scene[S2Band.B02]["rho_s"]
 The optimizer learns PSF parameters that best match a set of reference `(rho_s, rho_toa)` image pairs. It runs one independent L-BFGS optimization per atmospheric state combination and assembles the results into a multi-dimensional `PSFDict`.
 
 ```python
-from adjeff.optim import LBFGSOptimizer, LBFGSConfig, Loss, TrainingImages
+from adjeff.optim import LBFGSOptimizer, LBFGSConfig, Loss, Metric, TrainingImages
 
 train_images = TrainingImages([scene_1, scene_2, scene_3])
 
@@ -476,7 +477,7 @@ optimizer = LBFGSOptimizer(
         min_steps=5,
         max_steps=50,
         loss_relative_tolerance=1e-4,
-        loss=Loss("MSE_RAD"),
+        loss=Loss(Metric.MSE_RAD),
     ),
 )
 
@@ -607,7 +608,7 @@ pixi run -e notebooks-gpu jupyter lab notebooks/
 | `01-create-and-display-image` | No | `ImageDict`, analytical surfaces, radial profiles |
 | `02-atmospheric-configuration` | No | `AtmoConfig`, `GeoConfig`, sweeps |
 | `03-compute-radiative-quantities` | Yes | `RadiativePipeline`, caching |
-| `04-simulate-rho-toa` | Yes | `SmartgSampler_Rho_toa_sym` |
+| `04-simulate-rho-toa` | Yes | `RhoToaSymSampler` |
 
 ---
 
