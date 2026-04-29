@@ -3953,8 +3953,8 @@ packages:
   timestamp: 1744137672556
 - pypi: ./
   name: adjeff
-  version: 0.4.0
-  sha256: e80a3b8679d551fdd28c3d46d3b10d79cbc8ab77a58f05f61e37426252503b19
+  version: 0.5.0
+  sha256: 397cb39ddc5a0d3fb05b4e36d7543d76b5a148652ec38884f739d9570870720f
   requires_dist:
   - pydantic>=2.12.5
   - xarray>=2026.1.0
