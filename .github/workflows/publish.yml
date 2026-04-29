@@ -27,16 +27,13 @@ jobs:
       with:
         pixi-version: v0.65.0
         cache: true
-        environments: dev
- 
-    - name: Ensure pip installed
-      run: pixi run ensure-pip
+        environments: builder
 
     - name: Install build
-      run: pixi run install-build
+      run: pixi run -e builder install-build
 
     - name: Build project
-      run: pixi run build
+      run: pixi run -e builder build
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
