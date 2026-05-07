@@ -7,14 +7,19 @@ models for adjacency effects.
 from .accessor import AdjeffDataArrayAccessor
 from .api import (
     FullConfig,
+    apply_psf,
     config_from_scene,
+    fit_psf,
+    load_config,
     load_maja,
+    load_scene,
     make_full_config,
     make_model,
     optimize_adam_lbfgs,
     run_forward_pipeline,
     run_radiatives_from_scene,
     sample_psf_atm,
+    sample_psf_atm_from_scene,
 )
 from .exceptions import (
     AdjeffAccessorError,
@@ -34,12 +39,22 @@ __all__ = [
     "OptimizationWarning",
     "FullConfig",
     "MissingVariableError",
-    "config_from_scene",
+    # API — loaders
+    "load_scene",
     "load_maja",
+    # API — config
+    "config_from_scene",
+    "load_config",
     "make_full_config",
+    # API — model
     "make_model",
-    "optimize_adam_lbfgs",
+    "fit_psf",
+    "apply_psf",
+    # API — pipelines
     "run_forward_pipeline",
     "run_radiatives_from_scene",
+    "optimize_adam_lbfgs",
+    # API — PSF sampling
     "sample_psf_atm",
+    "sample_psf_atm_from_scene",
 ]

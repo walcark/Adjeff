@@ -1,5 +1,15 @@
 """High-level convenience API for the Adjeff library.
 
+New functions added from api_bis:
+
+- :func:`load_scene`        — generic loader with species persistence.
+- :func:`load_maja`         — load_scene pre-wired for MajaLoader.
+- :func:`load_config`       — FullConfig from a scene with aggregation.
+- :func:`fit_psf`           — end-to-end PSF fitting in one call.
+- :func:`apply_psf`         — apply a frozen PSFDict to a scene.
+- :func:`sample_psf_atm_from_scene` — atmospheric PSF from a scene.
+
+
 Typical usage
 -------------
 >>> cfg = make_full_config(
@@ -33,21 +43,35 @@ from adjeff.core import (
     PSFDict,
     PSFGrid,
     SensorBand,
+    disk_image_dict,
     gaussian_image_dict,
     init_psf_dict,
 )
-from adjeff.core._psf import PSFModule
+from adjeff.core._psf import PSFModule  # not in core.__init__
 from adjeff.exceptions import MissingVariableError
-from adjeff.modules.classic.toa_to_unif import Toa2Unif
-from adjeff.modules.loaders.maja_loader import MajaLoader
-from adjeff.modules.models.psf_conv_module import PSFConvModule
-from adjeff.modules.pipeline import Pipeline
-from adjeff.modules.samplers.psf_atm import PsfAtmSampler
-from adjeff.modules.samplers.radiatives import RadiativePipeline
-from adjeff.modules.samplers.rho_toa_sym import RhoToaSymSampler
-from adjeff.optim import Loss, OptimizerPipeline, TrainingImages
-from adjeff.optim.adam_optimizer import AdamConfig, AdamStage
-from adjeff.optim.lbfgs_optimizer import LBFGSConfig, LBFGSStage
+from adjeff.modules import Pipeline
+from adjeff.modules.classic import Toa2Unif
+from adjeff.modules.loaders import MajaLoader, ProductLoader
+from adjeff.modules.models import Unif2Surface
+from adjeff.modules.models.psf_conv_module import (
+    PSFConvModule,
+)  # not in models.__init__
+from adjeff.modules.samplers import (
+    PsfAtmSampler,
+    RadiativePipeline,
+    RhoToaSymSampler,
+)
+from adjeff.optim import (
+    AdamConfig,
+    AdamStage,
+    LBFGSConfig,
+    LBFGSStage,
+    Loss,
+    Metric,
+    OptimizerPipeline,
+    TrainingImages,
+)
+from adjeff.optim._combo_stage import _ComboStage  # private module
 from adjeff.utils import CacheStore
 
 # ---------------------------------------------------------------------------
@@ -479,12 +503,140 @@ def run_forward_pipeline(
 
 
 # ---------------------------------------------------------------------------
+# Species / stage constants (used by new API functions)
+# ---------------------------------------------------------------------------
+
+_SPECIES_ATTR = "adjeff:species"
+_DEFAULT_SPECIES: dict[str, float] = {"sulphate": 1.0}
+_DEFAULT_LOSS = Loss(Metric.RMSE_RAD)
+_DEFAULT_STAGES: list[AdamConfig | LBFGSConfig] = [
+    AdamConfig(
+        min_steps=5,
+        max_steps=20,
+        loss_relative_tolerance=1e-4,
+        loss=_DEFAULT_LOSS,
+        lr=1e-2,
+    ),
+    LBFGSConfig(
+        min_steps=5,
+        max_steps=30,
+        loss_relative_tolerance=1e-6,
+        loss=_DEFAULT_LOSS,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers (new API)
+# ---------------------------------------------------------------------------
+
+
+def _res_from_scene(scene: ImageDict, band: SensorBand) -> float:
+    """Infer pixel size [km] from the y-coordinate spacing of *scene[band]*."""
+    y: xr.DataArray = scene[band].coords["y"]
+    return float(abs(float(y[1]) - float(y[0])))
+
+
+def _configs_to_stages(
+    stages: list[AdamConfig | LBFGSConfig],
+) -> list[_ComboStage]:
+    """Convert config objects to the corresponding Stage wrappers."""
+    out: list[_ComboStage] = []
+    for cfg in stages:
+        if isinstance(cfg, AdamConfig):
+            out.append(AdamStage(cfg))
+        else:
+            out.append(LBFGSStage(cfg))
+    return out
+
+
+def _to_scalar(v: xr.DataArray | float) -> float:
+    """Extract a Python float from a scalar, 0-d, or 1-element DataArray."""
+    if isinstance(v, xr.DataArray):
+        return float(v.values.flat[0])
+    return float(v)
+
+
+# ---------------------------------------------------------------------------
+# load_scene — generic loader with species persistence
+# ---------------------------------------------------------------------------
+
+
+def load_scene(
+    loader: ProductLoader,
+    *,
+    compute_radiatives: bool = False,
+    n_bins: int | None = None,
+    species: dict[str, float] | None = None,
+    remove_rayleigh: bool = False,
+    afgl_type: str = "afgl_exp_h8km",
+    cache: CacheStore | None = None,
+    deduplicate_dims: list[str] | None = None,
+) -> ImageDict:
+    """Load a scene from any :class:`~adjeff.modules.loaders.ProductLoader`.
+
+    Stores aerosol species in ``scene[band].attrs["adjeff:species"]`` for
+    every band so that :func:`load_config` can recover them later.  Species
+    are resolved in this order:
+
+    1. *species* argument if provided,
+    2. ``loader.species()`` if the loader exposes that method,
+    3. ``{"sulphate": 1.0}`` as a last-resort default.
+
+    Parameters
+    ----------
+    loader : ProductLoader
+        Pre-instantiated loader (e.g. ``MajaLoader(...)``).
+    compute_radiatives : bool, optional
+        Run the radiative pipeline after loading (default ``False``).
+    n_bins : int or None, optional
+        Bins for ``aot``/``h`` digitisation when *compute_radiatives* is
+        ``True``.
+    species : dict[str, float] or None, optional
+        Override aerosol species mix.
+    remove_rayleigh : bool, optional
+        Suppress Rayleigh scattering (default ``False``).
+    afgl_type : str, optional
+        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
+    cache : CacheStore or None, optional
+        Shared on-disk cache (default ``None``).
+    deduplicate_dims : list[str] or None, optional
+        Spatial dimensions to deduplicate before Smart-G calls.
+
+    Returns
+    -------
+    ImageDict
+        Scene with ``scene[band].attrs["adjeff:species"]`` set for every band.
+    """
+    scene = loader.forward()
+
+    _species: dict[str, float] = (
+        species
+        or (loader.species() if hasattr(loader, "species") else None)
+        or _DEFAULT_SPECIES
+    )
+    for band in scene.bands:
+        scene[band].attrs[_SPECIES_ATTR] = _species
+
+    if compute_radiatives:
+        scene = run_radiatives_from_scene(
+            scene,
+            n_bins=n_bins,
+            species=_species,
+            remove_rayleigh=remove_rayleigh,
+            afgl_type=afgl_type,
+            cache=cache,
+            deduplicate_dims=deduplicate_dims,
+        )
+
+    return scene
+
+
+# ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
 
 
-# TODO: make the function dependant on the loader if another loader is
-# TODO: introduced in the future.
 def load_maja(
     product_path: Path,
     bands: list[SensorBand],
@@ -499,10 +651,12 @@ def load_maja(
     afgl_type: str = "afgl_exp_h8km",
     deduplicate_dims: list[str] | None = None,
 ) -> ImageDict:
-    """Load a MAJA L2A product into an :class:`~adjeff.core.ImageDict`.
+    """Load a MAJA L2A product via :func:`load_scene`.
 
-    Wraps :class:`~adjeff.modules.loaders.MajaLoader` and optionally runs
-    :func:`run_radiatives_from_scene` in a single call.
+    Convenience wrapper that instantiates
+    :class:`~adjeff.modules.loaders.MajaLoader` and delegates to
+    :func:`load_scene`, which persists CAMS aerosol species in
+    ``scene[band].attrs["adjeff:species"]``.
 
     Parameters
     ----------
@@ -524,29 +678,25 @@ def load_maja(
         Optional on-disk cache shared between the loader and the radiative
         pipeline (default ``None``).
     compute_radiatives : bool
-        When ``True``, run the radiative pipeline after loading, enriching
-        the scene with ``tdir_down``, ``tdif_down``, ``tdir_up``,
-        ``tdif_up``, ``rho_atm``, and ``sph_alb`` (default ``False``).
+        When ``True``, run the radiative pipeline after loading (default
+        ``False``).
     n_bins : int or None
         Number of bins used to digitise ``aot`` and ``h``, reducing the
         number of Smart-G runs.  Ignored when *compute_radiatives* is
         ``False``.
     remove_rayleigh : bool
-        Suppress Rayleigh scattering in the radiative pipeline
-        (default ``False``).  Ignored when *compute_radiatives* is ``False``.
+        Suppress Rayleigh scattering (default ``False``).
     afgl_type : str
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).  Ignored
-        when *compute_radiatives* is ``False``.
+        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
     deduplicate_dims : list[str] or None, optional
         Spatial dimensions to deduplicate before running Smart-G.  Pass
-        ``["x", "y"]`` when *as_map* is ``True`` to avoid running one
-        simulation per pixel (default ``None``).
+        ``["x", "y"]`` when *as_map* is ``True`` (default ``None``).
 
     Returns
     -------
     ImageDict
-        Scene with ``rho_s`` and atmospheric/geometric variables, plus
-        radiative quantities when *compute_radiatives* is ``True``.
+        Scene with ``rho_s``, atmospheric/geometric variables, and
+        ``scene[band].attrs["adjeff:species"]`` for every band.
     """
     if mnt_path is None:
         from adjeff.exceptions import ConfigurationError
@@ -564,18 +714,15 @@ def load_maja(
         as_map=as_map,
         cache=cache,
     )
-    scene = loader.forward()
-    if compute_radiatives:
-        scene = run_radiatives_from_scene(
-            scene,
-            n_bins=n_bins,
-            species=loader.species(),
-            remove_rayleigh=remove_rayleigh,
-            afgl_type=afgl_type,
-            cache=cache,
-            deduplicate_dims=deduplicate_dims,
-        )
-    return scene
+    return load_scene(
+        loader,
+        compute_radiatives=compute_radiatives,
+        n_bins=n_bins,
+        remove_rayleigh=remove_rayleigh,
+        afgl_type=afgl_type,
+        cache=cache,
+        deduplicate_dims=deduplicate_dims,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -831,3 +978,335 @@ def optimize_adam_lbfgs(
         device=device,
     )
     return optimizer.run(model, zarr_path=zarr_path)
+
+
+# ---------------------------------------------------------------------------
+# load_config
+# ---------------------------------------------------------------------------
+
+_REQUIRED_VARS = ["aot", "h", "rh", "href", "vza", "vaa", "sza", "saa"]
+
+
+def load_config(
+    scene: ImageDict,
+    band: SensorBand,
+    *,
+    aggregate: bool = False,
+    n_bins: int | None = None,
+    species: dict[str, float] | None = None,
+) -> FullConfig:
+    """Build a :class:`FullConfig` from a scene with optional aggregation.
+
+    Extends :func:`config_from_scene` with:
+
+    - **Species recovery** from ``scene[band].attrs["adjeff:species"]``
+      (written by :func:`load_scene`) when *species* is ``None``.
+    - **Spatial aggregation** (``aggregate=True``) to reduce all fields to
+      scalars via ``.mean()``, useful when a single representative
+      atmospheric state is needed.
+
+    Parameters
+    ----------
+    scene : ImageDict
+        Scene produced by :func:`load_scene` or another loader.
+    band : SensorBand
+        Band from which to read the parameters.
+    aggregate : bool, optional
+        Reduce every field to its spatial mean.  Incompatible with *n_bins*.
+    n_bins : int or None, optional
+        Digitise ``aot`` and ``h`` to *n_bins* unique values.  Incompatible
+        with *aggregate*.
+    species : dict[str, float] or None, optional
+        Aerosol species mix.  Resolution order: argument → attrs → default.
+
+    Returns
+    -------
+    FullConfig
+
+    Raises
+    ------
+    MissingVariableError
+        If any required variable is absent from ``scene[band]``.
+    """
+    from adjeff.exceptions import ConfigurationError
+
+    if aggregate and n_bins is not None:
+        raise ConfigurationError(
+            "`aggregate` and `n_bins` are mutually exclusive."
+        )
+
+    ds = scene[band]
+    missing = [v for v in _REQUIRED_VARS if v not in ds]
+    if missing:
+        raise MissingVariableError(
+            f"Variables {missing!r} are missing from band {band!r}."
+        )
+
+    _species: dict[str, float] = (
+        species or ds.attrs.get(_SPECIES_ATTR) or _DEFAULT_SPECIES
+    )
+
+    def _field(name: str) -> xr.DataArray:
+        da: xr.DataArray = ds[name]
+        if aggregate:
+            return da.mean()
+        if n_bins is not None and name in ("aot", "h"):
+            return da.adjeff.digitize(n_bins=n_bins)  # type: ignore[no-any-return]
+        return da
+
+    return make_full_config(
+        bands=scene.bands,
+        aot=_field("aot"),
+        h=_field("h"),
+        rh=_field("rh"),
+        href=_field("href"),
+        vza=_field("vza"),
+        vaa=_field("vaa"),
+        sza=_field("sza"),
+        saa=_field("saa"),
+        species=_species,
+    )
+
+
+# ---------------------------------------------------------------------------
+# fit_psf
+# ---------------------------------------------------------------------------
+
+
+def fit_psf(
+    scene: ImageDict,
+    bands: list[SensorBand],
+    psf_type: type[PSFModule],
+    init_parameters: dict[str, float],
+    *,
+    model_cls: type[PSFConvModule] = Unif2Surface,
+    target_var: str | None = None,
+    train_radii: list[float] | None = None,
+    stages: list[AdamConfig | LBFGSConfig] | None = None,
+    res_km: float | None = None,
+    n_train: int = 1999,
+    cache: CacheStore | None = None,
+    device: str = "cuda",
+) -> PSFDict:
+    """Fit a PSF model for one or more bands in one call.
+
+    Wraps the full pipeline: build disk training scenes → forward pipeline
+    → instantiate model → run optimiser stages → return frozen
+    :class:`~adjeff.core.PSFDict`.
+
+    Configuration is derived from ``bands[0]`` via :func:`load_config`
+    with ``aggregate=True``.
+
+    Parameters
+    ----------
+    scene : ImageDict
+        Reference scene with atmospheric and geometric fields.
+    bands : list[SensorBand]
+        Bands for which to fit the PSF.
+    psf_type : type[PSFModule]
+        Analytical PSF class (e.g. :class:`~adjeff.core.KingPSF`).
+    init_parameters : dict[str, float]
+        Initial parameter values shared across bands.
+    model_cls : type[PSFConvModule], optional
+        Inverse model to optimise
+        (default :class:`~adjeff.modules.models.Unif2Surface`).
+    target_var : str or None, optional
+        Optimisation target variable.  ``None`` → ``model_cls.output_vars[0]``.
+    train_radii : list[float] or None, optional
+        Disk radii [km] for training scenes (default ``[1, 5, 50]`` km).
+    stages : list[AdamConfig | LBFGSConfig] or None, optional
+        Optimiser stages.  ``None`` → Adam (20 steps) + L-BFGS (30 steps).
+    res_km : float or None, optional
+        PSF grid pixel size [km].  ``None`` → inferred from *scene[bands[0]]*.
+    n_train : int, optional
+        PSF grid side in pixels for training (default 1999, must be odd).
+    cache : CacheStore or None, optional
+        Shared cache forwarded to the forward pipeline.
+    device : str, optional
+        PyTorch device (default ``"cuda"``).
+
+    Returns
+    -------
+    PSFDict
+        Frozen PSFDict with one optimised kernel per band.
+    """
+    _target_var: str = target_var or model_cls.output_vars[0]
+    _res_km: float = res_km or _res_from_scene(scene, bands[0])
+    _stages = _DEFAULT_STAGES if stages is None else stages
+    _radii = train_radii or [1.0, 5.0, 50.0]
+
+    cfg = load_config(scene, bands[0], aggregate=True)
+
+    disk_scenes = [
+        disk_image_dict(
+            radius=r,
+            res_km=_res_km,
+            rho_min=0.0,
+            rho_max=0.5,
+            bands=bands,
+            var=_target_var,
+            n=n_train,
+        )
+        for r in _radii
+    ]
+    disk_scenes = run_forward_pipeline(disk_scenes, **cfg, cache=cache)
+    train_images = TrainingImages(
+        images=disk_scenes,
+        weights=[1.0] * len(disk_scenes),
+    )
+
+    grids = {b: PSFGrid(res=_res_km, n=n_train) for b in bands}
+    psf_dict_train = init_psf_dict(
+        grids=grids,
+        model=psf_type,
+        init_parameters=init_parameters,
+    )
+    model = model_cls(psf_dict=psf_dict_train, device=device, cache=cache)
+
+    optimizer = OptimizerPipeline(
+        stages=_configs_to_stages(_stages),
+        train_images=train_images,
+        device=device,
+    )
+    return optimizer.run(model)
+
+
+# ---------------------------------------------------------------------------
+# apply_psf
+# ---------------------------------------------------------------------------
+
+
+def apply_psf(
+    scene: ImageDict,
+    psf_dict: PSFDict,
+    band: SensorBand,
+    *,
+    model_cls: type[PSFConvModule] = Unif2Surface,
+    psf_type: type[PSFModule] | None = None,
+    n: int | None = None,
+    res_km: float | None = None,
+    device: str = "cuda",
+) -> ImageDict:
+    """Apply a frozen PSFDict to a scene to predict the output variable.
+
+    Two modes:
+
+    - **Direct** (``n=None``): wraps *psf_dict* in a model and applies it
+      as-is.  The kernel size equals the one used during training.
+    - **Rebuild** (``n`` provided): reconstructs the PSF on an *n*×*n* grid
+      from the stored parameters, then applies it.  Requires *psf_type*.
+
+    Parameters
+    ----------
+    scene : ImageDict
+        Scene containing the variables required by *model_cls*.
+    psf_dict : PSFDict
+        Frozen PSFDict, typically returned by :func:`fit_psf`.
+    band : SensorBand
+        Band to apply.
+    model_cls : type[PSFConvModule], optional
+        Model class (default :class:`~adjeff.modules.models.Unif2Surface`).
+    psf_type : type[PSFModule] or None, optional
+        PSF class for rebuild mode.  Required when *n* is provided.
+    n : int or None, optional
+        Rebuild the PSF on an *n*×*n* grid (must be odd).
+    res_km : float or None, optional
+        Pixel size [km] for the rebuild grid.  ``None`` → inferred from
+        *scene[band]*.
+    device : str, optional
+        PyTorch device (default ``"cuda"``).
+
+    Returns
+    -------
+    ImageDict
+        Copy of *scene* enriched with the model's output variable.
+
+    Raises
+    ------
+    MissingVariableError
+        If *n* is provided without *psf_type*.
+    """
+    from adjeff.exceptions import ConfigurationError
+
+    if n is not None and psf_type is None:
+        raise ConfigurationError(
+            "`psf_type` is required when `n` is provided."
+        )
+
+    _psf: PSFDict = psf_dict
+    if n is not None and psf_type is not None:
+        params_raw = psf_dict.params(band) or {}
+        params: dict[str, float] = {
+            k: _to_scalar(v) for k, v in params_raw.items()
+        }
+        _res_km: float = res_km or _res_from_scene(scene, band)
+        _psf = init_psf_dict(
+            grids={band: PSFGrid(res=_res_km, n=n)},
+            model=psf_type,
+            init_parameters=params,
+        )
+
+    model = model_cls(psf_dict=_psf, device=device)
+    model.eval()
+    return model(scene)  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# sample_psf_atm_from_scene
+# ---------------------------------------------------------------------------
+
+
+def sample_psf_atm_from_scene(
+    scene: ImageDict,
+    band: SensorBand,
+    *,
+    n: int = 1999,
+    remove_rayleigh: bool = False,
+    afgl_type: str = "afgl_exp_h8km",
+    n_ph: int = int(1e6),
+    res_km: float | None = None,
+    cache: CacheStore | None = None,
+) -> PSFDict:
+    """Sample the atmospheric PSF for a given scene.
+
+    Derives configuration from *scene* via :func:`load_config` with
+    ``aggregate=True`` (the PSF sampler requires scalar geometric parameters).
+
+    Parameters
+    ----------
+    scene : ImageDict
+        Reference scene with atmospheric and geometric fields for *band*.
+    band : SensorBand
+        Band of interest.
+    n : int, optional
+        PSF grid side in pixels (default 1999, must be odd).
+    remove_rayleigh : bool, optional
+        Suppress Rayleigh scattering (default ``False``).
+    afgl_type : str, optional
+        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
+    n_ph : int, optional
+        Photon count per Smart-G run (default ``1e6``).
+    res_km : float or None, optional
+        Pixel size [km].  ``None`` → inferred from *scene[band]*.
+    cache : CacheStore or None, optional
+        Optional result cache.
+
+    Returns
+    -------
+    PSFDict
+        Frozen PSFDict with one ``kernel`` DataArray for *band*.
+    """
+    cfg = load_config(scene, band, aggregate=True)
+    _res_km: float = res_km or _res_from_scene(scene, band)
+
+    return sample_psf_atm(
+        bands=[band],
+        res_km=_res_km,
+        n=n,
+        atmo_config=cfg["atmo_config"],
+        geo_config=cfg["geo_config"],
+        remove_rayleigh=remove_rayleigh,
+        afgl_type=afgl_type,
+        n_ph=n_ph,
+        cache=cache,
+    )
