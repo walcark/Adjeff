@@ -42,14 +42,18 @@ def test_resolve_n_dict_extent_km():
 
 
 def test_resolve_n_both_raises():
-    """Raise ValueError when both n and extent_km are provided."""
-    with pytest.raises(ValueError, match="mutually exclusive"):
+    """ConfigurationError when both n and extent_km are provided."""
+    from adjeff.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match="mutually exclusive"):
         _resolve_n([S2Band.B02], res_km=RES_B02, n=10, extent_km=1.0)
 
 
 def test_resolve_n_none_raises():
-    """Raise ValueError when neither n nor extent_km is provided."""
-    with pytest.raises(ValueError, match="exactly one"):
+    """ConfigurationError when neither n nor extent_km is provided."""
+    from adjeff.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match="exactly one"):
         _resolve_n([S2Band.B02], res_km=RES_B02, n=None, extent_km=None)
 
 

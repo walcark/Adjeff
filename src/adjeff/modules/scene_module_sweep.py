@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import xarray as xr
 
+from adjeff.exceptions import ConfigurationError
 from adjeff.sweep import SweepBundle, UniqueIndex
 from adjeff.sweep.bundle import _aggregate
 from adjeff.utils import CacheStore, ConfigProtocol
@@ -165,7 +166,7 @@ class SceneModuleSweep(SceneModule):
 
         for name in self.scalar_dims:
             if name in das and das[name].ndim > 1:
-                raise ValueError(
+                raise ConfigurationError(
                     f"Scalar '{name}' has shape {das[name].shape} after "
                     "deduplication. Add its dimensions to deduplicate_dims."
                 )

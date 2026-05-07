@@ -11,6 +11,7 @@ import structlog
 import xarray as xr
 
 from adjeff.core import SensorBand
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils import CacheStore
 
 from .product_loader import (
@@ -81,7 +82,7 @@ class MajaLoader(
         """Check that the product name corresponds to MAJA output format."""
         split = str(path.name).split("_")
         if len(split) != 6:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Wrong folder format for MAJA. Got {str(path)} but should "
                 "be <SENTINEL_TYPE>_<DATE>_L2A_<TILE>_C_<VERSION>"
             )
@@ -285,7 +286,7 @@ def downsample_res(
     int_target_res = int(round(1000 * target_res))
     int_data_res = int(round(1000 * data_res))
     if (int_target_res % int_data_res != 0) or (int_target_res < int_data_res):
-        raise ValueError(
+        raise ConfigurationError(
             f"Target res {int_target_res} should "
             f" be divisible by {int_data_res}."
         )

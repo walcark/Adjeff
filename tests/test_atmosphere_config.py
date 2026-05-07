@@ -1,9 +1,11 @@
 from typing import Any
 
+import numpy as np
 import pytest
 import xarray as xr
 
 from adjeff.atmosphere import AtmoConfig, GeoConfig
+from adjeff.exceptions import ConfigurationError
 from conftest import requires_cuda
 
 _VALID_ATMO: dict[str, Any] = dict(
@@ -104,3 +106,41 @@ def test_geo_config_satellite_relative_position(
     x, y = geo.satellite_relative_position
     assert x == pytest.approx(expected_x, abs=1e-4)
     assert y == pytest.approx(expected_y, abs=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# atmo_factory — parse_params
+# ---------------------------------------------------------------------------
+
+
+def test_parse_params_wrong_ndim_raises():
+    """parse_params raises ConfigurationError when a parameter has ndim != 1."""
+    from adjeff.atmosphere.atmo_factory import parse_params
+
+    da_2d = xr.DataArray(np.ones((2, 2)), dims=["x", "y"])
+    with pytest.raises(ConfigurationError, match="exactly one dimension"):
+        parse_params(
+            {
+                "wl": da_2d,
+                "aot": xr.DataArray([0.1, 0.2], dims=["index"]),
+                "rh": xr.DataArray([50.0, 70.0], dims=["index"]),
+                "h": xr.DataArray([0.0, 0.0], dims=["index"]),
+                "href": xr.DataArray([2.0, 2.0], dims=["index"]),
+            }
+        )
+
+
+def test_parse_params_size_mismatch_raises():
+    """parse_params raises ConfigurationError when parameter sizes differ."""
+    from adjeff.atmosphere.atmo_factory import parse_params
+
+    with pytest.raises(ConfigurationError):
+        parse_params(
+            {
+                "wl": xr.DataArray([440.0, 560.0], dims=["index"]),
+                "aot": xr.DataArray([0.1, 0.2, 0.3], dims=["index"]),
+                "rh": xr.DataArray([50.0, 70.0], dims=["index"]),
+                "h": xr.DataArray([0.0, 0.0], dims=["index"]),
+                "href": xr.DataArray([2.0, 2.0], dims=["index"]),
+            }
+        )

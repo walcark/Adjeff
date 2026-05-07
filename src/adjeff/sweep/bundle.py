@@ -10,6 +10,7 @@ from typing import Any, Callable
 import structlog
 import xarray as xr
 
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils._config import ConfigProtocol
 
 logger = structlog.get_logger(__name__)
@@ -25,7 +26,7 @@ def _aggregate(
 
     Raises
     ------
-    ValueError
+    ConfigurationError
         If any name in *names* is absent from all configs.
     """
     das: dict[str, xr.DataArray] = {}
@@ -39,7 +40,9 @@ def _aggregate(
                 other[k] = v
     missing = set(names) - set(das)
     if missing:
-        raise ValueError(f"Names {sorted(missing)!r} not found in any config.")
+        raise ConfigurationError(
+            f"Names {sorted(missing)!r} not found in any config."
+        )
     return das, other
 
 
@@ -81,7 +84,7 @@ class SweepBundle:
     ) -> None:
         for name, da in scalars.items():
             if da.ndim > 1:
-                raise ValueError(
+                raise ConfigurationError(
                     f"Scalar '{name}' has {da.ndim} dimensions. "
                     "Reduce to 1-D first (e.g. via UniqueIndex.build())."
                 )

@@ -9,6 +9,7 @@ import torch
 import xarray as xr
 
 from adjeff.core import ImageDict, SensorBand
+from adjeff.exceptions import ConfigurationError
 
 
 @dataclass(frozen=True)
@@ -140,7 +141,7 @@ def iterate_broadcasted_dims(
         dims = current_dims if not dims else dims
 
         if current_dims != dims:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Dims of ImageDict {idx} ({current_dims}) not consistent "
                 f"with the other ImageDict dims ({dims})"
             )
@@ -151,12 +152,12 @@ def iterate_broadcasted_dims(
             bool((c1 != c2).any()) for c1, c2 in zip(coords, current_coords)
         ]
         if any(diff):
-            raise ValueError(
+            raise ConfigurationError(
                 "Mismatching coordinates between trained ImageDicts."
             )
 
     if "x" not in dims or "y" not in dims:
-        raise ValueError("Dimensions should contain (x, y)")
+        raise ConfigurationError("Dimensions should contain (x, y)")
 
     extra_dims = [d for d in dims if d not in ("x", "y")]
     extra_coords = [coords[dims.index(d)] for d in extra_dims]

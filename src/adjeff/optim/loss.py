@@ -6,6 +6,8 @@ from typing import Callable
 import torch
 from torch import Tensor
 
+from adjeff.exceptions import ConfigurationError
+
 from .metrics import Metric
 from .training_set import TrainingSet
 
@@ -29,7 +31,7 @@ class Loss:
 
     def __post_init__(self) -> None:  # noqa: D105
         if self.mask_on not in (None, "rho_unif"):
-            raise ValueError(
+            raise ConfigurationError(
                 f"mask_on must be None or 'rho_unif', got {self.mask_on!r}"
             )
 

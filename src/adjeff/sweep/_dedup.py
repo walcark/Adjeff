@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 import xarray as xr
 
+from adjeff.exceptions import ConfigurationError
+
 
 @dataclass
 class UniqueIndex:
@@ -61,7 +63,7 @@ class UniqueIndex:
         passthrough = {k: v for k, v in arrays.items() if k not in involved}
 
         if not involved:
-            raise ValueError(f"No arrays carry any of dims {dims!r}.")
+            raise ConfigurationError(f"No arrays carry any of dims {dims!r}.")
 
         # Strip target-dim coords before broadcasting to prevent xarray from
         # aligning arrays by label instead of by position when fields carry

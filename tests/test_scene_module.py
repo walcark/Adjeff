@@ -82,3 +82,27 @@ def test_missing_required_var_raises():
     scene = random_image_dict(bands=[S2Band.B02], variables=["rho_toa"], res_km=0.01, n=8, seed=0)
     with pytest.raises(MissingVariableError):
         TestModule()(scene)
+
+
+# --- Pipeline ---
+
+
+def test_pipeline_wrong_dependency_raises():
+    """Pipeline raises ConfigurationError when a dependency is declared
+    as a pipeline output but not produced before it is needed."""
+    from adjeff.exceptions import ConfigurationError
+    from adjeff.modules import Pipeline
+    from adjeff.modules.test_module import TestModule as TM
+
+    # Module A requires rho_s and produces rho_toa.
+    # Module B requires rho_toa and produces rho_unif.
+    # Declaring them in reverse order (B then A) is a configuration error.
+    class ModuleB(TM):
+        required_vars = ["rho_toa"]
+        output_vars = ["rho_unif"]
+
+        def _compute(self, scene):  # type: ignore[override]
+            return scene
+
+    with pytest.raises(ConfigurationError):
+        Pipeline([ModuleB(), TM()])

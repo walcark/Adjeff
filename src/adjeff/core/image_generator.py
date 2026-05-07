@@ -4,6 +4,7 @@ import numpy as np
 import structlog
 import xarray as xr
 
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils import square_grid
 
 from .bands import S2Band, SensorBand
@@ -47,9 +48,9 @@ def _resolve_n(
 
     """
     if n is None and extent_km is None:
-        raise ValueError("Provide exactly one of `n` or `extent_km`.")
+        raise ConfigurationError("Provide exactly one of `n` or `extent_km`.")
     if n is not None and extent_km is not None:
-        raise ValueError("`n` and `extent_km` are mutually exclusive.")
+        raise ConfigurationError("`n` and `extent_km` are mutually exclusive.")
 
     if extent_km is not None:
         _res = (
@@ -321,7 +322,7 @@ def extend_analytical(da: xr.DataArray, n_ext: int) -> xr.DataArray:
             coords, params["radius"], params["rho_min"], params["rho_max"]
         )
     else:
-        raise ValueError(f"Unknown analytical model: {model!r}")
+        raise ConfigurationError(f"Unknown analytical model: {model!r}")
 
     return xr.DataArray(
         np.asarray(data, dtype=np.float32),

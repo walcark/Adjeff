@@ -6,7 +6,7 @@ import xarray as xr
 from luts.luts import MLUT  # type: ignore[import-untyped]
 from smartg.atmosphere import AerOPAC, AtmAFGL
 
-from adjeff.exceptions import MissingVariableError
+from adjeff.exceptions import ConfigurationError, MissingVariableError
 
 logger = structlog.get_logger(__name__)
 
@@ -54,7 +54,7 @@ def create_atmosphere(
     ------
     MissingVariableError
         If any of the required keys is absent from *atmo_params*.
-    ValueError
+    ConfigurationError
         If the DataArrays do not share a single common dimension or if
         their sizes differ.
     """
@@ -112,7 +112,9 @@ def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
     # Reference dimension
     first = next(iter(params.values()))
     if len(first.dims) != 1:
-        raise ValueError("Each parameter must have exactly one dimension")
+        raise ConfigurationError(
+            "Each parameter must have exactly one dimension"
+        )
 
     dim = first.dims[0]
     size = first.sizes[dim]
@@ -120,9 +122,11 @@ def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
     # Check consistency
     for name, arr in params.items():
         if arr.dims != (dim,):
-            raise ValueError(f"{name} has dims {arr.dims}, expected {(dim,)}")
+            raise ConfigurationError(
+                f"{name} has dims {arr.dims}, expected {(dim,)}"
+            )
         if arr.sizes[dim] != size:
-            raise ValueError(
+            raise ConfigurationError(
                 f"{name} has size {arr.sizes[dim]}, expected {size}"
             )
 

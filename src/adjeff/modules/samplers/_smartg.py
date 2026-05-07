@@ -18,6 +18,7 @@ from structlog import get_logger
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
 from adjeff.core import GeneralizedGaussianPSF, PSFGrid, SensorBand
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils import fft_convolve_2D
 
 if TYPE_CHECKING:
@@ -579,7 +580,7 @@ def rho_toa(
     sun_le = {"th_deg": sza, "phi_deg": saa}
 
     if rho_s["rho_s"].adjeff.kind() != "arbitrary":
-        raise ValueError(
+        raise ConfigurationError(
             "RhoToaSampler requires an arbitrary rho_s surface "
             "(use gaussian_image_dict(..., analytical=False) or equivalent). "
             f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
@@ -592,12 +593,12 @@ def rho_toa(
     x_full = rho_s["rho_s"].coords["x"].values
     y_full = rho_s["rho_s"].coords["y"].values
     if topleft_pix[0] + nx > len(x_full):
-        raise ValueError(
+        raise ConfigurationError(
             f"topleft_pix[0] + nx must be <= {len(x_full)}, "
             f"got {topleft_pix[0] + nx}"
         )
     if topleft_pix[1] + ny > len(y_full):
-        raise ValueError(
+        raise ConfigurationError(
             f"topleft_pix[1] + ny must be <= {len(y_full)}, "
             f"got {topleft_pix[1] + ny}"
         )
@@ -754,7 +755,7 @@ def rho_toa_sym(
     from smartg.smartg import Smartg
 
     if rho_s["rho_s"].adjeff.kind() != "analytical":
-        raise ValueError(
+        raise ConfigurationError(
             "RhoToaSymSampler requires an analytical rho_s surface. "
             "Use RhoToaSampler for arbitrary fields. "
             f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
@@ -926,7 +927,7 @@ def psf_atm(
     res: float = rho_s["rho_s"].adjeff.res
     n: int = rho_s["rho_s"].adjeff.n
     if n % 2 == 0:
-        raise ValueError(
+        raise ConfigurationError(
             f"Image grid size n must be odd (got {n}): a PSF kernel requires "
             "a well-defined centre pixel."
         )

@@ -8,6 +8,7 @@ import xarray as xr
 
 from adjeff.core import ImageDict
 from adjeff.core.bands import SensorBand
+from adjeff.exceptions import ConfigurationError
 
 from .scene_module import SceneModule
 
@@ -67,7 +68,7 @@ class Pipeline:
                 set(mod.required_vars) & all_produced
             ) - produced
             if pipeline_missing:
-                raise ValueError(
+                raise ConfigurationError(
                     f"{type(mod).__name__} requires "
                     f"{sorted(pipeline_missing)!r}, "
                     "not produced by any prior module."

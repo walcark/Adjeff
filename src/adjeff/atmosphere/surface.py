@@ -13,6 +13,8 @@ import numpy as np
 import xarray as xr
 from smartg.water import Albedo_cst
 
+from adjeff.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from smartg.smartg import Entity, Environment, LambSurface
 
@@ -62,7 +64,7 @@ class SurfaceFactory:
                 rho = 0.0
             return LambSurface(Albedo_cst(rho))
         else:
-            raise ValueError(f"Wrong kind of surface: {kind}")
+            raise ConfigurationError(f"Wrong kind of surface: {kind}")
 
     def environment(self, arr: xr.Dataset) -> Environment:
         """Return an Environment object based on the input image.
