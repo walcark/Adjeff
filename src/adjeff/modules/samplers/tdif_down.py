@@ -1,4 +1,4 @@
-"""Module that computes tdif_down with Smart-G."""
+"""Diffuse downward transmittance (``tdif_down``) sampler using Smart-G."""
 
 from typing import ClassVar
 
@@ -16,11 +16,20 @@ logger = get_logger(__name__)
 
 
 class TdifDownSampler(SceneModuleSweep):
-    """Sample downward diffuse transmittance with Smart-G.
+    """Sample downward diffuse transmittance with Smart-G Monte-Carlo.
 
-    Computes ``tdif_down`` — the diffuse fraction of the solar flux
-    reaching the surface — for every combination of illumination geometry
-    and atmospheric state defined by the supplied configs.
+    ``tdif_down`` is the diffuse fraction of the solar flux reaching the
+    surface (scattered photons, as opposed to the direct beam
+    ``tdir_down``).  It contributes to the total downward transmittance
+    in the 5S formula::
+
+        t_down = tdir_down + tdif_down
+
+    Produced variable: ``tdif_down``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
@@ -78,6 +87,7 @@ class TdifDownSampler(SceneModuleSweep):
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
+        """Run the Smart-G sweep and write ``tdif_down`` into each band."""
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 scene[band] = xr.Dataset()

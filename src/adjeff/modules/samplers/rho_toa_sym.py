@@ -21,25 +21,32 @@ logger = get_logger(__name__)
 class RhoToaSymSampler(SceneModuleSweep):
     """Compute rho_toa by radial sampling under the symmetric PSF assumption.
 
-    For each band, the module:
+    Assumes the scene is radially symmetric around the image centre.
+    For each band the module:
 
-    1. Reads ``rho_s`` and bins it into a radial profile (``nr`` points from
-       centre to image edge) — these radii are the sampling locations.
-    2. Batches all AtmoConfig combinations (aot, rh, h, href) with the band
-       wavelength, building a multi-profile atmosphere via ``multi_profiles``.
-    3. Creates one position-specific sensor per radial point.
-    4. Runs a single Smart-G simulation and writes ``rho_toa`` with dims
-       ``(r, aot, rh, h, href)`` into the scene.
+    1. Bins ``rho_s`` into ``nr`` radial samples from centre to edge.
+    2. Places one Smart-G sensor per radial point.
+    3. Runs a single simulation per ``(sza, vza)`` combination, sweeping
+       all atmospheric states (``aot``, ``rh``, ``h``, ``href``) as a
+       multi-profile atmosphere.
+    4. Writes ``rho_toa`` with dims ``(r, aot, rh, h, href)`` into the
+       scene.
 
-    vza and sza are scalar per call — sensor positions depend on vza so they
-    cannot be vectorised within one run. Sweep over angles externally.
+    ``sza`` and ``vza`` are ``scalar_dims`` — sensor positions depend on
+    ``vza`` and cannot be vectorised within one call.
+
+    Produced variable: ``rho_toa``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
     atmo_config : AtmoConfig
-        Atmospheric parameters — may be full arrays (swept via multi_profiles).
+        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
     geo_config : GeoConfig
-        Geometry — vza and sza must be single-element (scalar per call).
+        Geometry — ``vza`` and ``sza`` must be single-element per call.
     remove_rayleigh : bool
         Whether to suppress Rayleigh scattering.
     afgl_type : str

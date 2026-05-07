@@ -1,4 +1,4 @@
-"""Convenience pipeline that computes all radiative quantities in sequence."""
+"""Convenience pipeline that computes all six radiative quantities."""
 
 from typing import Any
 
@@ -15,13 +15,17 @@ from .tdir_up import TdirUpSampler
 
 
 class RadiativePipeline(Pipeline):
-    """Pipeline that computes all radiative parameters in sequence.
+    """Pipeline that computes all six radiative quantities in sequence.
 
-    Chains six :class:`~adjeff.modules.SceneModuleSweep` instances that
-    produce the following variables in order:
+    Chains six :class:`~adjeff.modules.SceneModuleSweep` samplers that
+    produce the variables required by the 5S formula in order:
 
     ``tdir_down`` → ``tdir_up`` → ``sph_alb`` → ``tdif_up`` →
     ``tdif_down`` → ``rho_atm``
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------

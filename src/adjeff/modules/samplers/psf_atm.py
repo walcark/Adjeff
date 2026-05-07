@@ -1,4 +1,4 @@
-"""Module that computes the atmospheric PSF with Smart-G."""
+"""Atmospheric PSF (``psf_atm``) sampler using Smart-G backward tracing."""
 
 from __future__ import annotations
 
@@ -18,24 +18,30 @@ logger = get_logger(__name__)
 
 
 class PsfAtmSampler(SceneModuleSweep):
-    """Compute the atmospheric PSF of the 5S model.
+    """Compute the atmospheric PSF by Smart-G backward photon tracing.
 
-    For each band, the module samples the PSF using a Smart-G Entity object.
-    Photons are backward launched from the sensor, propagated through the
-    atmosphere until they reach the Entity on the earth surface. When a photon
-    hits the ground, its energy is registered by the Entity, and the photon
-    path is terminated. This allows to avoid sampling coupling effects in the
-    PSF model.
+    Photons are launched backward from the sensor, propagated through
+    the atmosphere until they hit a Smart-G ``Entity`` placed on the
+    surface.  The energy deposited on the entity as a function of its
+    position gives the atmospheric PSF directly, without coupling to
+    surface adjacency effects.
 
-    vza and sza are scalar per call — sensor positions depend on vza so they
-    cannot be vectorised within one run. Sweep over angles externally.
+    ``vza`` and ``sza`` are ``scalar_dims`` (one Smart-G call per
+    angle combination); all atmospheric parameters are also swept as
+    scalars.
+
+    Produced variable: ``psf_atm``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
     atmo_config : AtmoConfig
-        Atmospheric parameters — may be full arrays (swept via multi_profiles).
+        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
     geo_config : GeoConfig
-        Geometry — vza and sza must be single-element (scalar per call).
+        Geometry — ``vza`` and ``sza`` must be single-element per call.
     spectral_config : SpectralConfig
         Bands to process.
     remove_rayleigh : bool

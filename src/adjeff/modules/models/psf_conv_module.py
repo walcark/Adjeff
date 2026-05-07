@@ -123,6 +123,7 @@ class PSFConvModule(TrainableSceneModule):
         return scene
 
     def _config_dict(self) -> dict[str, object]:
+        """Override to hash PSF kernel arrays instead of module attributes."""
         if self._psf_dict.is_trainable:
             return {
                 band_id: cast(PSFModule, psf).to_dataarray().values

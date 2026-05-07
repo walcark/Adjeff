@@ -1,4 +1,4 @@
-"""Module that computes rho_atm with Smart-G."""
+"""Atmospheric path reflectance (``rho_atm``) sampler using Smart-G."""
 
 from typing import ClassVar
 
@@ -16,14 +16,24 @@ logger = get_logger(__name__)
 
 
 class RhoAtmSampler(SceneModuleSweep):
-    """Sample atmospheric reflectance (path radiance) with Smart-G.
+    """Sample atmospheric path reflectance with Smart-G Monte-Carlo.
 
-    Computes ``rho_atm`` — the reflectance of the atmosphere alone (no
-    surface contribution) — for every combination of viewing/illumination
-    geometry and atmospheric state defined by the supplied configs.
+    ``rho_atm`` is the TOA reflectance contribution of the atmosphere
+    when the surface is perfectly absorbing (no surface term).  It
+    appears as the additive offset in the 5S formula::
 
-    The sweep is fully vectorised over ``wl``, ``aot``, ``rh``, ``h``,
-    ``href``, ``vza`` and ``sza`` via :class:`~adjeff.utils.ConfigBundle`.
+        rho_toa = rho_atm
+                  + t_up * t_down * rho_unif / (1 - sph_alb * rho_unif)
+
+    All atmospheric and geometric parameters are swept as
+    ``vector_dims`` — a single Smart-G call handles all wavelengths,
+    aerosol states, and viewing angles simultaneously.
+
+    Produced variable: ``rho_atm``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
@@ -42,7 +52,7 @@ class RhoAtmSampler(SceneModuleSweep):
         Number of photons per Smart-G call, by default ``2e7``.
     cache : CacheStore or None, optional
         Result cache; ``None`` disables caching.
-    chunks : dict[str, int] or None, optional
+    sweep_chunks : dict[str, int] or None, optional
         Chunk sizes for vector dimensions (e.g. ``{"wl": 50}``).
     deduplicate_dims : list[str] or None, optional
         Spatial dimensions to deduplicate before sweeping.
@@ -89,6 +99,7 @@ class RhoAtmSampler(SceneModuleSweep):
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
+        """Run the Smart-G sweep and write ``rho_atm`` into each band."""
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 scene[band] = xr.Dataset()

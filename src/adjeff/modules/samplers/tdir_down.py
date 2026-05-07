@@ -1,4 +1,4 @@
-"""Module that computes tdir_down analytically from optical depth."""
+"""Direct downward transmittance (``tdir_down``) sampler using Smart-G."""
 
 from typing import ClassVar
 
@@ -18,10 +18,22 @@ logger = get_logger(__name__)
 class TdirDownSampler(SceneModuleSweep):
     """Sample direct downward transmittance analytically from optical depth.
 
-    Computes ``tdir_down = exp(-OD / cos(sza))`` where the optical depth
-    ``OD`` is retrieved from Smart-G.  This is an analytical computation;
-    the Monte-Carlo photon count only affects the optical depth retrieval
-    and can therefore be kept very small (default ``1e2``).
+    ``tdir_down`` is the fraction of the solar flux that reaches the
+    surface without being scattered.  It is computed analytically from
+    the total optical depth ``OD`` retrieved by Smart-G::
+
+        tdir_down = exp(-OD / cos(sza))
+
+    The Monte-Carlo photon count only affects the optical depth
+    retrieval and can therefore be kept very small (default ``1e2``).
+    This is the downward counterpart of :class:`TdirUpSampler`.
+
+    Produced variable: ``tdir_down``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU (for the Smart-G optical depth
+    retrieval), but very few photons suffice (default ``n_ph=1e2``).
 
     Parameters
     ----------
@@ -80,6 +92,7 @@ class TdirDownSampler(SceneModuleSweep):
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
+        """Run the Smart-G sweep and write ``tdir_down`` into each band."""
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 scene[band] = xr.Dataset()

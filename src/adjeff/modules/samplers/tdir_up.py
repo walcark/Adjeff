@@ -1,4 +1,4 @@
-"""Module that computes tdir_up with Smart-G."""
+"""Direct upward transmittance (``tdir_up``) sampler using Smart-G."""
 
 from typing import ClassVar
 
@@ -18,9 +18,21 @@ logger = get_logger(__name__)
 class TdirUpSampler(SceneModuleSweep):
     """Sample direct upward transmittance analytically from optical depth.
 
-    Computes ``tdir_up = exp(-OD / cos(vza))`` where the optical depth
-    ``OD`` is retrieved from Smart-G.  See also
-    :class:`TdirDownSampler` for the downward counterpart.
+    ``tdir_up`` is the fraction of the surface-reflected flux that
+    reaches the satellite without being scattered.  Computed
+    analytically from the total optical depth ``OD`` retrieved by
+    Smart-G::
+
+        tdir_up = exp(-OD / cos(vza))
+
+    This is the upward counterpart of :class:`TdirDownSampler`.
+
+    Produced variable: ``tdir_up``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU (for the Smart-G optical depth
+    retrieval), but very few photons suffice (default ``n_ph=1e9``).
 
     Parameters
     ----------
@@ -79,6 +91,7 @@ class TdirUpSampler(SceneModuleSweep):
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
+        """Run the Smart-G sweep and write ``tdir_up`` into each band."""
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 logger.warning(

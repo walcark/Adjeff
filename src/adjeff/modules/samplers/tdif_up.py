@@ -1,4 +1,4 @@
-"""Module that computes tdif_up with Smart-G."""
+"""Diffuse upward transmittance (``tdif_up``) sampler using Smart-G."""
 
 from typing import ClassVar
 
@@ -16,11 +16,20 @@ logger = get_logger(__name__)
 
 
 class TdifUpSampler(SceneModuleSweep):
-    """Sample upward diffuse transmittance with Smart-G.
+    """Sample upward diffuse transmittance with Smart-G Monte-Carlo.
 
-    Computes ``tdif_up`` — the diffuse component of the upward flux
-    reaching the satellite — for every combination of viewing geometry
-    and atmospheric state defined by the supplied configs.
+    ``tdif_up`` is the diffuse component of the surface-reflected flux
+    reaching the satellite (scattered photons, as opposed to the direct
+    beam ``tdir_up``).  It contributes to the total upward transmittance
+    in the 5S formula::
+
+        t_up = tdir_up + tdif_up
+
+    Produced variable: ``tdif_up``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
@@ -78,6 +87,7 @@ class TdifUpSampler(SceneModuleSweep):
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
+        """Run the Smart-G sweep and write ``tdif_up`` into each band."""
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 scene[band] = xr.Dataset()

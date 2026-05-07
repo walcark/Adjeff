@@ -14,7 +14,16 @@ def _rho_s_from_rho_env(
     tdif_up: Any,
     rho_env: Any,
 ) -> Any:
-    """5S formula given a pre-computed rho_env (result of PSF convolution)."""
+    """Return surface reflectance from the 5S formula given *rho_env*.
+
+    *rho_env* is the PSF-convolved version of *rho_unif*, representing
+    the effective environment reflectance seen by the sensor::
+
+        frac = (1 - rho_env * sph_alb) / (1 - rho_unif * sph_alb)
+        rho_s = (
+            rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up
+        ) / tdir_up
+    """
     frac = (1 - rho_env * sph_alb) / (1 - rho_unif * sph_alb)
     return (
         rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up
@@ -22,7 +31,25 @@ def _rho_s_from_rho_env(
 
 
 class Unif2Surface(PSFConvModule):
-    """Estimate rho_s from rho_unif via a learnable PSF.
+    """Estimate surface reflectance from ``rho_unif`` via a learnable PSF.
+
+    The forward pass combines two steps:
+
+    1. **PSF convolution** — ``rho_unif`` is convolved with the PSF
+       kernel to produce ``rho_env``, the effective environment
+       reflectance seen by the sensor.
+    2. **5S formula** — ``rho_s`` is recovered from ``rho_unif`` and
+       ``rho_env``::
+
+           frac = (1 - rho_env * sph_alb) / (1 - rho_unif * sph_alb)
+           rho_s = (
+               rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up
+           ) / tdir_up
+
+    Required variables (per band): ``rho_unif``, ``tdir_up``,
+    ``tdif_up``, ``sph_alb``.
+
+    Produced variable: ``rho_s``.
 
     Parameters
     ----------

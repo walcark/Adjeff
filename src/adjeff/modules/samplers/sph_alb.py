@@ -1,4 +1,4 @@
-"""Module that computes spherical albedo with Smart-G."""
+"""Atmospheric spherical albedo (``sph_alb``) sampler using Smart-G."""
 
 from typing import ClassVar
 
@@ -16,12 +16,22 @@ logger = get_logger(__name__)
 
 
 class SphAlbSampler(SceneModuleSweep):
-    """Sample the spherical albedo of the atmosphere with Smart-G.
+    """Sample the atmospheric spherical albedo with Smart-G Monte-Carlo.
 
-    Computes ``sph_alb`` — the fraction of the upwelling flux reflected
-    back downward by the atmosphere — for every combination of atmospheric
-    state defined by the supplied configs.  Geometry-independent: no
-    ``geo_config`` is required.
+    ``sph_alb`` is the fraction of the upwelling flux that is reflected
+    back downward by the atmosphere.  It appears in the 5S formula as
+    the multiple-reflection coupling term::
+
+        rho_toa = rho_atm + t_up * t_down * rho_unif / (1 - sph_alb * rho_unif)
+
+    Geometry-independent: no ``geo_config`` is required.  All parameters
+    are swept as ``vector_dims``.
+
+    Produced variable: ``sph_alb``.
+
+    Notes
+    -----
+    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
@@ -75,6 +85,7 @@ class SphAlbSampler(SceneModuleSweep):
         return (self.spectral_config, self.atmo_config)
 
     def _compute(self, scene: ImageDict) -> ImageDict:
+        """Run the Smart-G sweep and write ``sph_alb`` into each band."""
         for band in self.spectral_config.bands:
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
