@@ -111,189 +111,83 @@ def _assert_dataarray_valid(da: xr.DataArray, n: int, band: SensorBand) -> None:
 
 
 # ---------------------------------------------------------------------------
-# GaussPSF
+# Analytical PSF invariants — parametrized over all 5 models
 # ---------------------------------------------------------------------------
 
+_ANALYTICAL_PSF_CASES = pytest.mark.parametrize(
+    "psf_cls,kwargs,model_name,param_keys",
+    [
+        pytest.param(
+            GaussPSF, {"sigma": 1.0}, "Gaussian", {"sigma"},
+            id="Gauss",
+        ),
+        pytest.param(
+            GeneralizedGaussianPSF, {"sigma": 1.0, "n": 0.3},
+            "GeneralizedGaussian", {"sigma", "n"},
+            id="GeneralizedGaussian",
+        ),
+        pytest.param(
+            VoigtPSF, {"sigma": 1.0, "gamma": 1.0},
+            "Voigt", {"sigma", "gamma"},
+            id="Voigt",
+        ),
+        pytest.param(
+            KingPSF, {"sigma": 1.0, "gamma": 2.0},
+            "King", {"sigma", "gamma"},
+            id="King",
+        ),
+        pytest.param(
+            MoffatGeneralizedPSF, {"alpha": 1.0, "beta": 1.0, "gamma": 1.0},
+            "MoffatGeneralized", {"alpha", "beta", "gamma"},
+            id="MoffatGeneralized",
+        ),
+    ],
+)
 
-@pytest.fixture
-def gauss_psf(grid, band) -> GaussPSF:
-    return GaussPSF(grid=grid, band=band, sigma=1.0)
+
+@_ANALYTICAL_PSF_CASES
+def test_analytical_psf_kernel_valid(psf_cls, kwargs, model_name, param_keys, grid, band):
+    """Every analytical PSF must return a (n, n) non-negative normalised float32 kernel."""
+    psf = psf_cls(grid=grid, band=band, **kwargs)
+    _assert_kernel_valid(psf.forward(), grid.n)
 
 
-def test_gauss_forward_shape(gauss_psf, grid):
-    """GaussPSF.forward must return a (n, n) float32 tensor."""
-    _assert_kernel_valid(gauss_psf.forward(), grid.n)
-
-
-def test_gauss_forward_peak_at_center(gauss_psf, grid):
-    """Gaussian kernel must peak at the center pixel."""
-    k = gauss_psf.forward()
+@_ANALYTICAL_PSF_CASES
+def test_analytical_psf_peak_at_center(psf_cls, kwargs, model_name, param_keys, grid, band):
+    """Every radially-symmetric PSF must peak at the center pixel."""
+    psf = psf_cls(grid=grid, band=band, **kwargs)
+    k = psf.forward()
     c = grid.n // 2
     assert k[c, c].item() == k.max().item()
 
 
-def test_gauss_to_dataarray(gauss_psf, grid, band):
-    """GaussPSF.to_dataarray must return a valid annotated DataArray."""
-    da = gauss_psf.to_dataarray()
+@_ANALYTICAL_PSF_CASES
+def test_analytical_psf_to_dataarray(psf_cls, kwargs, model_name, param_keys, grid, band):
+    """to_dataarray must return a valid annotated DataArray with the correct model name."""
+    psf = psf_cls(grid=grid, band=band, **kwargs)
+    da = psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == "Gaussian"
+    assert da.attrs["adjeff:model"] == model_name
 
 
-def test_gauss_param_dict(gauss_psf):
-    """GaussPSF.param_dict must return a dict with key 'sigma'."""
-    p = gauss_psf.param_dict()
-    assert set(p.keys()) == {"sigma"}
-    assert isinstance(p["sigma"], float)
-
-
-# ---------------------------------------------------------------------------
-# GeneralizedGaussianPSF
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def gauss_general_psf(grid, band) -> GeneralizedGaussianPSF:
-    return GeneralizedGaussianPSF(grid=grid, band=band, sigma=1.0, n=0.3)
-
-
-def test_gauss_general_forward_shape(gauss_general_psf, grid):
-    """GeneralizedGaussianPSF.forward must return a valid normalised kernel."""
-    _assert_kernel_valid(gauss_general_psf.forward(), grid.n)
-
-
-def test_gauss_general_forward_peak_at_center(gauss_general_psf, grid):
-    """Generalised Gaussian kernel must peak at the center pixel."""
-    k = gauss_general_psf.forward()
-    c = grid.n // 2
-    assert k[c, c].item() == k.max().item()
-
-
-def test_gauss_general_to_dataarray(gauss_general_psf, grid, band):
-    """GeneralizedGaussianPSF.to_dataarray must return a valid annotated DataArray."""
-    da = gauss_general_psf.to_dataarray()
-    _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == "GeneralizedGaussian"
-
-
-def test_gauss_general_param_dict(gauss_general_psf):
-    """GeneralizedGaussianPSF.param_dict must return keys 'sigma' and 'n'."""
-    p = gauss_general_psf.param_dict()
-    assert set(p.keys()) == {"sigma", "n"}
+@_ANALYTICAL_PSF_CASES
+def test_analytical_psf_param_dict(psf_cls, kwargs, model_name, param_keys, grid, band):
+    """param_dict must return float values keyed by the expected parameter names."""
+    psf = psf_cls(grid=grid, band=band, **kwargs)
+    p = psf.param_dict()
+    assert set(p.keys()) == param_keys
     assert all(isinstance(v, float) for v in p.values())
 
 
 # ---------------------------------------------------------------------------
-# VoigtPSF
+# VoigtPSF specific
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def voigt_psf(grid, band) -> VoigtPSF:
-    return VoigtPSF(grid=grid, band=band, sigma=1.0, gamma=1.0)
-
-
-def test_voigt_forward_shape(voigt_psf, grid):
-    """VoigtPSF.forward must return a valid normalised kernel."""
-    _assert_kernel_valid(voigt_psf.forward(), grid.n)
-
-
-def test_voigt_forward_peak_at_center(voigt_psf, grid):
-    """Voigt kernel must peak at the center pixel."""
-    k = voigt_psf.forward()
-    c = grid.n // 2
-    assert k[c, c].item() == k.max().item()
-
-
-def test_voigt_to_dataarray(voigt_psf, grid, band):
-    """VoigtPSF.to_dataarray must return a valid annotated DataArray."""
-    da = voigt_psf.to_dataarray()
-    _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == "Voigt"
-
-
-def test_voigt_param_dict(voigt_psf):
-    """VoigtPSF.param_dict must return keys 'sigma' and 'gamma'."""
-    p = voigt_psf.param_dict()
-    assert set(p.keys()) == {"sigma", "gamma"}
-    assert all(isinstance(v, float) for v in p.values())
-
-
-def test_voigt_eta_range(voigt_psf):
-    """_eta must be in [0, 1]."""
-    eta = voigt_psf._eta().item()
-    assert 0.0 <= eta <= 1.0
-
-
-# ---------------------------------------------------------------------------
-# KingPSF
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def king_psf(grid, band) -> KingPSF:
-    return KingPSF(grid=grid, band=band, sigma=1.0, gamma=2.0)
-
-
-def test_king_forward_shape(king_psf, grid):
-    """KingPSF.forward must return a valid normalised kernel."""
-    _assert_kernel_valid(king_psf.forward(), grid.n)
-
-
-def test_king_forward_peak_at_center(king_psf, grid):
-    """King kernel must peak at the center pixel."""
-    k = king_psf.forward()
-    c = grid.n // 2
-    assert k[c, c].item() == k.max().item()
-
-
-def test_king_to_dataarray(king_psf, grid, band):
-    """KingPSF.to_dataarray must return a valid annotated DataArray."""
-    da = king_psf.to_dataarray()
-    _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == "King"
-
-
-def test_king_param_dict(king_psf):
-    """KingPSF.param_dict must return keys 'sigma' and 'gamma'."""
-    p = king_psf.param_dict()
-    assert set(p.keys()) == {"sigma", "gamma"}
-    assert all(isinstance(v, float) for v in p.values())
-
-
-# ---------------------------------------------------------------------------
-# MoffatGeneralizedPSF
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def moffat_psf(grid, band) -> MoffatGeneralizedPSF:
-    return MoffatGeneralizedPSF(grid=grid, band=band, alpha=1.0, beta=1.0, gamma=1.0,)
-
-
-def test_moffat_forward_shape(moffat_psf, grid):
-    """MoffatGeneralizedPSF.forward must return a valid normalised kernel."""
-    _assert_kernel_valid(moffat_psf.forward(), grid.n)
-
-
-def test_moffat_forward_peak_at_center(moffat_psf, grid):
-    """Moffat kernel must peak at the center pixel."""
-    k = moffat_psf.forward()
-    c = grid.n // 2
-    assert k[c, c].item() == k.max().item()
-
-
-def test_moffat_to_dataarray(moffat_psf, grid, band):
-    """MoffatGeneralizedPSF.to_dataarray must return a valid annotated DataArray."""
-    da = moffat_psf.to_dataarray()
-    _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == "MoffatGeneralized"
-
-
-def test_moffat_param_dict(moffat_psf):
-    """MoffatGeneralizedPSF.param_dict must return keys 'alpha', 'beta', 'gamma'."""
-    p = moffat_psf.param_dict()
-    assert set(p.keys()) == {"alpha", "beta", "gamma"}
-    assert all(isinstance(v, float) for v in p.values())
+def test_voigt_eta_range(grid, band):
+    """_eta must return a value in [0, 1]."""
+    psf = VoigtPSF(grid=grid, band=band, sigma=1.0, gamma=1.0)
+    assert 0.0 <= psf._eta().item() <= 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -354,8 +248,7 @@ def test_non_analytical_custom_source(grid, band, flat_kernel):
 
 def test_non_analytical_no_grad(non_analytical_psf):
     """NonAnalyticalPSF kernel must not require gradients."""
-    k = non_analytical_psf.forward()
-    assert not k.requires_grad
+    assert not non_analytical_psf.forward().requires_grad
 
 
 def test_non_analytical_param_dict_empty(non_analytical_psf):

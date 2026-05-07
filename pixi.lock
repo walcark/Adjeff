@@ -3954,7 +3954,7 @@ packages:
 - pypi: ./
   name: adjeff
   version: 0.5.1
-  sha256: c3d7c7ded340613f8d8faafa11f02165b7b1d52cd4577a7acd9ac72032bcfff0
+  sha256: b076756ebc57de768519731db413d472e15406a4d7d8a14339411b21f2ab7148
   requires_dist:
   - pydantic>=2.12.5
   - xarray>=2026.1.0
