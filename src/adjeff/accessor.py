@@ -27,9 +27,23 @@ from .utils.radial import (
 
 @xr.register_dataarray_accessor("adjeff")  # type: ignore[no-untyped-call]
 class AdjeffDataArrayAccessor:
-    """Accessor providing adjeff-specific utilities on ``xr.DataArray``.
+    """Adjeff-specific utilities on :class:`xr.DataArray`.
 
     Available on every DataArray via ``da.adjeff.<method>()``.
+
+    **Metadata** — read adjeff attributes stored on the DataArray:
+    :meth:`kind`, :meth:`is_analytical`, :meth:`model`,
+    :meth:`params`, :meth:`band`.
+
+    **Spatial** — pixel size and count inferred from coordinates:
+    :attr:`res`, :attr:`n`.
+
+    **Radial analysis** — convert a 2-D image to a radial profile or
+    reconstruct a field from a profile:
+    :meth:`radial`, :meth:`transect`, :meth:`to_field`.
+
+    **Tensor / quantisation** — convert to PyTorch or discretise:
+    :meth:`to_tensor`, :attr:`dists`, :meth:`digitize`.
     """
 
     def __init__(self, da: xr.DataArray) -> None:
@@ -324,20 +338,22 @@ class AdjeffDataArrayAccessor:
         return torch.from_numpy(rr_np.reshape(shape))
 
     def digitize(self, n_bins: int) -> xr.DataArray:
-        """Return values binned in ``n_bins`` values.
+        """Quantise the field into *n_bins* discrete levels.
 
-        The values range from the minimum to the maximum of the field. The
-        new values are produced with np.linspace.
+        Levels are evenly spaced from the field minimum to the field
+        maximum.  Each pixel is mapped to the nearest level, producing
+        a DataArray with at most *n_bins* distinct values.
 
         Parameters
         ----------
         n_bins : int
-            Number of different values in the output DataArray.
+            Number of discrete output levels.
 
         Returns
         -------
         xr.DataArray
-            The binned DataArray.
+            Quantised DataArray with the same shape, dims, coords, and
+            attrs as the original.
         """
         data = np.asarray(self._da.data)
 
