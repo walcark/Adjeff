@@ -1,4 +1,4 @@
-"""Methods to generation instances of ImageDict."""
+"""Functions to generate instances of ImageDict."""
 
 import numpy as np
 import structlog
@@ -134,10 +134,7 @@ def gaussian_image_dict(
     -------
     ImageDict
         Dictionary mapping each band to its corresponding Dataset.
-
-    Notes
-    -----
-    The Gaussian is centered at (0, 0) and radially symmetric.
+        The Gaussian is centered at (0, 0) and radially symmetric.
 
     """
     logger.debug("Creating Gaussian ImageDict.", bands=bands)
@@ -237,10 +234,7 @@ def disk_image_dict(
     -------
     ImageDict
         Dictionary mapping each band to its corresponding Dataset.
-
-    Notes
-    -----
-    The disk is centered at (0, 0) and has a sharp boundary.
+        The disk is centered at (0, 0) and has a sharp boundary.
 
     """
     logger.debug("Creating Disk ImageDict.", bands=bands)
@@ -318,7 +312,7 @@ def extend_analytical(da: xr.DataArray, n_ext: int) -> xr.DataArray:
     res = float(da.coords["x"][1] - da.coords["x"][0])
     coords = square_grid(n_ext, res)
 
-    if model == "gaussian":
+    if model == "gauss":
         data = _gaussian_data(
             coords, params["sigma"], params["rho_min"], params["rho_max"]
         )
@@ -368,6 +362,12 @@ def random_image_dict(
     n : int | dict[SensorBand, int] | None
         Number of pixels along one dimension. Scalar or per-band mapping.
         Mutually exclusive with ``extent_km``.
+
+    Returns
+    -------
+    ImageDict
+        Dictionary mapping each band to its corresponding Dataset,
+        filled with uniform random float32 values in ``[0, 1)``.
 
     """
     _res_km = (

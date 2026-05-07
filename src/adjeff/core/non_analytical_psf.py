@@ -28,11 +28,11 @@ class NonAnalyticalPSF(PSFModule):
         Spatial sampling configuration.
     band : SensorBand
         Band identifier this PSF applies to.
-    kernel :
-        2-D array of shape ``(n, n)``.  Will be normalised
-        to sum to 1.  Accepts ``np.ndarray`` or ``torch.Tensor``.
-    source:
-        Optional provenance tag stored in ``adjeff:source`` attribute.
+    kernel : np.ndarray or torch.Tensor
+        2-D array of shape ``(n, n)``.  Will be normalised to sum to 1.
+    source : str, optional
+        Provenance tag stored in the ``adjeff:source`` DataArray attribute,
+        by default ``"SmartG"``.
     """
 
     _model_name: ClassVar[str] = "NonAnalytical"
@@ -70,7 +70,7 @@ class NonAnalyticalPSF(PSFModule):
 
     @torch.no_grad()
     def to_dataarray(self) -> xr.DataArray:
-        """Return the PSF DataArray with adapted attrs."""
+        """Return the PSF DataArray with non-analytical attributes."""
         kernel = self._kernel.cpu().numpy()
         return xr.DataArray(
             kernel,

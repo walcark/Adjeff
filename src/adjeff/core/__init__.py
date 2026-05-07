@@ -1,4 +1,30 @@
-"""Define main objects used in the Adjeff library."""
+"""Core data structures, sensor bands, and PSF models for adjeff.
+
+**Image representation**
+
+- :class:`ImageDict` — multi-band scene container
+  (``dict[SensorBand → xr.Dataset]``).
+
+**Sensor bands**
+
+- :class:`SensorBand` — abstract base for band enumerations.
+- :class:`S2Band` — Sentinel-2 spectral bands.
+
+**PSF models**
+
+Analytical (trainable) PSFs inherit from :class:`PSFGrid`:
+:class:`GaussPSF`, :class:`VoigtPSF`, :class:`KingPSF`,
+:class:`MoffatGeneralizedPSF`, :class:`GeneralizedGaussianPSF`.
+
+Fixed-kernel (non-trainable): :class:`NonAnalyticalPSF`.
+
+Multi-band PSF container: :class:`PSFDict`, :func:`init_psf_dict`.
+
+**Image generation**
+
+:func:`gaussian_image_dict`, :func:`disk_image_dict`,
+:func:`random_image_dict`, :func:`extend_analytical`.
+"""
 
 from ._psf import PSFGrid
 from .analytical_psf import (
@@ -20,20 +46,24 @@ from .non_analytical_psf import NonAnalyticalPSF
 from .psf_dict import PSFDict, init_psf_dict
 
 __all__ = [
+    # Image representation
+    "ImageDict",
+    # Sensor bands
+    "SensorBand",
+    "S2Band",
+    # PSF models
     "PSFGrid",
-    "GeneralizedGaussianPSF",
     "GaussPSF",
+    "VoigtPSF",
     "KingPSF",
     "MoffatGeneralizedPSF",
-    "VoigtPSF",
-    "S2Band",
-    "SensorBand",
-    "ImageDict",
-    "disk_image_dict",
-    "extend_analytical",
-    "gaussian_image_dict",
-    "random_image_dict",
+    "GeneralizedGaussianPSF",
     "NonAnalyticalPSF",
     "PSFDict",
     "init_psf_dict",
+    # Image generation
+    "disk_image_dict",
+    "gaussian_image_dict",
+    "random_image_dict",
+    "extend_analytical",
 ]

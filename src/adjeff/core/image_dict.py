@@ -18,12 +18,12 @@ logger = structlog.get_logger(__name__)
 
 
 class ImageDict:
-    """Wrapper around dict[str, xr.Dataset], one dataset per band.
+    """Wrapper around ``dict[SensorBand, xr.Dataset]``, one dataset per band.
 
-    This wrapper allows to store multiple bands that have multiple resolutions.
-    The Datasets are progressively enriche by SceneModules. The Datasets may
-    carry extra parameter dimensions (aot, wl, etc.) for atmospheric config
-    with multiple values.
+    This wrapper allows storing multiple bands at different resolutions.
+    Datasets are progressively enriched by :class:`~adjeff.modules.SceneModule`
+    instances as they pass through a pipeline. They may carry extra parameter
+    dimensions (e.g. ``aot``, ``wl``) for multi-valued atmospheric configs.
     """
 
     def __init__(self, band_datasets: dict[SensorBand, xr.Dataset]) -> None:
@@ -114,7 +114,13 @@ class ImageDict:
         return all(var in ds.data_vars for ds in self._data.values())
 
     def require_vars(self, vars: list[str]) -> None:
-        """Raise an exception if any var is absent from any band Dataset."""
+        """Raise an exception if any var is absent from any band Dataset.
+
+        Raises
+        ------
+        MissingVariableError
+            If *var* is missing from at least one band Dataset.
+        """
         for var in vars:
             missing_bands = [
                 bid
@@ -138,7 +144,7 @@ class ImageDict:
         )
 
     def __getitem__(self, band: SensorBand) -> xr.Dataset:
-        """Return a wavelength band."""
+        """Return the Dataset for *band*."""
         return self._data[band]
 
     def __setitem__(self, band: SensorBand, ds: xr.Dataset) -> None:

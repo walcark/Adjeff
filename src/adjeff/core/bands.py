@@ -24,9 +24,9 @@ class SensorBand(Enum):
 
 
 class S2Band(SensorBand):
-    """Define the bands for Sentinel-2.
+    """Sentinel-2 spectral bands.
 
-    Wavelengths are stored in nm, and resolutions in km.
+    Wavelengths (``wl_nm``) are in nanometres.
     """
 
     B01 = ("B01", 443.0)

@@ -1,4 +1,4 @@
-"""Data wrapper for multiple PSF models on multiple bands."""
+"""PSF container and factory for multi-band PSF management."""
 
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ class PSFDict:
         return self._data[band]["kernel"]
 
     def kernel(self, band: SensorBand) -> xr.DataArray:
-        """Alias for to_dataarray()."""
+        """Alias for :meth:`to_dataarray`."""
         return self.to_dataarray(band)
 
     # ------------------------------------------------------------------
