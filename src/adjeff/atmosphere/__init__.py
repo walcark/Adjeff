@@ -1,10 +1,21 @@
-"""Define all classes and operations related to the Atmosphere.
+"""Atmospheric configuration and Smart-G atmosphere factory for adjeff.
 
-The atmosphere in the ``adjeff`` context is composed of :
-- aerosols and molecules — :class:`AtmoConfig`
-- a sun / sensor geometry — :class:`GeoConfig`
-- light with spectral bands — :class:`SpectralConfig`
-- the earth surface, an object instantiated through :class:`SurfaceFactory`
+**Configuration models**
+
+- :class:`AtmoConfig` — aerosol and molecular parameters (AOT, RH, species).
+- :class:`GeoConfig` — sun/sensor geometry (SZA, VZA, SAA, VAA).
+- :class:`SpectralConfig` — spectral bands and wavelengths.
+
+**Surface**
+
+- :class:`SurfaceFactory` — builds Smart-G ``LambSurface`` and
+  ``Environment`` objects from an adjeff scene.
+
+**Factory**
+
+- :func:`create_atmosphere` — assembles a multi-profile Smart-G
+  atmosphere from :class:`AtmoConfig`, :class:`GeoConfig` and
+  :class:`SpectralConfig` parameters.
 """
 
 from .atmo_config import AtmoConfig
