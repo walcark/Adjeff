@@ -40,7 +40,15 @@ class GeoConfig(_Config):
 
     @property
     def sun_le(self) -> dict[str, Any]:
-        """Return the Sun local-estimate."""
+        """Return the Sun local-estimate dict for Smart-G.
+
+        Returns
+        -------
+        dict[str, Any]
+            Mapping with keys ``"th_deg"`` (zenith), ``"phi_deg"``
+            (azimuth) and ``"zip"`` flag, ready to be unpacked into a
+            Smart-G local-estimate call.
+        """
         return {
             "th_deg": self.sza.data,
             "phi_deg": self.saa.data,
@@ -49,7 +57,15 @@ class GeoConfig(_Config):
 
     @property
     def sat_le(self) -> dict[str, Any]:
-        """Return the Satellite local-estimate."""
+        """Return the Satellite local-estimate dict for Smart-G.
+
+        Returns
+        -------
+        dict[str, Any]
+            Mapping with keys ``"th_deg"`` (zenith), ``"phi_deg"``
+            (azimuth) and ``"zip"`` flag, ready to be unpacked into a
+            Smart-G local-estimate call.
+        """
         return {
             "th_deg": self.vza.data,
             "phi_deg": self.saa.data,

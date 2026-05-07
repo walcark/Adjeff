@@ -2,7 +2,7 @@
 
 Ground images in adjeff are either arbitrary (real image, complex scene)
 or analytical (gaussian, disk) shapes. The following methods instantiate
-both the Smart-G `Environment` and `Surface` from this knowledge.
+both the Smart-G ``Environment`` and ``Surface`` from this knowledge.
 """
 
 from __future__ import annotations
@@ -148,7 +148,28 @@ class SurfaceFactory:
 def analytical_environment(
     model: str, params: dict[str, float]
 ) -> Environment:
-    """Return the Environment for an analytical surface."""
+    """Return the Smart-G Environment for an analytical surface.
+
+    Parameters
+    ----------
+    model : str
+        Surface model identifier — ``"gauss"`` or ``"disk"``.
+    params : dict[str, float]
+        Shape parameters as returned by the adjeff accessor (e.g.
+        ``"sigma"``, ``"rho_min"`` for a Gaussian; ``"radius"``,
+        ``"rho_min"`` for a disk).
+
+    Returns
+    -------
+    Environment
+        Configured Smart-G ``Environment`` object (``ENV=2`` for Gaussian,
+        ``ENV=1`` for disk).
+
+    Raises
+    ------
+    NotImplementedError
+        If *model* is not ``"gauss"`` or ``"disk"``.
+    """
     from smartg.smartg import Environment
 
     if model == "gauss":

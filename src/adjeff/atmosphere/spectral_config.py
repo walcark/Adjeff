@@ -16,16 +16,17 @@ from adjeff.utils import _Config, to_arr
 class SpectralConfig(_Config):
     """Pydantic model for spectral parameters.
 
-    Only contains wavelength and sensor bands. Can either be instanciated
+    Only contains wavelength and sensor bands. Can either be instantiated
     through wavelengths specification (and sensor type) or directly from
-    SensorBand specification (classmethod ``from_bands()``).
+    a :class:`~adjeff.core.bands.SensorBand` list via :meth:`from_bands`.
 
     Parameters
     ----------
     wl : xr.DataArray
         Central wavelengths [nm], dim ``"wl"``.
-    bands : list[SensorBand]
-        Source bands, kept for inverse mapping via :meth:`find_band`.
+    band_type : type[SensorBand]
+        The :class:`~adjeff.core.bands.SensorBand` subclass used to resolve
+        each wavelength to its nearest named band.
     """
 
     wl: Annotated[xr.DataArray, Before(to_arr("wl", ge=0.0))]
