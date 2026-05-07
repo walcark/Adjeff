@@ -1,9 +1,8 @@
-"""Implement FFT convolution with PyTorch GPU Optimization.
+"""FFT-based 2D convolution with PyTorch GPU acceleration.
 
-The main method `fft_convolve_2D_torch` operates on torch.Tensor objects.
-The wrapper `fft_convolve_2D` operates on xr.DataArray objects and handles
-arbitrary extra dimensions via ``xr.apply_ufunc``.
-
+:func:`fft_convolve_2D_torch` operates on :class:`torch.Tensor` objects.
+:func:`fft_convolve_2D` wraps it for :class:`xr.DataArray` inputs,
+broadcasting over arbitrary extra dimensions via ``xr.apply_ufunc``.
 """
 
 from typing import Literal, cast
@@ -24,10 +23,11 @@ def fft_convolve_2D(
 ) -> xr.DataArray:
     """Perform a 2D convolution on xarray DataArrays using PyTorch FFT.
 
-    This is a wrapper around `fft_convolve_2D_torch` that handles arbitrarily
-    many extra dimensions in ``in1`` (e.g. ``aot``, ``wl``) by sweeping over
-    them via ``xr.apply_ufunc`` and reconstructing the output with the same
-    shape and coordinates. The following naming conventions are required:
+    Wrapper around :func:`fft_convolve_2D_torch` that handles arbitrarily
+    many extra dimensions in ``in1`` (e.g. ``aot``, ``wl``) by sweeping
+    over them via ``xr.apply_ufunc`` and reconstructing the output with
+    the same shape and coordinates. The following naming conventions are
+    required:
 
     - Spatial dimensions of ``in1`` must be named ``"y"`` and ``"x"``.
     - Spatial dimensions of ``in2`` (the kernel) must be named ``"y_psf"``
@@ -131,7 +131,7 @@ def fft_convolve_2D_torch(
     Returns
     -------
     torch.Tensor
-        The convolved 2D tensor, with shape determined by `mode_out`.
+        The convolved 2D tensor, with shape determined by ``conv_type``.
 
     """
     n = in1.shape[0]  # input size

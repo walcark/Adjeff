@@ -1,9 +1,4 @@
-"""Define a custom logger for Adjeff and the associated configuration class.
-
-The logger can :
-- Filter redondant messages,
-
-"""
+"""Custom structlog renderer for adjeff console output."""
 
 from typing import Any
 

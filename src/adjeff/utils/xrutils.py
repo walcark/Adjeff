@@ -1,13 +1,10 @@
-"""Operate transformation of xr.Dataset and xr.DataArray objects.
+"""xarray utilities for adjeff internal use.
 
-Contains:
----------
-
-- ParamBatch: used to handle iteration on DataArrays values and restore
-  back dimensions after calculations.
-
-- grid / square_grid: instantiate square or rectangle (x, y) grid for 2D
-  image coordinates.
+- :class:`ParamBatch` — broadcasts and flattens atmospheric parameter
+  DataArrays for a Smart-G batch call, then restores the original
+  dimensional structure after the simulation.
+- :func:`square_grid`, :func:`grid` — build centered ``(x, y)``
+  coordinate objects for 2D scene grids.
 """
 
 from __future__ import annotations
@@ -21,13 +18,13 @@ import xarray as xr
 
 @dataclass
 class ParamBatch:
-    """Flattened atmospheric parameters ready for a SmartG batch call.
+    """Flattened atmospheric parameters ready for a Smart-G batch call.
 
-    Produced by :func:`atmo_flatten`.  Exposes the flat parameter dict for
-    :func:`~adjeff.atmosphere.create_atmosphere` and a :meth:`unstack`
-    method that reconstructs the full dimensional structure from SmartG
-    output — including handling the deduplication ``_index_tmp`` rename
-    transparently.
+    Built by :meth:`from_dataarrays`.  Exposes the flat parameter dict
+    for :func:`~adjeff.atmosphere.create_atmosphere` and an
+    :meth:`unstack` method that reconstructs the full dimensional
+    structure from Smart-G output — including transparent handling of the
+    ``"index"`` rename introduced by deduplication.
     """
 
     _DEDUP_TMP: ClassVar[str] = "_index_tmp"
@@ -123,47 +120,39 @@ class ParamBatch:
 
 
 def square_grid(n: int, res: float) -> xr.Coordinates:
-    """Create the coordinates for a 2D square grid.
-
-    The grid is assumed to have the same number of pixel for each dimensions
-    and is centered on (0, 0).
+    """Create centered ``(x, y)`` coordinates for a square grid.
 
     Parameters
     ----------
     n : int
         Number of pixels per dimension.
     res : float
-        Grid resolution
+        Pixel size in coordinate units (km for adjeff scenes).
 
     Returns
     -------
     xr.Coordinates
-        The xarray coordinates associated to the grid.
-
+        Centered ``x`` and ``y`` coordinate arrays.
     """
     return grid(nx=n, ny=n, res=res)
 
 
 def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
-    """Create the coordinates for a 2D rectangular grid.
-
-    The grid can have a different number of pixels on each dimensions and is
-    centered on (0, 0).
+    """Create centered ``(x, y)`` coordinates for a rectangular grid.
 
     Parameters
     ----------
     nx : int
-        Number of pixels on the `x` dimension.
+        Number of pixels on the ``x`` dimension.
     ny : int
-        Number of pixels on the `y` dimension.
+        Number of pixels on the ``y`` dimension.
     res : float
-        Grid resolution
+        Pixel size in coordinate units (km for adjeff scenes).
 
     Returns
     -------
     xr.Coordinates
-        The xarray coordinates associated to the grid.
-
+        Centered ``x`` and ``y`` coordinate arrays.
     """
     halfx = nx * res * 0.5
     halfy = ny * res * 0.5

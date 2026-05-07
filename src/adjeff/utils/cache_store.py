@@ -16,20 +16,14 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-# TODO: if might be interesting to enable cache to return the bands
-# TODO: where all variables were found, and adapte _compute in Module
-# TOOD: to work only on those bands.
-
-
 class CacheStore:
     """Zarr-backed content-hash cache for a SceneModule output.
 
-    Cache entries are stored as Zarr stored. The key is produced by hashing
-    the module configuration + the input provenance.
+    Cache entries are stored as Zarr stores keyed by a content hash of
+    the module configuration and the input provenance.
 
-    The writing is first performed in a temporary file, then moved to the
-    actual cache location. This allows to avoid file corruption when writing
-    to disk.
+    Writes are atomic: data is written to a temporary directory then
+    renamed to the final path to prevent partial-write corruption.
 
     Parameters
     ----------
@@ -59,11 +53,11 @@ class CacheStore:
     ) -> None:
         """Save *variables* DataArrays for each band to Zarr under *key*.
 
-        This method only saves *variables*, and thus allows to solely save the
-        data produced by the module.
+        Only *variables* are saved, allowing the caller to persist only
+        the data produced by the module.
 
-        Write are atomics: data is writen to a temporary directory then renamed
-        to the final path to prevent partial-write computation.
+        Writes are atomic: data is written to a temporary directory then
+        renamed to the final path to prevent partial-write corruption.
 
         Parameters
         ----------
@@ -174,7 +168,7 @@ class CacheStore:
         Parameters
         ----------
         module_name:
-            Class name of the SceneModule (e.g. ``"SmartGSimulation"``).
+            Class name of the SceneModule (e.g. ``"RhoAtmSampler"``).
         """
         if self._cache_dir is None:
             return

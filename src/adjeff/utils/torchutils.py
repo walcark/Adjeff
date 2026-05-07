@@ -1,4 +1,4 @@
-"""Define useful classes and methods for PyTorch usage."""
+"""PyTorch utilities: constrained parameters, transforms, radial helpers."""
 
 import torch
 import torch.nn as nn
@@ -203,7 +203,26 @@ def radial_weights(dists: torch.Tensor) -> torch.Tensor:
 def radial_mask(
     tensor: torch.Tensor, rr: torch.Tensor, threshold: float
 ) -> torch.Tensor:
-    """Compute a radial mask for all values under threshold."""
+    """Return a boolean mask retaining pixels within a radial CDF threshold.
+
+    Pixels are sorted by increasing distance from the centre.  The cumulative
+    sum of ``|tensor|`` is computed radially; the mask keeps all pixels whose
+    cumulative contribution is below *threshold* of the total energy.
+
+    Parameters
+    ----------
+    tensor : torch.Tensor
+        2D (or flat) field whose energy distribution drives the mask.
+    rr : torch.Tensor
+        Per-pixel radial distances, same shape as *tensor*.
+    threshold : float
+        CDF fraction to retain (e.g. ``0.99`` keeps 99 % of the energy).
+
+    Returns
+    -------
+    torch.Tensor
+        Boolean tensor, same shape as *tensor*.
+    """
     with torch.no_grad():
         values: torch.Tensor = tensor.flatten()
         rr_cp: torch.Tensor = rr.to(values.device).flatten()

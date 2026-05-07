@@ -1,4 +1,4 @@
-"""Utilitary methods to handle Smart-G related data."""
+"""Utility helpers for Smart-G input construction and output normalisation."""
 
 from typing import TYPE_CHECKING
 
@@ -48,16 +48,23 @@ def make_sensors(
 
 
 def compute_optical_depth(atm: MLUT) -> xr.DataArray:
-    """Read the optical depth from the output LUT of a Smartg.run() result.
+    """Return the total atmospheric optical depth from a Smart-G atmosphere.
 
-    No number of photons needs to be specified because the simulation result
-    is not important. The optical depth is calculated by the Atmosphere object
-    and not the simulation process.
+    Optical depth is a property of the atmosphere object, not of the
+    Monte-Carlo simulation.  A minimal photon count (1000) is used so
+    the call is fast; the returned ``OD_atm`` value is exact regardless.
 
     Parameters
     ----------
     atm : MLUT
-        The Atmosphere object for which the optical depth is computed.
+        Multi-profile Smart-G atmosphere produced by
+        :func:`~adjeff.atmosphere.create_atmosphere`.
+
+    Returns
+    -------
+    xr.DataArray
+        Total optical depth at the surface level (``z_atm=0``), with
+        the ``"wavelength"`` dimension.
     """
     from smartg.smartg import Smartg
 
@@ -102,14 +109,15 @@ def adapt_smartg_output(
 
     Parameters
     ----------
-    squeeze : list[str] | none [default=None]
+    squeeze : list[str] or None, optional
         Dims to squeeze and drop if present (e.g. ``"Azimuth angles"``).
-    rename : rename[str, str] | None [default=None]
-        SmartG dim name → target name. Only applied if the source dim exists.
-    coords : dict[str, np.ndarray | xr.DataArray] | None [default=None]
+    rename : dict[str, str] or None, optional
+        Smart-G dim name → target name. Only applied if the source dim
+        exists.
+    coords : dict[str, np.ndarray or xr.DataArray] or None, optional
         Coordinates to assign after renaming.
-    expand : dict[str, np.ndarray | xr.DataArray] | None [default=None]
-        Target dim → values. Expands the dim if absent.
+    expand : dict[str, np.ndarray or xr.DataArray] or None, optional
+        Target dim → values. Expands the dim if absent from the result.
     """
     for dim in squeeze or []:
         if dim in res.dims:
