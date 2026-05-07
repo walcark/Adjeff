@@ -11,14 +11,6 @@ Configuration base
    :undoc-members:
    :show-inheritance:
 
-ConfigBundle
-------------
-
-.. automodule:: adjeff.utils.config_bundle
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Cache store
 -----------
 

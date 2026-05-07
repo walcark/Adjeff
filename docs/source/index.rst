@@ -1,37 +1,16 @@
-.. Adjeff documentation master file, created by
-   sphinx-quickstart on Thu Mar  5 10:09:46 2026.
+Adjeff
+======
 
-Adjeff documentation
-====================
-
-Adjeff is a library for modelling and correcting adjacency effects in
-remote-sensing imagery, built around a PyTorch/xarray pipeline that
-integrates Smart-G radiative transfer simulations.
-
-Top-level
----------
-
-.. automodule:: adjeff
-   :members:
-   :show-inheritance:
-
-.. automodule:: adjeff.accessor
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: adjeff.exceptions
-   :members:
-   :show-inheritance:
-   :noindex:
+Adjeff is a Python library for modelling adjacency effects in Sentinel-2
+satellite imagery. Given a surface reflectance and an atmospheric state,
+it simulates what the satellite observes — and provides tools to invert
+this process and recover surface reflectance from TOA.
 
 .. toctree::
+   :hidden:
    :maxdepth: 2
-   :caption: API Reference
 
-   core
-   atmosphere
-   modules
-   utils
-
-
+   user_guide/index
+   examples/index
+   api/index
+   development/index

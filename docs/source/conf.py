@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath("../../src"))
 project = "Adjeff"
 copyright = "2026, Walcarius Kévin"
 author = "Walcarius Kévin"
-release = "v0.1.0"
+release = "v0.6.0"
 
 # -- General configuration ---------------------------------------------------
 
@@ -21,7 +21,11 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx.ext.autosummary",
+    "nbsphinx",
 ]
+
+nbsphinx_kernel_name = "python3"
+nbsphinx_execute = "never"
 
 # Napoleon (NumPy / Google docstrings)
 napoleon_numpy_docstring = True
@@ -58,6 +62,7 @@ html_theme_options = {
     "show_toc_level": 2,
     "pygments_light_style": "default",
     "pygments_dark_style": "monokai",
+    "navbar_center": ["navbar-nav"],
     "icon_links": [
         {
             "name": "GitHub",

@@ -72,6 +72,7 @@ pytest-cov = ">=6.0"
 ruff = ">=0.11"
 pre-commit = ">=4.2"
 mypy = ">=1.5"
+nbsphinx = ">=0.9"
 
 [tool.pixi.feature.notebooks.dependencies]
 jupyterlab = ">=4.0"
@@ -93,7 +94,7 @@ lint = { cmd = "ruff check" }
 type-check = { cmd = "mypy src/adjeff --strict" }
 test = { cmd = "pytest tests/ --cov" }
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
-install-sphinx = { cmd = "python -m pip install --upgrade sphinx pydata-sphinx-theme" }
+install-sphinx = { cmd = "python -m pip install --upgrade sphinx pydata-sphinx-theme nbsphinx nbsphinx-link" }
 build-doc = { cmd = "sphinx-build -b html source build/html", cwd = "docs" }
 
 [tool.pixi.feature.builder.tasks]
