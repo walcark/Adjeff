@@ -1,4 +1,4 @@
-"""Base class to load configuration from earth observation products."""
+"""Base classes and mixins for EO product loaders."""
 
 from __future__ import annotations
 
@@ -205,10 +205,21 @@ class ProductLoader(SceneSource, ABC):
         return scene
 
     def ensure_correct_folder(self, path: Path) -> None:
-        """Check that a product folder is well formatted."""
+        """Validate the product folder structure.
+
+        Hook called by ``__init__`` before any file access.  Override
+        in subclasses to raise :exc:`ValueError` if *path* does not
+        match the expected layout.  Default implementation is a no-op.
+        """
 
     def extract_metadata(self) -> None:
-        """Extract metadata from the folder."""
+        """Parse product metadata into ``self.mtd``.
+
+        Hook called by ``__init__`` after folder validation.  Override
+        in subclasses to populate metadata needed by other methods
+        (e.g. sensor type, acquisition date, tile ID).  Default
+        implementation is a no-op.
+        """
 
     @abstractmethod
     def reflectance(self, band: SensorBand) -> xr.DataArray:

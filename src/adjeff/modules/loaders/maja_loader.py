@@ -1,4 +1,4 @@
-"""Class to load Maja metadata and attributes."""
+"""MajaLoader: load MAJA L2A processor output products for Sentinel-2."""
 
 import re
 import xml.etree.ElementTree as ET
