@@ -19,3 +19,7 @@ class ConfigurationError(AdjeffError):
 
 class ImageIOError(AdjeffError):
     """Satellite image or product file read failure."""
+
+
+class OptimizationWarning(UserWarning):
+    """PSF optimisation did not converge or terminated early."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import cast
 
@@ -10,6 +11,7 @@ import torch
 import torch.nn as nn
 
 from adjeff.core.bands import SensorBand
+from adjeff.exceptions import OptimizationWarning
 from adjeff.modules.scene_module import TrainableSceneModule
 
 from ._combo_stage import (
@@ -103,7 +105,9 @@ class LBFGSStage(_ComboStage):
                 # PyTorch strong-Wolfe line search can raise IndexError when
                 # the bracket collapses on a numerically flat loss surface.
                 # Treat as convergence and exit cleanly.
-                logger.info("L-BFGS line search degenerated — stopping early")
+                msg = "L-BFGS line search degenerated — stopping early."
+                logger.info(msg)
+                warnings.warn(msg, OptimizationWarning, stacklevel=2)
                 break
             loss = float(loss_tensor.item())
             params = save_all_params(model)

@@ -22,6 +22,7 @@ from .exceptions import (
     ConfigurationError,
     ImageIOError,
     MissingVariableError,
+    OptimizationWarning,
 )
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "AdjeffError",
     "ConfigurationError",
     "ImageIOError",
+    "OptimizationWarning",
     "FullConfig",
     "MissingVariableError",
     "config_from_scene",
