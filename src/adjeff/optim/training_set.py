@@ -13,18 +13,18 @@ from adjeff.core import ImageDict, SensorBand
 
 @dataclass(frozen=True)
 class TrainingSample:
-    """Store input, target and distance Tensors for a single comparison.
+    """One ``(inputs, target, dist, weight)`` item from a :class:`TrainingSet`.
 
     Parameters
     ----------
-    inputs : list[dict[str, torch.Tensor]]
-        Input tensors for a training image.
+    inputs : dict[str, torch.Tensor]
+        Input tensors keyed by variable name (e.g. ``"rho_unif"``).
     target : torch.Tensor
-        Target tensor for a training image.
-    dists : torch.Tensor
-        Radial distance tensor for a training image.
+        Target tensor (e.g. ``rho_s``).
+    dist : torch.Tensor
+        Radial distance tensor, same spatial shape as *target*.
     weight : float
-        Loss weight for a training image.
+        Per-image loss weight.
     """
 
     inputs: dict[str, torch.Tensor]
@@ -80,15 +80,15 @@ class TrainingSet(Iterable["TrainingSample"]):
 
 @dataclass(frozen=True)
 class TrainingImages:
-    """Store multiple ImageDict instances for training purpose.
+    """Collection of reference scenes with per-image loss weights.
 
     Parameters
     ----------
     images : list[ImageDict]
-        List of stored ImageDicts.
+        Reference scenes used as training data.
     weights : list[float]
-        Weight associated to in ImageDict instance. This is used for
-        the weighting in the loss computation process.
+        Per-image loss weights (one per entry in *images*).  Used to
+        scale each image's contribution in :class:`Loss`.
     """
 
     images: list[ImageDict]

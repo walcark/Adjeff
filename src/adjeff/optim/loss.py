@@ -30,7 +30,7 @@ class Loss:
     def __post_init__(self) -> None:  # noqa: D105
         if self.mask_on not in (None, "rho_unif"):
             raise ValueError(
-                f"mask_on must be None or 'rho_unif'got {self.mask_on!r}"
+                f"mask_on must be None or 'rho_unif', got {self.mask_on!r}"
             )
 
     def __call__(

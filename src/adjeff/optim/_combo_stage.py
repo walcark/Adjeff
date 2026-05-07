@@ -106,7 +106,12 @@ class _ComboStage(abc.ABC):
         self.params_history.append(params)
 
     def improved_loss_or_under_min_steps(self, loss: float) -> bool:
-        """Return True if training should continue."""
+        """Return ``True`` if training should continue.
+
+        Always returns ``True`` when fewer than ``min_steps`` have run.
+        After that, continues only if the relative loss improvement
+        exceeds ``loss_relative_tolerance``.
+        """
         if self.nloop < self.config.min_steps:
             return True
         rel = (self.previous_loss - loss) / max(abs(self.previous_loss), 1e-9)

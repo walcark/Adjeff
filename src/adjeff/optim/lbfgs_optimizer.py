@@ -54,7 +54,12 @@ class LBFGSConfig(OptimizerConfig):
 
 
 class LBFGSStage(_ComboStage):
-    """Runs L-BFGS optimisation for a single atmospheric combo."""
+    """Single-combo optimization stage using L-BFGS.
+
+    Implements :meth:`_run_combo` with a ``torch.optim.LBFGS`` optimizer
+    and strong-Wolfe line search.  Used directly by :class:`LBFGSOptimizer`
+    and can be chained in an :class:`~adjeff.optim.OptimizerPipeline`.
+    """
 
     def __init__(self, config: LBFGSConfig) -> None:
         super().__init__(config)

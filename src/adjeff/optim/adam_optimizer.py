@@ -39,7 +39,12 @@ class AdamConfig(OptimizerConfig):
 
 
 class AdamStage(_ComboStage):
-    """Runs Adam gradient descent for a single atmospheric combo."""
+    """Single-combo optimization stage using Adam gradient descent.
+
+    Implements :meth:`_run_combo` with ``torch.optim.Adam``.  Typically
+    used as a warm-up stage before :class:`LBFGSStage` in an
+    :class:`~adjeff.optim.OptimizerPipeline`.
+    """
 
     def __init__(self, config: AdamConfig) -> None:
         super().__init__(config)
