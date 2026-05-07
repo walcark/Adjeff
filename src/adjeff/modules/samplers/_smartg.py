@@ -7,7 +7,7 @@ a DataArray.  No module state is accessed.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import geoclide as gc  # type: ignore[import-untyped]
 import numpy as np
@@ -24,6 +24,39 @@ if TYPE_CHECKING:
     from smartg.smartg import Sensor
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Internal helper
+# ---------------------------------------------------------------------------
+
+
+def _make_atmosphere(
+    wl: xr.DataArray,
+    aot: xr.DataArray,
+    rh: xr.DataArray,
+    h: xr.DataArray,
+    href: xr.DataArray,
+    species: dict[str, float],
+    afgl_type: str,
+    remove_rayleigh: bool,
+) -> tuple[Any, utils.ParamBatch, int]:
+    """Build a batched Smart-G atmosphere from atmospheric DataArrays.
+
+    Returns the MLUT atmosphere, the :class:`~adjeff.utils.ParamBatch`
+    used to build it, and the number of atmospheric profiles
+    (``atm_size``).
+    """
+    batch = utils.ParamBatch.from_dataarrays(
+        wl=wl, aot=aot, rh=rh, href=href, h=h
+    )
+    atm = atmo.create_atmosphere(
+        batch.as_dict(),
+        species=species,
+        afgl_type=afgl_type,
+        remove_rayleigh=remove_rayleigh,
+    )
+    return atm, batch, len(batch.index_coord)
 
 
 # ---------------------------------------------------------------------------
@@ -87,17 +120,9 @@ def rho_atm(
     """
     from smartg.smartg import Smartg
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
+    atm, batch, atm_size = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
     sat_sensor = utils.make_sensors(
         180.0 - vza, float(vaa.flat[0]), posz=sat_height
     )
@@ -191,16 +216,9 @@ def tdir_down(
     xr.DataArray
         Direct downward transmittance with dims ``(sza, wl, ...)``.
     """
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
+    atm, batch, _ = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
     od = utils.compute_optical_depth(atm)
     od = batch.unstack(
         xr.DataArray(
@@ -259,16 +277,9 @@ def tdir_up(
     xr.DataArray
         Direct upward transmittance with dims ``(vza, wl, ...)``.
     """
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
+    atm, batch, _ = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
     od = utils.compute_optical_depth(atm)
     od = batch.unstack(
         xr.DataArray(od, dims=["index"], coords={"index": batch.index_coord}),
@@ -331,17 +342,9 @@ def tdif_down(
     """
     from smartg.smartg import Smartg
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
+    atm, batch, atm_size = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
     sun_sensor = utils.make_sensors(
         180.0 - sza, float(saa.flat[0]), posz=sat_height
     )
@@ -428,17 +431,9 @@ def tdif_up(
     """
     from smartg.smartg import Sensor, Smartg
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
+    atm, batch, atm_size = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
     th_deg = np.atleast_1d(np.squeeze(vza.values))
     sat_le = {"th_deg": th_deg, "phi_deg": float(saa.flat[0])}
 
@@ -517,17 +512,9 @@ def sph_alb(
     """
     from smartg.smartg import Sensor, Smartg
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
+    atm, batch, atm_size = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
         wl=atm.axes["wavelength"],
@@ -618,21 +605,16 @@ def rho_toa(
     x_sample = x_full[topleft_pix[0] : topleft_pix[0] + nx]
     y_sample = y_full[topleft_pix[1] : topleft_pix[1] + ny]
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=xr.DataArray([band.wl_nm], dims=["wl"]),
-        aot=aot,
-        rh=rh,
-        href=href,
-        h=h,
+    atm, batch, atm_size = _make_atmosphere(
+        xr.DataArray([band.wl_nm], dims=["wl"]),
+        aot,
+        rh,
+        h,
+        href,
+        species,
+        afgl_type,
+        remove_rayleigh,
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
     sensors = _grid_sensors(x_sample, y_sample, vza, vaa, sat_height)
     n_sensors = nx * ny
 
@@ -803,21 +785,16 @@ def rho_toa_sym(
     profile = rho_toa_approx.adjeff.radial()
     r_vals: xr.DataArray = profile.adjeff.radial("adaptive", n=nr, max_gap=0.1)
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=xr.DataArray([band.wl_nm], dims=["wl"]),
-        aot=aot,
-        rh=rh,
-        href=href,
-        h=h,
+    atm, batch, atm_size = _make_atmosphere(
+        xr.DataArray([band.wl_nm], dims=["wl"]),
+        aot,
+        rh,
+        h,
+        href,
+        species,
+        afgl_type,
+        remove_rayleigh,
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
     sensors = _radial_sensors(r_vals.coords["r"].data, vza, vaa, sat_height)
 
     smartg = Smartg(autoinit=False)
@@ -973,21 +950,16 @@ def psf_atm(
         ),
     )
 
-    batch: utils.ParamBatch = utils.ParamBatch.from_dataarrays(
-        wl=xr.DataArray([band.wl_nm], dims=["wl"]),
-        aot=aot,
-        rh=rh,
-        href=href,
-        h=h,
+    atm, batch, atm_size = _make_atmosphere(
+        xr.DataArray([band.wl_nm], dims=["wl"]),
+        aot,
+        rh,
+        h,
+        href,
+        species,
+        afgl_type,
+        remove_rayleigh,
     )
-    atm = atmo.create_atmosphere(
-        batch.as_dict(),
-        species=species,
-        afgl_type=afgl_type,
-        remove_rayleigh=remove_rayleigh,
-    )
-
-    atm_size = len(batch.index_coord)
 
     smartg = Smartg(obj3D=True, autoinit=False)
     result = smartg.run(
