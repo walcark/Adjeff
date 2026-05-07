@@ -32,9 +32,10 @@
 11. [PSF models and PSFDict](#11-psf-models-and-psfdict)
 12. [Atmospheric correction (5S model)](#12-atmospheric-correction-5s-model)
 13. [PSF optimization](#13-psf-optimization)
-14. [xarray accessor and caching](#14-xarray-accessor-and-caching)
-15. [Installation](#15-installation)
-16. [Roadmap](#16-roadmap)
+14. [High-level API](#14-high-level-api)
+15. [xarray accessor and caching](#15-xarray-accessor-and-caching)
+16. [Installation](#16-installation)
+17. [Roadmap](#17-roadmap)
 
 ---
 
@@ -179,10 +180,10 @@ spectral = SpectralConfig.from_bands(bands)
 
 | Field | Unit | Description |
 |---|---|---|
-| `vza` | — | Viewing zenith angle [°] |
-| `vaa` | km | Viewing azimuth angle [°]  |
-| `sza` | % | Solar Zenith angle [°]|
-| `saa` | km | solar Azimuth angle [°] |
+| `vza` | ° | Viewing zenith angle |
+| `vaa` | ° | Viewing azimuth angle |
+| `sza` | ° | Solar zenith angle |
+| `saa` | ° | Solar azimuth angle |
 
 </details>
 
@@ -243,9 +244,15 @@ ImageDict(B02: [rho_s])  →  MyModule  →  ImageDict(B02: [rho_s, rho_toa])
 `SceneSource` specialises `SceneModule` for modules that produce an `ImageDict` from an external source (disk, satellite product) rather than transforming an existing one. The `required_vars` list is always empty, and calling a `SceneSource` without an input scene is valid.
 
 ```python
+from pathlib import Path
 from adjeff.modules.loaders import MajaLoader
 
-loader = MajaLoader(path="/data/MAJA_L2A/", bands=bands)
+loader = MajaLoader(
+    product_path=Path("/data/MAJA_L2A/"),
+    bands=bands,
+    res=0.12,
+    mnt_path=Path("/data/mnt/"),
+)
 
 scene = loader()        # fresh scene from product
 scene = loader(scene)   # or enrich an existing one
@@ -283,7 +290,7 @@ pipeline = Pipeline([
 scene = pipeline(scene)
 ```
 
-If a dependency is missing, a `ValueError` is raised at construction time — not at runtime.
+If a dependency is missing, a `ConfigurationError` is raised at construction time — not at runtime.
 
 ---
 
@@ -294,7 +301,7 @@ If a dependency is missing, a `ValueError` is raised at construction time — no
 - `scalar_dims` — attributes iterated one value at a time (e.g. `sza`)
 - `vector_dims` — attributes passed as a full array in a single call (e.g. `wl`)
 
-The sweep and assembly logic is handled by `ConfigBundle`, which builds the outer product of all scalar dimensions, calls the core function for each combination, and stacks the results into a single xarray output.
+The sweep and assembly logic is handled by `SweepBundle`, which builds the outer product of all scalar dimensions, calls the core function for each combination, and stacks the results into a single xarray output.
 
 <details>
 <summary>Spatial deduplication</summary>
@@ -326,7 +333,7 @@ sampler = TdirDownSampler(
     geo_config=geo,
     spectral_config=spectral,
     remove_rayleigh=False,
-    chunks={"wl": 20},
+    sweep_chunks={"wl": 20},
 )
 ```
 
@@ -393,17 +400,18 @@ All analytical models are `torch.nn.Module` subclasses with constrained trainabl
 | Class | Shape | Parameters |
 |---|---|---|
 | `GaussPSF` | Gaussian | `sigma` |
-| `GeneralizedGaussianPSF` | Anisotropic Gaussian | `sigma_x`, `sigma_y`, `theta` |
-| `VoigtPSF` | Voigt (Gauss + Lorentz) | `sigma`, `gamma` |
-| `KingPSF` | King profile | `r_c`, `alpha` |
-| `MoffatGeneralizedPSF` | Generalized Moffat | `alpha`, `beta`, `eta` |
+| `GeneralizedGaussianPSF` | Generalised Gaussian exp(-(r/σ)ⁿ) | `sigma`, `n` |
+| `VoigtPSF` | Pseudo-Voigt (Gauss + Lorentz) | `sigma`, `gamma` |
+| `KingPSF` | King profile | `sigma`, `gamma` |
+| `MoffatGeneralizedPSF` | Generalised Moffat | `alpha`, `beta`, `gamma` |
 
 ```python
-from adjeff.core import GaussPSF, GeneralizedGaussianPSF, PSFGrid
+from adjeff.core import GaussPSF, PSFGrid, S2Band
 
-psf  = GaussPSF(sigma=0.3)      # sigma in km
-grid = PSFGrid(res_km=0.01, n=101)
-kernel = psf(grid)              # xr.DataArray, dims: (y, x)
+grid   = PSFGrid(res=0.01, n=101)                         # 101×101 grid, 10 m pixels
+psf    = GaussPSF(grid=grid, band=S2Band.B02, sigma=0.3)  # sigma in km
+kernel = psf.forward()       # torch.Tensor, shape (101, 101)
+da     = psf.to_dataarray()  # xr.DataArray, dims (y_psf, x_psf)
 ```
 
 `NonAnalyticalPSF` wraps a fixed numpy kernel (non-trainable) for applying a pre-computed PSF directly.
@@ -413,13 +421,15 @@ kernel = psf(grid)              # xr.DataArray, dims: (y, x)
 `PSFDict` maps `SensorBand` → PSF kernel, in either trainable or frozen mode:
 
 ```python
-from adjeff.core import PSFDict, init_psf_dict
+from adjeff.core import GaussPSF, PSFDict, PSFGrid, S2Band, init_psf_dict
 
 # Trainable (for optimization)
-psf_dict = init_psf_dict({
-    S2Band.B02: GaussPSF(sigma=0.3),
-    S2Band.B03: GaussPSF(sigma=0.25),
-})
+bands    = [S2Band.B02, S2Band.B03]
+psf_dict = init_psf_dict(
+    grids={b: PSFGrid(res=0.01, n=101) for b in bands},
+    model=GaussPSF,
+    init_parameters={"sigma": 0.3},
+)
 
 # Frozen (export after training, or from pre-computed kernels)
 psf_dict_frozen = psf_dict.to_frozen()
@@ -469,7 +479,10 @@ The optimizer learns PSF parameters that best match a set of reference `(rho_s, 
 ```python
 from adjeff.optim import LBFGSOptimizer, LBFGSConfig, Loss, Metric, TrainingImages
 
-train_images = TrainingImages([scene_1, scene_2, scene_3])
+train_images = TrainingImages(
+    images=[scene_1, scene_2, scene_3],
+    weights=[1.0, 1.0, 1.0],
+)
 
 optimizer = LBFGSOptimizer(
     train_images=train_images,
@@ -502,7 +515,46 @@ Radial-weighted losses emphasise the wings of the PSF, which carry the adjacency
 
 ---
 
-## 14. xarray accessor and caching
+## 14. High-level API
+
+`adjeff.api` provides convenience functions that combine multiple building blocks into single calls:
+
+```python
+from adjeff.api import load_maja, load_config, fit_psf, apply_psf
+
+# 1. Load a MAJA product (species persisted in attrs)
+scene = load_maja(product_path=Path("..."), bands=bands, res=0.12, mnt_path=Path("..."))
+
+# 2. Build FullConfig from the scene (with optional spatial aggregation)
+cfg = load_config(scene, band=S2Band.B03, aggregate=True)
+
+# 3. Fit a PSF end-to-end (radiatives + training scenes + optimizer)
+psf_dict = fit_psf(
+    scene, bands=[S2Band.B03],
+    psf_type=KingPSF,
+    init_parameters={"sigma": 0.5, "gamma": 2.0},
+)
+
+# 4. Apply the frozen PSF to recover rho_s
+scene_corrected = apply_psf(scene, psf_dict, band=S2Band.B03)
+```
+
+| Function | Description |
+|---|---|
+| `load_scene(loader)` | Generic loader with species persistence |
+| `load_maja(...)` | `load_scene` pre-wired for `MajaLoader` |
+| `load_config(scene, band)` | `FullConfig` from a scene (with aggregation / digitisation) |
+| `make_full_config(bands, ...)` | `FullConfig` from raw scalars |
+| `run_forward_pipeline(scene, **cfg)` | Radiatives → rho_toa → rho_unif |
+| `fit_psf(scene, bands, psf_type, ...)` | End-to-end PSF fitting in one call |
+| `apply_psf(scene, psf_dict, band)` | Apply a frozen PSFDict to a scene |
+| `optimize_adam_lbfgs(model, ...)` | Adam warm-up + L-BFGS optimisation |
+| `sample_psf_atm(bands, ...)` | Atmospheric PSF from explicit config |
+| `sample_psf_atm_from_scene(scene, band)` | Atmospheric PSF inferred from a scene |
+
+---
+
+## 15. xarray accessor and caching
 
 ### xarray accessor
 
@@ -511,9 +563,9 @@ All `DataArray` objects produced by `adjeff` can be analysed via the `.adjeff` a
 ```python
 rho_s = scene[S2Band.B02]["rho_s"]
 
-profile = rho_s.adjeff.radial()       # azimuthal mean vs radius
-cdf     = rho_s.adjeff.radial_cdf()   # area-weighted CDF
-field   = profile.adjeff.to_field(ds) # reconstruct 2D from radial profile
+profile = rho_s.adjeff.radial()           # azimuthal mean vs radius
+cdf     = rho_s.adjeff.radial("cdf")     # area-weighted CDF
+field   = profile.adjeff.to_field(ds)    # reconstruct 2D from radial profile
 ```
 
 ### Caching
@@ -523,7 +575,7 @@ Every `SceneModule` accepts a `CacheStore` that persists results as Zarr arrays 
 ```python
 from adjeff.utils import CacheStore
 
-cache = CacheStore(path="./adjeff_cache")
+cache = CacheStore(cache_dir="./adjeff_cache")
 
 pipeline = RadiativePipeline(
     atmo_config=atmo, geo_config=geo, spectral_config=spectral,
@@ -535,7 +587,7 @@ scene = pipeline(scene)   # loaded from cache, no GPU call
 
 ---
 
-## 15. Installation
+## 16. Installation
 
 ### Prerequisites
 
@@ -609,10 +661,12 @@ pixi run -e notebooks-gpu jupyter lab notebooks/
 | `02-atmospheric-configuration` | No | `AtmoConfig`, `GeoConfig`, sweeps |
 | `03-compute-radiative-quantities` | Yes | `RadiativePipeline`, caching |
 | `04-simulate-rho-toa` | Yes | `RhoToaSymSampler` |
+| `05-compute-2d-radiative-from-maja-output` | Yes | `load_maja`, `run_radiatives_from_scene`, spatial maps |
+| `06-learn-psf` | Yes | `optimize_adam_lbfgs`, `sample_psf_atm`, PSF learning end-to-end |
 
 ---
 
-## 16. Roadmap
+## 17. Roadmap
 
 - **Output provenance** — a signing mechanism so every `DataArray` carries a record of the module and parameters that produced it; the `.adjeff` accessor would expose this lineage.
 - **Partial cache reuse** — when only a subset of bands or parameter combinations is missing from the cache, recompute only the missing entries rather than the full set.
