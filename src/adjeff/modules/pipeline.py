@@ -1,4 +1,4 @@
-"""Generic pipeline for chaining SceneModule instances."""
+"""Pipeline for chaining :class:`SceneModule` instances."""
 
 from __future__ import annotations
 
@@ -46,12 +46,19 @@ class Pipeline:
         self._validate_chain()
 
     def _validate_chain(self) -> None:
-        """Check inter-module variable dependencies.
+        """Check that inter-module variable dependencies are satisfied.
 
-        Only raises when a variable required by a module could have been
-        produced by a prior module in this pipeline but was not.  Variables
-        produced by no module in the pipeline are assumed to come from the
-        input scene.
+        For each module, verifies that any variable it requires that is
+        *declared as an output by some module in the pipeline* has
+        already been produced by a prior module.  Variables not declared
+        as outputs by any pipeline module are assumed to come from the
+        input scene and are not checked here.
+
+        Raises
+        ------
+        ValueError
+            If a required variable is declared as a pipeline output but
+            not produced before it is needed.
         """
         all_produced = {v for m in self._modules for v in m.output_vars}
         produced: set[str] = set()
@@ -113,6 +120,7 @@ class Pipeline:
         return self._call_full(scene)
 
     def _call_full(self, scene: ImageDict) -> ImageDict:
+        """Apply all modules sequentially without chunking."""
         for mod in self._modules:
             scene = mod(scene)
         return scene
