@@ -15,6 +15,7 @@ import torch
 import xarray as xr
 
 from .core.bands import SensorBand
+from .exceptions import AdjeffAccessorError
 from .utils.radial import (
     _profile_to_field,
     _sample_radial_from_cdf,
@@ -69,13 +70,13 @@ class AdjeffDataArrayAccessor:
 
         Raises
         ------
-        ValueError
+        AdjeffAccessorError
             If neither ``"x"`` nor ``"x_psf"`` is present in the coordinates.
         """
         for name in ("x", "x_psf"):
             if name in self._da.coords:
                 return name
-        raise ValueError(
+        raise AdjeffAccessorError(
             "No spatial x-coordinate found. "
             "Expected 'x' or 'x_psf' in coordinates."
         )
@@ -142,7 +143,7 @@ class AdjeffDataArrayAccessor:
 
         Raises
         ------
-        ValueError
+        AdjeffAccessorError
             If *stat* is not one of the four recognised options, or if
             ``stat="adaptive"`` is requested without providing *n*.
         """
@@ -207,7 +208,7 @@ class AdjeffDataArrayAccessor:
 
         if stat == "adaptive":
             if n is None:
-                raise ValueError(
+                raise AdjeffAccessorError(
                     "stat='adaptive' requires n=<int> (number of samples)."
                 )
             if "r" in self._da.dims:
@@ -220,7 +221,7 @@ class AdjeffDataArrayAccessor:
             )
             return xr.DataArray(values, dims=["r"], coords={"r": r_vals})
 
-        raise ValueError(
+        raise AdjeffAccessorError(
             f"Unknown stat={stat!r}. "
             "Valid options: 'mean', 'cdf', 'std', 'adaptive'."
         )
@@ -254,7 +255,7 @@ class AdjeffDataArrayAccessor:
 
         Raises
         ------
-        ValueError
+        AdjeffAccessorError
             If the DataArray is not exactly 2-D ``(y, x)``.  Call
             ``.squeeze()`` first when extra dimensions are present.
         """
@@ -264,7 +265,7 @@ class AdjeffDataArrayAccessor:
 
         da = self._da
         if da.ndim != 2:
-            raise ValueError(
+            raise AdjeffAccessorError(
                 f"transect requires a 2-D (y, x) DataArray; "
                 f"got shape {da.shape}. Call .squeeze() first."
             )

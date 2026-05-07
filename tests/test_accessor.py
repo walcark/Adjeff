@@ -3,6 +3,7 @@ import pytest
 import xarray as xr
 
 import adjeff  # noqa: F401 — registers the accessor
+from adjeff.exceptions import AdjeffAccessorError
 
 
 @pytest.fixture
@@ -212,6 +213,49 @@ def test_to_field_center_value(disk_da):
     center_x = disk_da.sizes["x"] // 2
     # Center pixel should be close to the high-reflectance disk value
     assert result.values[center_y, center_x] == pytest.approx(0.8, abs=0.05)
+
+
+# ------------------------------------------------------------------
+# AdjeffAccessorError
+# ------------------------------------------------------------------
+
+
+def test_x_coord_missing_raises():
+    """res and n raise AdjeffAccessorError when no x or x_psf coordinate."""
+    da = xr.DataArray(
+        np.ones((5, 5), dtype=np.float32),
+        dims=["y", "z"],
+        coords={"y": np.arange(5), "z": np.arange(5)},
+    )
+    with pytest.raises(AdjeffAccessorError, match="x-coordinate"):
+        _ = da.adjeff.res
+
+
+def test_radial_unknown_stat_raises(flat_da):
+    """radial() raises AdjeffAccessorError for an unknown stat."""
+    with pytest.raises(AdjeffAccessorError, match="Unknown stat"):
+        flat_da.adjeff.radial("invalid")
+
+
+def test_radial_adaptive_missing_n_raises(flat_da):
+    """radial('adaptive') without n raises AdjeffAccessorError."""
+    with pytest.raises(AdjeffAccessorError, match="requires n"):
+        flat_da.adjeff.radial("adaptive")
+
+
+def test_transect_non_2d_raises():
+    """transect raises AdjeffAccessorError when DataArray is not 2-D."""
+    da_3d = xr.DataArray(
+        np.ones((3, 5, 5), dtype=np.float32),
+        dims=["aot", "y", "x"],
+        coords={
+            "aot": [0.1, 0.2, 0.3],
+            "y": np.linspace(-2, 2, 5),
+            "x": np.linspace(-2, 2, 5),
+        },
+    )
+    with pytest.raises(AdjeffAccessorError, match="2-D"):
+        da_3d.adjeff.transect(0.0)
 
 
 def test_to_field_broadcasts_extra_dims(disk_da):

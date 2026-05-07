@@ -10,7 +10,7 @@ class MissingVariableError(AdjeffError):
 
 
 class AdjeffAccessorError(AdjeffError):
-    """An error occured during the call to the xarray adjeff accessor."""
+    """An error occurred during a call to the xarray adjeff accessor."""
 
 
 class ConfigurationError(AdjeffError):
