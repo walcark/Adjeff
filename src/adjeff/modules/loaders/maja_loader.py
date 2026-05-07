@@ -11,7 +11,7 @@ import structlog
 import xarray as xr
 
 from adjeff.core import SensorBand
-from adjeff.exceptions import ConfigurationError
+from adjeff.exceptions import ConfigurationError, ImageIOError
 from adjeff.utils import CacheStore
 
 from .product_loader import (
@@ -156,7 +156,7 @@ class MajaLoader(
         res = ref.adjeff.res
         glob_file = list(self.product_path.glob("*ATB_R2.tif"))
         if len(glob_file) == 0:
-            raise FileNotFoundError("No file found for AOT.")
+            raise ImageIOError("No AOT file (*ATB_R2.tif) found in product.")
         # Band index 2 (1-based) is the AOT layer.
         with rasterio.open(glob_file[0]) as src:
             arr = src.read(2).astype(float)
@@ -178,7 +178,9 @@ class MajaLoader(
         pattern: str = f"S2*{tile}*.DBL.DIR/*{tile}*ALT_R2.TIF"
         glob_mnt = list(self.mnt_path.glob(pattern))
         if len(glob_mnt) == 0:
-            raise FileNotFoundError(f"No MNT found for tile {tile}.")
+            raise ImageIOError(
+                f"No DEM file found for tile {tile} in {self.mnt_path}."
+            )
 
         with rasterio.open(glob_mnt[0]) as src:
             arr = src.read(1).astype(float)
@@ -229,7 +231,9 @@ class MajaLoader(
                 xr.DataArray(vza, dims="vza", coords=dict(vza=vza)),
                 xr.DataArray(vaa, dims="vaa", coords=dict(vaa=vaa)),
             )
-        raise ValueError(f"Viewing angles for band {band} not found.")
+        raise ImageIOError(
+            f"Viewing angles for band {band} not found in product XML."
+        )
 
     def _sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
         """Return the Sun Zenith and Azimuth angles."""
@@ -244,7 +248,7 @@ class MajaLoader(
                 xr.DataArray(sza_arr, dims="sza", coords=dict(sza=sza_arr)),
                 xr.DataArray(saa_arr, dims="saa", coords=dict(saa=saa_arr)),
             )
-        raise ValueError("Sun angles not found.")
+        raise ImageIOError("Sun angles not found in product XML.")
 
     def species(self) -> dict[str, float]:
         """Return the aerosol species proportions from CAMS data in the XML."""

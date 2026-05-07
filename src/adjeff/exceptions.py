@@ -15,3 +15,7 @@ class AdjeffAccessorError(AdjeffError):
 
 class ConfigurationError(AdjeffError):
     """Invalid or missing configuration parameters."""
+
+
+class ImageIOError(AdjeffError):
+    """Satellite image or product file read failure."""

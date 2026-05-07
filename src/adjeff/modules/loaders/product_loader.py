@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, ClassVar
 import xarray as xr
 
 from adjeff.core import SensorBand
-from adjeff.exceptions import ConfigurationError
+from adjeff.exceptions import ConfigurationError, ImageIOError
 from adjeff.utils import CacheStore
 
 from ..scene_source import SceneSource
@@ -127,9 +127,7 @@ class ProductLoader(SceneSource, ABC):
         cache: CacheStore | None = None,
     ) -> None:
         if not product_path.is_dir():
-            raise FileNotFoundError(
-                f"Path {str(product_path)} does not exist."
-            )
+            raise ImageIOError(f"Product path does not exist: {product_path}")
         self.ensure_correct_folder(product_path)
         self.product_path = product_path
         self._build_band_to_res(bands, res)

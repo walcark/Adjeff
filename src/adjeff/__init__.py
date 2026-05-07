@@ -20,6 +20,7 @@ from .exceptions import (
     AdjeffAccessorError,
     AdjeffError,
     ConfigurationError,
+    ImageIOError,
     MissingVariableError,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "AdjeffAccessorError",
     "AdjeffError",
     "ConfigurationError",
+    "ImageIOError",
     "FullConfig",
     "MissingVariableError",
     "config_from_scene",
