@@ -1,4 +1,4 @@
-"""Base classes for atmospheric correction scene operations."""
+"""Base classes for all adjeff scene transformation modules."""
 
 from __future__ import annotations
 
@@ -24,53 +24,63 @@ logger = structlog.get_logger(__name__)
 
 
 class SceneModule:
-    """Base class for scene transforms on ImageDict.
+    """Base class for all adjeff scene transforms.
 
-    Subclasses must define two class attributes in order to work properly.
+    Operates on :class:`~adjeff.core.ImageDict` — one
+    :class:`xr.Dataset` per sensor band.
 
-    1) required_vars: variables that must be in the input ImageDict. For
-    instance, if required_vars = ["rho_s"], the following ImageDict:
+    Subclasses must declare two :class:`~typing.ClassVar` attributes:
 
-    >>> ImageDict(
-    >>>    S2Band.B02: ['rho_s', 'rho_toa']
-    >>>    S2Band.B03: ['rho_s', 'rho_toa']
-    >>>    S2Band.B04: ['rho_s', 'rho_toa']
-    >>> )
+    ``required_vars`` — variable names that *must* be present in every
+    band Dataset of the input scene.  Validated before ``_compute`` is
+    called; raises :class:`~adjeff.exceptions.MissingVariableError` on
+    any missing variable.
 
-    can be used as input, but not this one:
+    Example: with ``required_vars = ["rho_s"]``, this input is valid::
 
-    >>> ImageDict(
-    >>>    S2Band.B02: ['rho_unif', 'rho_toa']
-    >>>    S2Band.B03: ['rho_unif', 'rho_toa']
-    >>>    S2Band.B04: ['rho_unif', 'rho_toa']
-    >>> )
+        ImageDict(
+            {
+                S2Band.B02: Dataset(["rho_s", "rho_toa"]),
+                S2Band.B03: Dataset(["rho_s", "rho_toa"]),
+            }
+        )
 
-    2) output_vars: variables that will be written by the SceneModule in
-    the return ImageDict. For instance, if output_vars = ["rho_toa"], the
-    input ImageDict:
+    but this one is not (``rho_s`` is absent)::
 
-    >>> ImageDict(
-    >>>    S2Band.B02: ['rho_s']
-    >>>    S2Band.B03: ['rho_s']
-    >>>    S2Band.B04: ['rho_s']
-    >>> )
+        ImageDict(
+            {
+                S2Band.B02: Dataset(["rho_unif", "rho_toa"]),
+                S2Band.B03: Dataset(["rho_unif", "rho_toa"]),
+            }
+        )
 
-    will produce an output of the following shape:
+    ``output_vars`` — variable names that the module *writes* into the
+    output scene.  Used to key the disk cache: only these variables are
+    saved and restored across calls.
 
-    >>> ImageDict(
-    >>>    S2Band.B02: ['rho_unif', 'rho_toa']
-    >>>    S2Band.B03: ['rho_unif', 'rho_toa']
-    >>>    S2Band.B04: ['rho_unif', 'rho_toa']
-    >>> )
+    Example: with ``output_vars = ["rho_toa"]``, an input containing
+    ``rho_s`` becomes (``rho_s`` is preserved, ``rho_toa`` is added)::
 
-    Each module produces the output with the forward method, called via
-    ``__call__``.  This forward method calls self._compute() that must be
-    defined in every subclass.
+        # input
+        ImageDict({S2Band.B02: Dataset(["rho_s"]), ...})
+        # output
+        ImageDict({S2Band.B02: Dataset(["rho_s", "rho_toa"]), ...})
+
+    Execution flow (handled by :meth:`forward`)
+    --------------------------------------------
+    1. Shallow-copy the input so the caller's data is never mutated.
+    2. Validate ``required_vars`` against every band Dataset.
+    3. Compute a cache key from the module config and input hashes.
+    4. Return cached outputs if the key is found; otherwise call
+       :meth:`_compute`.
+    5. Stamp provenance metadata and persist ``output_vars`` to cache.
+    6. Replace in-memory arrays with lazy Zarr-backed views to limit
+       peak RAM usage.
 
     Parameters
     ----------
-    cache : CacheStore | None
-        The cache used to store output variables for future usages.
+    cache : CacheStore or None
+        Disk cache for computed outputs.  ``None`` disables caching.
     """
 
     required_vars: ClassVar[list[str]] = []
@@ -86,14 +96,25 @@ class SceneModule:
         return self.forward(scene)
 
     def forward(self, scene: "ImageDict") -> "ImageDict":
-        """Perform the module operations on the input ImageDict.
+        """Apply the module to *scene* and return the enriched scene.
 
-        The order of operations is the following:
-        1) inputs are validated to ensure that all required parameters are
-        present,
-        2) cache is checked for inputs and the module configuration,
-        3) self._compute() is called if the cache is not hit,
-        4) results are stamped and eventually cached.
+        Parameters
+        ----------
+        scene : ImageDict
+            Input scene.  Shallow-copied internally so the caller's
+            data is never mutated.
+
+        Returns
+        -------
+        ImageDict
+            Scene enriched with ``output_vars`` (computed or from
+            cache).
+
+        Raises
+        ------
+        MissingVariableError
+            If any band Dataset is missing a variable in
+            ``required_vars``.
         """
         scene = scene.shallow_copy()
         scene.require_vars(self.required_vars)
@@ -130,7 +151,7 @@ class SceneModule:
         """Run the core transform."""
 
     def _cache_key(self, scene: "ImageDict") -> str:
-        """Hash the content of the SceneModule instance."""
+        """Return a joblib hash of module type, config, and input hashes."""
         return str(
             joblib.hash(
                 {
@@ -155,11 +176,12 @@ class SceneModule:
         """Return frozen configuration for cache keying.
 
         Auto-detects public ``__init__`` parameters stored as same-named
-        instance attributes, excluding infrastructure params (``cache``,
-        ``chunks``, ``deduplicate_dims``).
+        instance attributes, excluding infrastructure params listed in
+        ``_INFRA_PARAMS`` (``cache``, ``chunks``) that do not affect
+        output values.
 
-        Subclasses with privately-stored params (e.g. ``_psf_dict``) must
-        override this method.
+        Subclasses with privately-stored params (e.g. ``_psf_dict``)
+        must override this method.
         """
         sig = inspect.signature(type(self).__init__)
         raw = {
@@ -173,7 +195,12 @@ class SceneModule:
         }
 
     def _input_hashes(self, scene: "ImageDict") -> dict[str, str]:
-        """Return a hash per (band, variable) pair in the input scene."""
+        """Return a stable hash per ``(band, variable)`` pair in *scene*.
+
+        Uses the DataArray's provenance key when available to avoid
+        re-hashing large arrays; falls back to ``joblib.hash`` of the
+        raw values.
+        """
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
@@ -191,7 +218,7 @@ class SceneModule:
         return hashes
 
     def _stamp_provenance(self, scene: "ImageDict", key: str) -> None:
-        """Store the provenance as attribute for each ImageDict's DataArray."""
+        """Tag each output DataArray with module name and cache key."""
         provenance = {"module": type(self).__name__, "key": key}
         for band in scene.bands:
             ds = scene[band]
