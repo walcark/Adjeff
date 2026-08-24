@@ -142,7 +142,6 @@ class CacheStore:
                 return None
             try:
                 ds = xr.open_zarr(path)
-                result[band] = {var: ds[var] for var in variables if var in ds}
             except Exception:
                 logger.warning(
                     "failed to load from cache",
@@ -151,6 +150,18 @@ class CacheStore:
                     path=str(path),
                 )
                 return None
+
+            # A truncated entry (interrupted write, output_vars changed
+            # since it was written) must read as a miss.  Returning the
+            # variables that happen to be there would hand the caller a
+            # scene silently short of an output, flagged as a cache hit.
+            absent = [var for var in variables if var not in ds]
+            if absent:
+                logger.debug(
+                    "cache miss", key=key[:8], band=band, missing=absent
+                )
+                return None
+            result[band] = {var: ds[var] for var in variables}
 
         logger.debug(
             "Cache was hit.", key=key[:8], bands=bands, vars=variables
@@ -161,17 +172,3 @@ class CacheStore:
         """Remove all cache entries."""
         if self._cache_dir is not None and self._cache_dir.exists():
             shutil.rmtree(self._cache_dir)
-
-    def clear_function(self, module_name: str) -> None:
-        """Remove cache entries for a specific module.
-
-        Parameters
-        ----------
-        module_name:
-            Class name of the SceneModule (e.g. ``"RhoAtmSampler"``).
-        """
-        if self._cache_dir is None:
-            return
-        target = self._cache_dir / module_name
-        if target.exists():
-            shutil.rmtree(target)

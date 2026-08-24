@@ -7,7 +7,7 @@ can be passed in a similar way to any module that uses those classes.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator, Optional, Protocol, Self
+from typing import Any, Callable, Optional, Protocol
 
 import numpy as np
 import xarray as xr
@@ -28,10 +28,6 @@ class ConfigProtocol(Protocol):
     @property
     def _non_arrays(self) -> dict[str, Any]:
         """Return non-DataArray fields of the configuration."""
-        ...
-
-    def unique(self, dims: list[str]) -> tuple[Self, xr.DataArray]:
-        """Deduplicate the fields living on dims, keep other intact."""
         ...
 
 
@@ -147,118 +143,3 @@ class _Config(BaseModel):
     def dataset(self) -> xr.Dataset:
         """Return the atmosphere parameters as a dataset."""
         return xr.Dataset(self._arrays)
-
-    def unique(self, dims: list[str]) -> tuple[Self, xr.DataArray]:
-        """Deduplicate fields living on *dims*, keep others intact.
-
-        Parameters
-        ----------
-        dims : list[str]
-            Dimensions on which to compute uniqueness.
-
-        Returns
-        -------
-        config_unique : _Config
-            Config with fields on *dims* reduced to a single ``"index"``
-            dimension; fields not on *dims* are kept unchanged.
-        inverse_map : DataArray
-            Maps each original grid point to its unique-index position.
-            Use ``result.isel(index=inverse_map)`` to reconstruct the
-            original spatial layout.
-        """
-        from adjeff.sweep._dedup import UniqueIndex
-
-        arrays = self._arrays
-        others = {
-            k: getattr(self, k)
-            for k in type(self).model_fields
-            if k not in arrays
-        }
-        kept = {
-            k: v
-            for k, v in arrays.items()
-            if not any(d in v.dims for d in dims)
-        }
-        to_dedup = {k: v for k, v in arrays.items() if k not in kept}
-
-        dedup, reindexed = UniqueIndex.build(to_dedup, dims)
-        unique_config: Self = type(self)(
-            **{k: reindexed[k] for k in to_dedup},
-            **kept,
-            **others,
-        )
-        return unique_config, dedup.inverse_map
-
-    def iter(self, n_batch: int, dim: str) -> Iterator[Self]:
-        """Yield sub-configs by slicing *dim* into chunks of size *n_batch*.
-
-        The chunk size is computed so that the total number of elements
-        across all dimensions does not exceed *n_batch* per iteration.
-        If *dim* is not present in any array the whole configuration is
-        yielded as a single chunk.
-
-        Parameters
-        ----------
-        n_batch : int
-            Target maximum number of elements per chunk (across all dims).
-        dim : str
-            Dimension name along which to slice.
-
-        Yields
-        ------
-        _Config
-            A sub-configuration of the same type with *dim* sliced.
-        """
-        arrays = self._arrays
-        dim_sizes: dict[str, int] = {}
-        for v in arrays.values():
-            for d, s in v.sizes.items():
-                dim_sizes.setdefault(str(d), s)
-
-        if dim not in dim_sizes:
-            yield self
-            return
-
-        other_size = max(
-            1, int(np.prod([s for d, s in dim_sizes.items() if d != dim]))
-        )
-        chunk_size = max(1, n_batch // other_size)
-
-        for start in range(0, dim_sizes[dim], chunk_size):
-            slc = slice(start, start + chunk_size)
-            yield type(self)(
-                **{
-                    k: v.isel({dim: slc}) if dim in v.dims else v
-                    for k, v in arrays.items()
-                },
-                **{
-                    k: getattr(self, k)
-                    for k in type(self).model_fields
-                    if k not in arrays
-                },
-            )
-
-    def run(self, fn: Module, n_batch: int, dim: str) -> xr.DataArray:
-        """Apply *fn* on each chunked sub-configuration and concatenate.
-
-        Parameters
-        ----------
-        fn : Module
-            Callable that takes a ``_Config`` instance and returns a
-            ``xr.DataArray``.
-        n_batch : int
-            Target maximum number of elements per chunk, forwarded to
-            :meth:`iter`.
-        dim : str
-            Dimension to slice along, forwarded to :meth:`iter`.  The
-            outputs are concatenated along this same dimension.
-
-        Returns
-        -------
-        xr.DataArray
-            Concatenation of all per-batch outputs along *dim*.
-        """
-        return xr.concat(
-            [fn(batch) for batch in self.iter(n_batch, dim)],
-            dim=dim,
-        )

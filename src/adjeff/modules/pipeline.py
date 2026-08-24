@@ -168,25 +168,67 @@ class Pipeline:
             )
             chunk_results.append(self._call_full(sub_scene))
 
-        return self._concat_chunks(chunk_results, list(present))
+        return self._concat_chunks(
+            chunk_results,
+            [dim for dim, _ in chunk_specs],
+            [len(slices) for _, slices in chunk_specs],
+        )
 
     @staticmethod
-    def _concat_chunks(chunks: list[ImageDict], dims: list[str]) -> ImageDict:
-        """Concatenate pipeline outputs along the streamed dimensions."""
-        bands = chunks[0].bands
+    def _concat_chunks(
+        chunks: list[ImageDict],
+        dims: list[str],
+        counts: list[int],
+    ) -> ImageDict:
+        """Fold a Cartesian product of chunk results back into one scene.
+
+        ``chunks`` comes from :func:`itertools.product` over *dims*, so it
+        is a flat row-major grid of ``prod(counts)`` entries in which the
+        last dimension varies fastest.  Folding one dimension at a time,
+        innermost first, is what keeps a two-dimensional stream correct:
+        concatenating the flat list along a single dimension would stack
+        ``n0 * n1`` pieces on one axis instead of rebuilding the grid.
+
+        Parameters
+        ----------
+        chunks : list[ImageDict]
+            Pipeline outputs, one per point of the chunk grid.
+        dims : list[str]
+            Streamed dimension names, outermost first.
+        counts : list[int]
+            Number of chunks along each dimension, same order as *dims*.
+
+        Returns
+        -------
+        ImageDict
+            Single scene spanning the whole grid.
+        """
+        for dim, count in zip(reversed(dims), reversed(counts)):
+            chunks = [
+                Pipeline._concat_along(chunks[i : i + count], dim)
+                for i in range(0, len(chunks), count)
+            ]
+        return chunks[0]
+
+    @staticmethod
+    def _concat_along(chunks: list[ImageDict], dim: str) -> ImageDict:
+        """Concatenate *chunks* along *dim*, one band Dataset at a time.
+
+        Variables that do not carry *dim* are taken from the first chunk.
+        Dataset attributes are carried over: they hold the aerosol
+        species written by :func:`~adjeff.api.load_scene`, which
+        :func:`~adjeff.api.load_config` reads back later.
+        """
         result: dict[SensorBand, xr.Dataset] = {}
-        for band in bands:
+        for band in chunks[0].bands:
             datasets = [c[band] for c in chunks]
             vars_out: dict[str, xr.DataArray] = {}
             for var_name in datasets[0].data_vars:
                 var = str(var_name)
                 arrays = [ds[var] for ds in datasets]
-                stream_dim = next(
-                    (d for d in dims if d in arrays[0].dims), None
-                )
-                if stream_dim is not None:
-                    vars_out[var] = xr.concat(arrays, dim=stream_dim)
+                if dim in arrays[0].dims:
+                    vars_out[var] = xr.concat(arrays, dim=dim)
                 else:
                     vars_out[var] = arrays[0]
-            result[band] = xr.Dataset(vars_out)
+            result[band] = xr.Dataset(vars_out, attrs=dict(datasets[0].attrs))
         return ImageDict(result)

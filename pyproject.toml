@@ -1,6 +1,6 @@
 [project]
 name = "adjeff"
-version = "0.6.0"
+version = "0.7.0"
 authors = [{ name = "walcark", email = "kevin.walcarius@gmail.com" }]
 readme = "README.md"
 description = "Library that provides utilities to simulate adjacency effects."
@@ -60,8 +60,10 @@ tqdm = ">=4.67.3,<5"
 scipy = ">=1.14.0,<2"
 
 [tool.pixi.feature.gpu]
-system-requirements = { cuda = "12.6" }
-dependencies = { cuda-version = "12.6.*", pytorch-gpu = "*", cuda-cudart-dev = "12.6.*", cuda-nvcc = "12.6.*" }
+# CUDA >= 12.8 is required: nvcc only learns `sm_120` (Blackwell, RTX 50xx)
+# there, and Smart-G compiles its kernels for the local compute capability.
+system-requirements = { cuda = "12.9" }
+dependencies = { cuda-version = "12.9.*", pytorch-gpu = "*", cuda-cudart-dev = "12.9.*", cuda-nvcc = "12.9.*" }
 
 [tool.pixi.feature.cpu]
 dependencies = { pytorch-cpu = "*" }

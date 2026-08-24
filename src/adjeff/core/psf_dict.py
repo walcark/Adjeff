@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import xarray as xr
 
@@ -315,19 +315,6 @@ class PSFDict:
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.move(str(tmp_path), str(dest))
-
-    def _cache_dict(self) -> dict[str, Any]:
-        """Return a joblib-hashable representation of all kernel data.
-
-        xr.DataArray values are converted to nested lists so that joblib
-        can hash them. Used by SceneModule._config_dict().
-        """
-        result: dict[str, Any] = {}
-        for band, ds in self._data.items():
-            result[str(band)] = {
-                var: da.values for var, da in ds.data_vars.items()
-            }
-        return result
 
 
 # ---------------------------------------------------------------------------

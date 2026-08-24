@@ -1,12 +1,16 @@
-"""Simple module for base test purpose."""
+"""Minimal SceneModule used as a fixture by the test suite.
+
+It lives here rather than in the package: it is a test double, and
+exporting it from adjeff.modules put a pytest collection warning on
+every run.
+"""
 
 from typing import ClassVar
 
 import xarray as xr
 
 from adjeff.core import ImageDict
-
-from .scene_module import SceneModule
+from adjeff.modules import SceneModule
 
 
 class TestModule(SceneModule):

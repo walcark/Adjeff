@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import xarray as xr
 
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils import CacheStore
 from adjeff.utils._config import _Config
 
@@ -182,13 +183,31 @@ class SceneModule:
 
         Subclasses with privately-stored params (e.g. ``_psf_dict``)
         must override this method.
+
+        Raises
+        ------
+        ConfigurationError
+            If a parameter is neither excluded nor readable as a
+            same-named attribute.  Auto-detection is an implicit
+            contract: storing a parameter under a private name silently
+            drops it from the key, and two runs that differ only by that
+            parameter then collide on the same cache entry.  Failing at
+            the first lookup turns that into a development error rather
+            than a wrong result read back from disk months later.
         """
         sig = inspect.signature(type(self).__init__)
-        raw = {
-            name: getattr(self, name)
-            for name in sig.parameters
-            if name not in self._INFRA_PARAMS and hasattr(self, name)
-        }
+        wanted = [
+            name for name in sig.parameters if name not in self._INFRA_PARAMS
+        ]
+        missing = [name for name in wanted if not hasattr(self, name)]
+        if missing:
+            raise ConfigurationError(
+                f"{type(self).__name__} does not expose {missing!r} as "
+                "attributes, so they cannot enter the cache key. Store "
+                "them under their own name, add them to _INFRA_PARAMS if "
+                "they cannot change the output, or override _config_dict."
+            )
+        raw = {name: getattr(self, name) for name in wanted}
         return {
             k: v._stable_hash_repr if isinstance(v, _Config) else v
             for k, v in raw.items()
