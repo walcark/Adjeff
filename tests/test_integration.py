@@ -235,7 +235,7 @@ def test_deduplication_matches_the_plain_sweep(config):
         geo_config=config["geo_config"],
         spectral_config=config["spectral_config"],
         remove_rayleigh=False,
-        deduplicate_dims=["x", "y"],
+        dedup=True,
     )
     tdir = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["tdir_down"]
 

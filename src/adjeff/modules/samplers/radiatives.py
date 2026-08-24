@@ -17,7 +17,7 @@ from .tdir_up import TdirUpSampler
 class RadiativePipeline(Pipeline):
     """Pipeline that computes all six radiative quantities in sequence.
 
-    Chains six :class:`~adjeff.modules.SceneModuleSweep` samplers that
+    Chains six :class:`~adjeff.modules.SweepSampler` samplers that
     produce the variables required by the 5S formula in order:
 
     ``tdir_down`` → ``tdir_up`` → ``sph_alb`` → ``tdif_up`` →
@@ -55,10 +55,10 @@ class RadiativePipeline(Pipeline):
     cache : CacheStore or None, optional
         Shared result cache forwarded to all modules; ``None`` disables
         caching.
-    chunks : dict[str, int] or None, optional
-        Chunk sizes for vector dimensions, forwarded to all modules.
-    deduplicate_dims : list[str] or None, optional
-        Spatial dimensions to deduplicate, forwarded to all modules.
+    batch_size : int, optional
+        Atmospheric states per Smart-G call, forwarded to all modules.
+    dedup : bool, optional
+        Collapse repeated states before calling, forwarded to all modules.
     """
 
     def __init__(
@@ -73,8 +73,8 @@ class RadiativePipeline(Pipeline):
         n_ph_tdif_up: int = int(3e7),
         n_ph_tdif_down: int = int(3e7),
         cache: CacheStore | None = None,
-        sweep_chunks: dict[str, int] | None = None,
-        deduplicate_dims: list[str] | None = None,
+        batch_size: int = 64,
+        dedup: bool = False,
     ) -> None:
         common: dict[str, Any] = dict(
             atmo_config=atmo_config,
@@ -83,8 +83,8 @@ class RadiativePipeline(Pipeline):
             remove_rayleigh=remove_rayleigh,
             afgl_type=afgl_type,
             cache=cache,
-            sweep_chunks=sweep_chunks,
-            deduplicate_dims=deduplicate_dims,
+            batch_size=batch_size,
+            dedup=dedup,
         )
         super().__init__(
             [
@@ -97,8 +97,8 @@ class RadiativePipeline(Pipeline):
                     afgl_type=afgl_type,
                     n_ph=n_ph_sph_alb,
                     cache=cache,
-                    sweep_chunks=sweep_chunks,
-                    deduplicate_dims=deduplicate_dims,
+                    batch_size=batch_size,
+                    dedup=dedup,
                 ),
                 TdifUpSampler(**common, n_ph=n_ph_tdif_up),
                 TdifDownSampler(**common, n_ph=n_ph_tdif_down),

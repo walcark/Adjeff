@@ -1,6 +1,6 @@
 """Smart-G Monte-Carlo samplers for radiative transfer quantities.
 
-All samplers extend :class:`~adjeff.modules.SceneModuleSweep` and
+All samplers extend :class:`~adjeff.modules.SweepSampler` and
 require a CUDA-capable GPU.  They compute the six quantities needed
 by the 5S radiative transfer formula::
 

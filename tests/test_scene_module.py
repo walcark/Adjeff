@@ -131,10 +131,11 @@ def test_config_dict_raises_on_privately_stored_param():
 
 
 def test_sweep_params_reach_the_cache_key():
-    """deduplicate_dims and sweep_chunks must change the cache key.
+    """batch_size and dedup must change the cache key.
 
-    Both alter the shape of a sampler's output, so two runs that differ
-    only by one of them must not share a cache entry.
+    Neither can change a value, but both are __init__ parameters, and the
+    guard that keeps `res` and the old `deduplicate_dims` in the key is
+    what would catch either being stored under a private name.
     """
     import xarray as xr
 
@@ -153,14 +154,10 @@ def test_sweep_params_reach_the_cache_key():
     scene = ImageDict({S2Band.B02: xr.Dataset()})
 
     plain = TdirDownSampler(**common)._cache_key(scene)
-    dedup = TdirDownSampler(
-        **common, deduplicate_dims=["x", "y"]
-    )._cache_key(scene)
-    chunked = TdirDownSampler(**common, sweep_chunks={"wl": 2})._cache_key(
-        scene
-    )
+    deduped = TdirDownSampler(**common, dedup=True)._cache_key(scene)
+    grouped = TdirDownSampler(**common, batch_size=8)._cache_key(scene)
 
-    assert len({plain, dedup, chunked}) == 3
+    assert len({plain, deduped, grouped}) == 3
 
 
 def test_loader_resolution_reaches_the_cache_key(tmp_path):

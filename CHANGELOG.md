@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The six radiative samplers run on [xsweep](https://github.com/walcark/xsweep).**
+  They declare a contract instead of a sweep: `batch(aot, rh, h, href,
+  sza) vec(wl) -> tdir_down(wl)`. The atmospheric states stay sweep axes,
+  so dedup and resumption keep working, but Smart-G still receives a
+  whole group per call — calling it once per state costs 3x, since it
+  amortises the atmospheric profile over the batch.
+
+  `sweep_chunks` and `deduplicate_dims` become `batch_size` and `dedup`,
+  in the samplers, in `RadiativePipeline` and in `api`. `dedup` is now a
+  flag rather than a dim list: xsweep collapses repeated states wherever
+  they are, and guarantees the result is unchanged.
+
 - **`PSFDict` is gone.** It was two types under one name: a mode flag
   governed six methods, `to_dataarray()` raised in one mode and
   `get_module()` in the other, and `params()` had two competing storage
@@ -31,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   invalidated, since the module name enters the cache key.
 
 ### Fixed
+
+- **`saa` and `vaa` were declared as arrays and used as scalars.** Every
+  `_smartg` function read `float(saa.flat[0])` from what its signature
+  called an `np.ndarray`. The loop samplers already passed `.item()`;
+  only the radiative ones passed an array. Found by xsweep refusing to
+  fingerprint an ndarray static, which is the check the cache needed.
 
 - **A frozen PSF could not be written to zarr.** `to_dataarray()` stored
   the `SensorBand` enum in `attrs`, which is not JSON serialisable, so

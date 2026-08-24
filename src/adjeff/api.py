@@ -425,7 +425,7 @@ def run_forward_pipeline(
     afgl_type: str = ...,
     nr: int = ...,
     n_ph: int = ...,
-    radiative_chunks: dict[str, int] | None = ...,
+    batch_size: int = ...,
     stream_dims: dict[str, int] | None = ...,
 ) -> ImageDict: ...
 
@@ -441,7 +441,7 @@ def run_forward_pipeline(
     afgl_type: str = ...,
     nr: int = ...,
     n_ph: int = ...,
-    radiative_chunks: dict[str, int] | None = ...,
+    batch_size: int = ...,
     stream_dims: dict[str, int] | None = ...,
 ) -> list[ImageDict]: ...
 
@@ -456,7 +456,7 @@ def run_forward_pipeline(
     afgl_type: str = "afgl_exp_h8km",
     nr: int = 500,
     n_ph: int = int(1e5),
-    radiative_chunks: dict[str, int] | None = None,
+    batch_size: int = 64,
     stream_dims: dict[str, int] | None = None,
 ) -> ImageDict | list[ImageDict]:
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
@@ -493,10 +493,10 @@ def run_forward_pipeline(
         Radial sampling points for rho_toa (default 500).
     n_ph : int
         Photon count per sensor for rho_toa (default ``1e5``).
-    radiative_chunks : dict[str, int] or None
-        Chunk sizes for Smart-G calls inside
-        :class:`~adjeff.modules.RadiativePipeline`,
-        e.g. ``{"wl": 4}``. ``None`` disables chunking.
+    batch_size : int
+        Atmospheric states handed to Smart-G in one call inside
+        :class:`~adjeff.modules.samplers.RadiativePipeline`. A cost
+        decision only: it bounds GPU memory and never changes a value.
     stream_dims : dict[str, int] or None
         Dimensions to stream over for memory management, e.g.
         ``{"aot": 3}``.  When a dimension exists in the scene's DataArrays,
@@ -517,7 +517,7 @@ def run_forward_pipeline(
         remove_rayleigh=remove_rayleigh,
         afgl_type=afgl_type,
         cache=cache,
-        sweep_chunks=radiative_chunks,
+        batch_size=batch_size,
     )
     rho_toa = RhoToaSymSampler(
         atmo_config=atmo_config,
@@ -607,7 +607,7 @@ def load_scene(
     remove_rayleigh: bool = False,
     afgl_type: str = "afgl_exp_h8km",
     cache: CacheStore | None = None,
-    deduplicate_dims: list[str] | None = None,
+    dedup: bool = False,
 ) -> ImageDict:
     """Load a scene from any :class:`~adjeff.modules.loaders.ProductLoader`.
 
@@ -636,8 +636,10 @@ def load_scene(
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
     cache : CacheStore or None, optional
         Shared on-disk cache (default ``None``).
-    deduplicate_dims : list[str] or None, optional
-        Spatial dimensions to deduplicate before Smart-G calls.
+    dedup : bool, optional
+        Collapse repeated atmospheric states before calling Smart-G.
+        Worth it when the parameters are spatial maps, where many pixels
+        share a state; pure overhead when every state is distinct.
 
     Returns
     -------
@@ -662,7 +664,7 @@ def load_scene(
             remove_rayleigh=remove_rayleigh,
             afgl_type=afgl_type,
             cache=cache,
-            deduplicate_dims=deduplicate_dims,
+            dedup=dedup,
         )
 
     return scene
@@ -685,7 +687,7 @@ def load_maja(
     n_bins: int | None = None,
     remove_rayleigh: bool = False,
     afgl_type: str = "afgl_exp_h8km",
-    deduplicate_dims: list[str] | None = None,
+    dedup: bool = False,
 ) -> ImageDict:
     """Load a MAJA L2A product via :func:`load_scene`.
 
@@ -724,9 +726,10 @@ def load_maja(
         Suppress Rayleigh scattering (default ``False``).
     afgl_type : str
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    deduplicate_dims : list[str] or None, optional
-        Spatial dimensions to deduplicate before running Smart-G.  Pass
-        ``["x", "y"]`` when *as_map* is ``True`` (default ``None``).
+    dedup : bool, optional
+        Collapse repeated atmospheric states before calling Smart-G.
+        Worth it when the parameters are spatial maps, where many pixels
+        share a state; pure overhead when every state is distinct.
 
     Returns
     -------
@@ -757,7 +760,7 @@ def load_maja(
         remove_rayleigh=remove_rayleigh,
         afgl_type=afgl_type,
         cache=cache,
-        deduplicate_dims=deduplicate_dims,
+        dedup=dedup,
     )
 
 
@@ -774,7 +777,7 @@ def run_radiatives_from_scene(
     remove_rayleigh: bool = ...,
     afgl_type: str = ...,
     cache: CacheStore | None = ...,
-    deduplicate_dims: list[str] | None = ...,
+    dedup: bool = ...,
 ) -> ImageDict: ...
 
 
@@ -786,7 +789,7 @@ def run_radiatives_from_scene(
     remove_rayleigh: bool = ...,
     afgl_type: str = ...,
     cache: CacheStore | None = ...,
-    deduplicate_dims: list[str] | None = ...,
+    dedup: bool = ...,
 ) -> list[ImageDict]: ...
 
 
@@ -797,7 +800,7 @@ def run_radiatives_from_scene(
     remove_rayleigh: bool = False,
     afgl_type: str = "afgl_exp_h8km",
     cache: CacheStore | None = None,
-    deduplicate_dims: list[str] | None = None,
+    dedup: bool = False,
 ) -> ImageDict | list[ImageDict]:
     """Run the radiative pipeline using configs embedded in *scene*.
 
@@ -828,11 +831,10 @@ def run_radiatives_from_scene(
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
     cache : CacheStore or None
         Shared cache forwarded to all pipeline instances.
-    deduplicate_dims : list[str] or None, optional
-        Spatial dimensions to deduplicate before running Smart-G, reducing
-        redundant simulations when ``aot`` and ``h`` are 2-D maps.  Pass
-        ``["x", "y"]`` when the scene was loaded with ``as_map=True``
-        (default ``None``).
+    dedup : bool, optional
+        Collapse repeated atmospheric states before calling Smart-G.
+        Worth it when the parameters are spatial maps, where many pixels
+        share a state; pure overhead when every state is distinct.
 
     Returns
     -------
@@ -859,7 +861,7 @@ def run_radiatives_from_scene(
                 remove_rayleigh=remove_rayleigh,
                 afgl_type=afgl_type,
                 cache=cache,
-                deduplicate_dims=deduplicate_dims,
+                dedup=dedup,
             )
             scene_band = radiative(scene_band)
             s[band] = scene_band[band]

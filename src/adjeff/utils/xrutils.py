@@ -28,6 +28,11 @@ class ParamBatch:
     """
 
     _DEDUP_TMP: ClassVar[str] = "_index_tmp"
+    #: Dims whose entries are aligned rather than swept: several variables
+    #: vary together along them, so they carry integer positions instead of
+    #: their own values.  Using the values would build a duplicate index
+    #: (``rh = [50, 50, 50]``) and break the broadcast.
+    _POSITIONAL: ClassVar[tuple[str, ...]] = (_DEDUP_TMP, "point")
     _flat: dict[str, xr.DataArray]
     _index_coord: xr.DataArray  # MultiIndex coord for unstack
 
@@ -60,17 +65,17 @@ class ParamBatch:
 
             renamed[name] = da.rename(dims_to_rename)
 
-        # Assign coords so unstack restores actual parameter values. For
-        # _DEDUP_TMP (the dedup index), integer positions are used so that
-        # all arrays share identical coords along that dim and xr.broadcast
-        # succeeds.
+        # Assign coords so unstack restores actual parameter values. Dims
+        # listed in _POSITIONAL carry aligned entries rather than a swept
+        # axis, so they get integer positions instead: that is what lets all
+        # arrays share identical coords along them and xr.broadcast succeed.
         assigned: dict[str, xr.DataArray] = {}
 
         for name, da in renamed.items():
             coords = {}
 
             for d in da.dims:
-                if d == cls._DEDUP_TMP:
+                if d in cls._POSITIONAL:
                     # Int coordinates so all arrays align for broadcast
                     coords[d] = np.arange(da.sizes[d])
                 elif d in da.coords:
