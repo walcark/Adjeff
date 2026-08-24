@@ -27,9 +27,61 @@ jobs:
         fi
         echo "tag $GITHUB_REF_NAME matches version $version"
 
+  test:
+    # A tag pushed from a branch, or pushed before CI went green on main,
+    # would otherwise reach PyPI untested: this workflow used to build and
+    # publish without running anything.  The GPU integration tests still
+    # cannot run here and stay a local step before tagging.
+    needs: check-version
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Load Pixi
+      uses: prefix-dev/setup-pixi@v0.9.4
+      with:
+        pixi-version: v0.77.1
+        cache: true
+        environments: dev
+
+    - name: Lock file is up to date
+      run: pixi lock --check
+
+    - name: Lint
+      run: pixi run -e dev lint
+
+    - name: Type check with mypy
+      run: pixi run -e dev type-check
+
+    - name: Cache smartg auxdata
+      uses: actions/cache@v4
+      id: cache-auxdata
+      with:
+        path: ~/.cache/smartg/auxdata
+        key: smartg-auxdata-v1
+
+    - name: Download smartg auxdata
+      if: steps.cache-auxdata.outputs.cache-hit != 'true'
+      run: |
+        pixi run -e dev python -c "
+        from smartg.auxdata import download
+        from pathlib import Path
+        download(Path('$HOME/.cache/smartg/auxdata'), data_type='all')
+        "
+
+    - name: Test
+      env:
+        SMARTG_DIR_AUXDATA: ${{ env.HOME }}/.cache/smartg/auxdata
+      run: pixi run -e dev test
+
   build-and-publish:
 
-    needs: check-version
+    needs: [check-version, test]
     runs-on: ubuntu-latest
 
     environment: pypi
@@ -48,7 +100,10 @@ jobs:
     - name: Load Pixi
       uses: prefix-dev/setup-pixi@v0.9.4
       with:
-        pixi-version: v0.65.0
+        # Must be able to read the lock format the local pixi writes: a
+        # v7 lock file, written by pixi 0.7x, is unreadable by 0.65 and
+        # `pixi install --locked` fails before any test runs.
+        pixi-version: v0.77.1
         cache: true
         environments: builder
 
