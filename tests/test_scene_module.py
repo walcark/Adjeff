@@ -5,7 +5,7 @@ import pytest
 
 from adjeff.core import ImageDict, S2Band, random_image_dict
 from adjeff.exceptions import MissingVariableError
-from adjeff.modules import TestModule
+from _test_module import TestModule
 from adjeff.utils import CacheStore
 
 
@@ -92,7 +92,7 @@ def test_pipeline_wrong_dependency_raises():
     as a pipeline output but not produced before it is needed."""
     from adjeff.exceptions import ConfigurationError
     from adjeff.modules import Pipeline
-    from adjeff.modules.test_module import TestModule as TM
+    from _test_module import TestModule as TM
 
     # Module A requires rho_s and produces rho_toa.
     # Module B requires rho_toa and produces rho_unif.
@@ -119,7 +119,7 @@ def test_config_dict_raises_on_privately_stored_param():
     different configurations collide on one entry.
     """
     from adjeff.exceptions import ConfigurationError
-    from adjeff.modules.test_module import TestModule as TM
+    from _test_module import TestModule as TM
 
     class Hidden(TM):
         def __init__(self, shift, cache=None):
@@ -202,7 +202,7 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
 
     import xarray as xr
 
-    from adjeff.modules.test_module import TestModule as TM
+    from _test_module import TestModule as TM
 
     class TwoOut(TM):
         output_vars = ["rho_toa", "rho_unif"]

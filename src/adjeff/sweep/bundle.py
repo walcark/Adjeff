@@ -96,34 +96,6 @@ class SweepBundle:
         self._vectors = vectors
         self._chunks = sweep_chunks or {}
 
-    @classmethod
-    def from_configs(
-        cls,
-        configs: list[ConfigProtocol],
-        scalar_names: list[str],
-        vector_names: list[str],
-        sweep_chunks: dict[str, int] | None = None,
-    ) -> "SweepBundle":
-        """Build a SweepBundle by extracting DataArrays from config objects.
-
-        Parameters
-        ----------
-        configs
-            Source config objects (AtmoConfig, GeoConfig, SpectralConfig, …).
-        scalar_names
-            Fields to iterate over as scalars (Cartesian product).
-        vector_names
-            Fields to pass as full / chunked arrays.
-        sweep_chunks
-            Optional chunk sizes for vector dimensions.
-        """
-        das, _ = _aggregate(configs, scalar_names + vector_names)
-        return cls(
-            scalars={k: das[k] for k in scalar_names if k in das},
-            vectors={k: das[k] for k in vector_names if k in das},
-            sweep_chunks=sweep_chunks,
-        )
-
     def apply(
         self,
         func: Callable[..., xr.DataArray],

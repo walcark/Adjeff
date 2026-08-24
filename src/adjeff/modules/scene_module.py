@@ -197,9 +197,7 @@ class SceneModule:
         """
         sig = inspect.signature(type(self).__init__)
         wanted = [
-            name
-            for name in sig.parameters
-            if name not in self._INFRA_PARAMS
+            name for name in sig.parameters if name not in self._INFRA_PARAMS
         ]
         missing = [name for name in wanted if not hasattr(self, name)]
         if missing:

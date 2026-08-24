@@ -172,17 +172,3 @@ class CacheStore:
         """Remove all cache entries."""
         if self._cache_dir is not None and self._cache_dir.exists():
             shutil.rmtree(self._cache_dir)
-
-    def clear_function(self, module_name: str) -> None:
-        """Remove cache entries for a specific module.
-
-        Parameters
-        ----------
-        module_name:
-            Class name of the SceneModule (e.g. ``"RhoAtmSampler"``).
-        """
-        if self._cache_dir is None:
-            return
-        target = self._cache_dir / module_name
-        if target.exists():
-            shutil.rmtree(target)

@@ -230,7 +230,5 @@ class Pipeline:
                     vars_out[var] = xr.concat(arrays, dim=dim)
                 else:
                     vars_out[var] = arrays[0]
-            result[band] = xr.Dataset(
-                vars_out, attrs=dict(datasets[0].attrs)
-            )
+            result[band] = xr.Dataset(vars_out, attrs=dict(datasets[0].attrs))
         return ImageDict(result)
