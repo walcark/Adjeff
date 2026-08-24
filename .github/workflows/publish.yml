@@ -1,19 +1,42 @@
 name: Publish to PyPI
 
+# Pushing an annotated tag is the whole release ceremony: this workflow
+# checks that the tag agrees with the project version, builds, publishes
+# to PyPI, then opens the GitHub release.  Creating the release by hand
+# first is no longer needed.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 
 jobs:
+
+  check-version:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v4
+
+    - name: Tag must match the project version
+      run: |
+        version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+        if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+          echo "::error::tag $GITHUB_REF_NAME does not match" \
+               "pyproject version $version" >&2
+          exit 1
+        fi
+        echo "tag $GITHUB_REF_NAME matches version $version"
+
   build-and-publish:
 
+    needs: check-version
     runs-on: ubuntu-latest
 
     environment: pypi
 
     permissions:
       id-token: write
-      contents: read
+      contents: write
 
     steps:
 
@@ -21,7 +44,7 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    
+
     - name: Load Pixi
       uses: prefix-dev/setup-pixi@v0.9.4
       with:
@@ -39,3 +62,8 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         package-dir: dist
+
+    - name: Create the GitHub release
+      run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      env:
+        GH_TOKEN: ${{ github.token }}
