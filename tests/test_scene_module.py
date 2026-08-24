@@ -190,3 +190,45 @@ def test_loader_resolution_reaches_the_cache_key(tmp_path):
         )._config_dict()["res"]
 
     assert key(0.12) != key(0.06)
+
+
+def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
+    """A cache entry short of an output var must not count as a hit.
+
+    Returning the variables that happen to be present would hand back a
+    scene silently missing an output, reported as ``cached=True``.
+    """
+    import shutil
+
+    import xarray as xr
+
+    from adjeff.modules.test_module import TestModule as TM
+
+    class TwoOut(TM):
+        output_vars = ["rho_toa", "rho_unif"]
+
+        def _compute(self, scene):  # type: ignore[override]
+            for band in scene.bands:
+                ds = scene[band]
+                ds["rho_toa"] = ds["rho_s"] + 0.05
+                ds["rho_unif"] = ds["rho_s"] + 0.10
+            return scene
+
+    cache = CacheStore(tmp_path)
+    scene = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
+    )
+    module = TwoOut(cache=cache)
+    module(scene)
+
+    # Drop one output from the stored entry, as an interrupted write or a
+    # changed output_vars would.
+    path = tmp_path / module._cache_key(scene) / f"{S2Band.B02}.zarr"
+    stored = xr.open_zarr(path).load().drop_vars("rho_unif")
+    shutil.rmtree(path)
+    stored.to_zarr(path, mode="w")
+
+    assert cache.load_vars(
+        module._cache_key(scene), [S2Band.B02], TwoOut.output_vars
+    ) is None
+    assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
