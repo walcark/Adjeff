@@ -2,8 +2,6 @@
 
 from typing import Any, ClassVar
 
-from adjeff.core import PSFDict
-
 from .psf_conv_module import PSFConvModule
 
 
@@ -53,9 +51,10 @@ class Unif2Surface(PSFConvModule):
 
     Parameters
     ----------
-    psf_dict : PSFDict
-        Trainable or frozen PSFDict.  Use :func:`~adjeff.core.init_psf_dict`
-        to create a trainable instance for optimisation.
+    psfs : dict[SensorBand, PSFModule] or None
+        Live PSF modules to optimise.
+    kernels : xr.DataTree or None
+        Frozen PSF tree to apply.  Exactly one of the two.
     cache : CacheStore or None, optional
         Cache backend for the xarray inference path.
     device : torch.device or str, optional
@@ -71,7 +70,3 @@ class Unif2Surface(PSFConvModule):
     output_vars: ClassVar[list[str]] = ["rho_s"]
     _conv_input: ClassVar[str] = "rho_unif"
     _formula: ClassVar[Any] = staticmethod(_rho_s_from_rho_env)
-
-    def to_psf_dict(self) -> PSFDict:
-        """Export current kernels to a frozen :class:`~adjeff.core.PSFDict`."""
-        return self._psf_dict.to_frozen()

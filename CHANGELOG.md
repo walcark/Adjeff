@@ -5,6 +5,29 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`PSFDict` is gone.** It was two types under one name: a mode flag
+  governed six methods, `to_dataarray()` raised in one mode and
+  `get_module()` in the other, and `params()` had two competing storage
+  strategies. Frozen kernels are now an `xarray.DataTree`, one group per
+  band; live PSFs are a plain `dict[SensorBand, PSFModule]`.
+  `PSFConvModule` takes `psfs=` or `kernels=`, exactly one of the two,
+  so the mode is visible at the call site instead of hidden in the
+  object. 362 lines become 164, fully covered.
+- `da.adjeff.band` becomes `da.adjeff.band_id` and returns the id string.
+
+### Fixed
+
+- **A frozen PSF could not be written to zarr.** `to_dataarray()` stored
+  the `SensorBand` enum in `attrs`, which is not JSON serialisable, so
+  `PSFDict.to_zarr()` raised on any tree built from `to_frozen()`. It
+  went unnoticed because the optimiser's own path dropped attrs on the
+  way. The attribute now holds the band id, and the round-trip is
+  tested, heterogeneous per-band grids included.
+
 ## [0.7.0]
 
 Correctness release. Five defects were found by an audit of the cache and

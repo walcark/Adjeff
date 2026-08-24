@@ -4,10 +4,12 @@ from typing import Any, ClassVar, cast
 
 import torch
 import torch.nn as nn
+import xarray as xr
 
 from adjeff.core import ImageDict, SensorBand
 from adjeff.core._psf import PSFModule
-from adjeff.core.psf_dict import PSFDict
+from adjeff.core.psf_tree import freeze, psf_kernel
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils import CacheStore, fft_convolve_2D, fft_convolve_2D_torch
 
 from ..scene_module import TrainableSceneModule
@@ -29,21 +31,28 @@ class PSFConvModule(TrainableSceneModule):
     ``forward_band`` (2-D tensor training, autograd preserved) are both fully
     derived from these two declarations — subclasses need not override either.
 
-    A trainable :class:`~adjeff.core.PSFDict` (created via
-    :func:`~adjeff.core.init_psf_dict`) registers its PSFModules for autograd
-    and enables :meth:`forward_band`.  A frozen :class:`~adjeff.core.PSFDict`
-    (e.g. after :meth:`~adjeff.core.PSFDict.to_frozen`) is used for inference
-    only via :meth:`_compute`.
+    Training and inference are two different inputs, not two modes of one
+    object.  Pass *psfs* to optimise live :class:`PSFModule` objects, or
+    *kernels* to apply a frozen PSF tree; exactly one of the two.
 
     Parameters
     ----------
-    psf_dict : PSFDict
-        Trainable or frozen PSFDict.  Use :func:`~adjeff.core.init_psf_dict`
-        to create a trainable instance.
+    psfs : dict[SensorBand, PSFModule] or None
+        Live PSF modules, registered for autograd.  Required for
+        training, and the only form :meth:`forward_band` accepts.
+    kernels : xr.DataTree or None
+        Frozen PSF tree, as returned by
+        :func:`~adjeff.core.psf_tree.freeze` or the optimiser.  Inference
+        only.
     cache : CacheStore or None, optional
         Cache backend for the xarray inference path.
     device : torch.device or str, optional
         Device used for tensor convolutions (default ``"cuda"``).
+
+    Raises
+    ------
+    ConfigurationError
+        If neither or both of *psfs* and *kernels* are given.
     """
 
     _conv_input: ClassVar[str]
@@ -51,38 +60,57 @@ class PSFConvModule(TrainableSceneModule):
 
     def __init__(
         self,
-        psf_dict: PSFDict,
+        psfs: dict[SensorBand, PSFModule] | None = None,
+        kernels: xr.DataTree | None = None,
         cache: CacheStore | None = None,
         device: torch.device | str = "cuda",
     ) -> None:
+        if (psfs is None) == (kernels is None):
+            raise ConfigurationError(
+                "Pass exactly one of `psfs` (live modules, for training) "
+                "or `kernels` (a frozen PSF tree, for inference)."
+            )
         super().__init__(cache=cache)
         self._device = torch.device(device)
-        self._psf_dict = psf_dict
-        if psf_dict.is_trainable:
-            self._psfs: nn.ModuleDict = nn.ModuleDict(
-                {
-                    b.id: cast(nn.Module, psf_dict.get_module(b))
-                    for b in psf_dict.bands
-                }
-            )
-        else:
-            self._psfs = nn.ModuleDict()
+        self._kernels = kernels
+        self._psfs: nn.ModuleDict = nn.ModuleDict(
+            {b.id: cast(nn.Module, m) for b, m in (psfs or {}).items()}
+        )
 
     # ------------------------------------------------------------------
     # TrainableSceneModule interface
     # ------------------------------------------------------------------
 
     @property
+    def is_trainable(self) -> bool:
+        """Return True when this model holds live PSF modules."""
+        return self._kernels is None
+
+    @property
     def psf_modules(self) -> dict[str, PSFModule]:
-        """Mapping of band IDs to PSF modules (trainable mode only)."""
+        """Mapping of band IDs to PSF modules (training mode only)."""
         return {k: cast(PSFModule, v) for k, v in self._psfs.items()}
+
+    def to_psf_tree(self) -> xr.DataTree:
+        """Export the current kernels to a frozen PSF tree.
+
+        Returns
+        -------
+        xr.DataTree
+            One group per band.  In inference mode the tree the model was
+            built with is returned unchanged.
+        """
+        if self._kernels is not None:
+            return self._kernels
+        modules = [cast(PSFModule, m) for m in self._psfs.values()]
+        return freeze({m.band: m for m in modules})
 
     def forward_band(
         self, band: SensorBand, **inputs: torch.Tensor
     ) -> torch.Tensor:
         """Differentiable per-band forward pass (2-D tensors, autograd).
 
-        Only available in trainable mode.
+        Only available in training mode.
         """
         d = self._device
         kernel = self.psf_modules[band.id].forward().to(d)
@@ -101,17 +129,19 @@ class PSFConvModule(TrainableSceneModule):
     # SceneModule interface
     # ------------------------------------------------------------------
 
+    def _kernel_for(self, band: SensorBand) -> xr.DataArray:
+        """Return the kernel to convolve with for *band*."""
+        if self._kernels is not None:
+            return psf_kernel(self._kernels, band)
+        return self.psf_modules[band.id].to_dataarray()
+
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Xarray inference — extra dims handled by broadcasting."""
         for band in scene.bands:
             ds = scene[band]
-            if self._psf_dict.is_trainable:
-                kernel_da = self.psf_modules[band.id].to_dataarray()
-            else:
-                kernel_da = self._psf_dict.kernel(band)
             rho_env = fft_convolve_2D(
                 ds[self._conv_input].compute(),
-                kernel_da,
+                self._kernel_for(band),
                 padding="reflect",
                 conv_type="same",
                 device=self._device,
@@ -124,11 +154,17 @@ class PSFConvModule(TrainableSceneModule):
 
     def _config_dict(self) -> dict[str, object]:
         """Override to hash PSF kernel arrays instead of module attributes."""
-        if self._psf_dict.is_trainable:
+        if self._kernels is not None:
             return {
-                band_id: cast(PSFModule, psf).to_dataarray().values
-                for band_id, psf in self._psfs.items()
+                band_id: psf_kernel_values(self._kernels, band_id)
+                for band_id in sorted(self._kernels.children)
             }
         return {
-            b.id: self._psf_dict.kernel(b).values for b in self._psf_dict.bands
+            band_id: cast(PSFModule, psf).to_dataarray().values
+            for band_id, psf in self._psfs.items()
         }
+
+
+def psf_kernel_values(tree: xr.DataTree, band_id: str) -> Any:
+    """Return the raw kernel array stored under *band_id*."""
+    return tree[band_id].ds["kernel"].values

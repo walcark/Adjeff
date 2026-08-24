@@ -29,7 +29,7 @@ from adjeff.api import (
     sample_psf_atm,
 )
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
-from adjeff.core import ImageDict, S2Band, disk_image_dict
+from adjeff.core import ImageDict, S2Band, disk_image_dict, psf_kernel
 from adjeff.modules.samplers import (
     PsfAtmSampler,
     RadiativePipeline,
@@ -176,7 +176,7 @@ def test_adjacency_blurs_the_disk_edge(config, surface):
 
 def test_sample_psf_atm_returns_a_normalised_kernel(config):
     """sample_psf_atm returns a finite, positive, normalised kernel."""
-    psf_dict = sample_psf_atm(
+    tree = sample_psf_atm(
         bands=[BAND],
         res_km=RES_KM,
         n=N,
@@ -184,7 +184,7 @@ def test_sample_psf_atm_returns_a_normalised_kernel(config):
         geo_config=config["geo_config"],
         n_ph=N_PH,
     )
-    kernel = psf_dict.kernel(BAND).squeeze(drop=True)
+    kernel = psf_kernel(tree, BAND).squeeze(drop=True)
 
     assert kernel.shape == (N, N)
     _finite_in(kernel, 0.0, 1.0)

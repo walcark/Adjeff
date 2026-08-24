@@ -6,7 +6,7 @@ New functions added from api_bis:
 - :func:`load_maja`         — load_scene pre-wired for MajaLoader.
 - :func:`load_config`       — FullConfig from a scene with aggregation.
 - :func:`fit_psf`           — end-to-end PSF fitting in one call.
-- :func:`apply_psf`         — apply a frozen PSFDict to a scene.
+- :func:`apply_psf`         — apply a frozen PSF tree to a scene.
 - :func:`sample_psf_atm_from_scene` — atmospheric PSF from a scene.
 
 
@@ -32,7 +32,7 @@ Typical usage
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TypedDict, TypeVar, overload
+from typing import TypedDict, TypeVar, cast, overload
 
 import numpy as np
 import xarray as xr
@@ -40,12 +40,12 @@ import xarray as xr
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import (
     ImageDict,  # noqa: E402
-    PSFDict,
     PSFGrid,
     SensorBand,
     disk_image_dict,
     gaussian_image_dict,
-    init_psf_dict,
+    psf_params,
+    psf_tree,
 )
 from adjeff.core._psf import PSFModule  # not in core.__init__
 from adjeff.exceptions import MissingVariableError
@@ -79,6 +79,49 @@ from adjeff.utils import CacheStore
 # ---------------------------------------------------------------------------
 
 _Scalar = float | list[float] | xr.DataArray
+
+
+def _build_psfs(
+    psf_type: type[PSFModule],
+    bands: list[SensorBand],
+    res_km: float,
+    n: int,
+    init_parameters: dict[str, float] | dict[SensorBand, dict[str, float]],
+) -> dict[SensorBand, PSFModule]:
+    """Instantiate one live PSF module per band on a common grid.
+
+    Parameters
+    ----------
+    psf_type : type[PSFModule]
+        PSF model class, e.g. ``KingPSF``.
+    bands : list[SensorBand]
+        Bands to build a PSF for.
+    res_km : float
+        Pixel size in km.
+    n : int
+        Grid side in pixels; must be odd and >= 3.
+    init_parameters : dict
+        Either ``{"sigma": 0.1}`` shared by every band, or
+        ``{S2Band.B02: {"sigma": 0.1}, ...}`` per band.
+
+    Returns
+    -------
+    dict[SensorBand, PSFModule]
+        Ready to hand to a ``PSFConvModule`` as ``psfs=``.
+    """
+    per_band = bool(init_parameters) and isinstance(
+        next(iter(init_parameters)), SensorBand
+    )
+    grid = PSFGrid(res=res_km, n=n)
+    psfs: dict[SensorBand, PSFModule] = {}
+    for band in bands:
+        params = (
+            cast(dict[SensorBand, dict[str, float]], init_parameters)[band]
+            if per_band
+            else cast(dict[str, float], init_parameters)
+        )
+        psfs[band] = psf_type(grid=grid, band=band, **params)
+    return psfs
 
 
 def _da(val: _Scalar, dim: str) -> xr.DataArray:
@@ -334,8 +377,8 @@ def make_model(
 ) -> M:
     """Instantiate a :class:`~adjeff.modules.models.PSFConvModule` subclass.
 
-    Creates a :class:`~adjeff.core.PSFGrid` and a trainable
-    :class:`~adjeff.core.PSFDict` for each band, then constructs the model.
+    Creates a :class:`~adjeff.core.PSFGrid` and one live PSF module
+    per band, then constructs the model.
 
     Parameters
     ----------
@@ -362,15 +405,11 @@ def make_model(
     M
         An instance of *model_cls*.
     """
-    grids: dict[SensorBand, PSFGrid] = {
-        band: PSFGrid(res=res_km, n=n) for band in bands
-    }
-    psf_dict: PSFDict = init_psf_dict(
-        grids=grids,
-        model=psf_type,
-        init_parameters=init_parameters,
+    return model_cls(
+        psfs=_build_psfs(psf_type, bands, res_km, n, init_parameters),
+        device=device,
+        cache=cache,
     )
-    return model_cls(psf_dict=psf_dict, device=device, cache=cache)
 
 
 # ---------------------------------------------------------------------------
@@ -849,14 +888,14 @@ def sample_psf_atm(
     afgl_type: str = "afgl_exp_h8km",
     n_ph: int = int(1e6),
     cache: CacheStore | None = None,
-) -> PSFDict:
-    """Sample the atmospheric PSF and return a frozen :class:`PSFDict`.
+) -> xr.DataTree:
+    """Sample the atmospheric PSF and return a frozen PSF tree.
 
     Internally builds a constant input scene to carry the spatial grid
     (only ``res`` and ``n`` matter to the sampler — the reflectance values
     are irrelevant), runs
     :class:`~adjeff.modules.samplers.PsfAtmSampler`, then wraps the
-    resulting ``psf_atm`` DataArrays into a :class:`~adjeff.core.PSFDict`.
+    resulting ``psf_atm`` DataArrays into a PSF tree.
 
     Requires a CUDA GPU (delegates to Smart-G).
 
@@ -883,8 +922,8 @@ def sample_psf_atm(
 
     Returns
     -------
-    PSFDict
-        Frozen PSFDict with one ``kernel`` DataArray per band.
+    xr.DataTree
+        One group per band, each holding a ``kernel``.
         Extra atmospheric dimensions (``aot``, ``rh``, ...) are preserved.
     """
     scene = gaussian_image_dict(
@@ -904,9 +943,7 @@ def sample_psf_atm(
         cache=cache,
     )
     out = sampler(scene)
-    return PSFDict.from_kernels(
-        {band: out[band]["psf_atm"] for band in out.bands}
-    )
+    return psf_tree({band: out[band]["psf_atm"] for band in out.bands})
 
 
 # ---------------------------------------------------------------------------
@@ -922,13 +959,13 @@ def optimize_adam_lbfgs(
     lbfgs_config: LBFGSConfig | None = None,
     device: str = "cuda",
     zarr_path: str | Path | None = None,
-) -> PSFDict:
+) -> xr.DataTree:
     """Optimize a model's PSF with an Adam warm-up followed by L-BFGS.
 
     Parameters
     ----------
     model : PSFConvModule
-        Trainable model (must hold a trainable :class:`~adjeff.core.PSFDict`).
+        Trainable model, holding live PSF modules.
     train_images : TrainingImages
         Collection of reference scenes.
     loss : Loss
@@ -948,13 +985,13 @@ def optimize_adam_lbfgs(
     zarr_path : str or Path or None, optional
         When provided, each band's stacked kernel is written to zarr as
         it is reconstructed and immediately freed from RAM.  The returned
-        PSFDict is backed by zarr on disk (lazy, minimal RAM footprint).
+        tree is backed by zarr on disk (lazy, minimal RAM footprint).
         When ``None`` (default), kernels are kept in memory.
 
     Returns
     -------
-    PSFDict
-        Frozen PSFDict with optimised kernels stacked over all atmospheric
+    xr.DataTree
+        Frozen PSF tree with optimised kernels stacked over all atmospheric
         combos found in *train_images*.
     """
     if adam_config is None:
@@ -1087,12 +1124,12 @@ def fit_psf(
     n_train: int = 1999,
     cache: CacheStore | None = None,
     device: str = "cuda",
-) -> PSFDict:
+) -> xr.DataTree:
     """Fit a PSF model for one or more bands in one call.
 
     Wraps the full pipeline: build disk training scenes → forward pipeline
     → instantiate model → run optimiser stages → return frozen
-    :class:`~adjeff.core.PSFDict`.
+    PSF tree.
 
     Configuration is derived from ``bands[0]`` via :func:`load_config`
     with ``aggregate=True``.
@@ -1127,8 +1164,8 @@ def fit_psf(
 
     Returns
     -------
-    PSFDict
-        Frozen PSFDict with one optimised kernel per band.
+    xr.DataTree
+        Frozen PSF tree with one optimised kernel per band.
     """
     _target_var: str = target_var or model_cls.output_vars[0]
     _res_km: float = res_km or _res_from_scene(scene, bands[0])
@@ -1155,13 +1192,11 @@ def fit_psf(
         weights=[1.0] * len(disk_scenes),
     )
 
-    grids = {b: PSFGrid(res=_res_km, n=n_train) for b in bands}
-    psf_dict_train = init_psf_dict(
-        grids=grids,
-        model=psf_type,
-        init_parameters=init_parameters,
+    model = model_cls(
+        psfs=_build_psfs(psf_type, bands, _res_km, n_train, init_parameters),
+        device=device,
+        cache=cache,
     )
-    model = model_cls(psf_dict=psf_dict_train, device=device, cache=cache)
 
     optimizer = OptimizerPipeline(
         stages=_configs_to_stages(_stages),
@@ -1178,7 +1213,7 @@ def fit_psf(
 
 def apply_psf(
     scene: ImageDict,
-    psf_dict: PSFDict,
+    psf_dict: xr.DataTree,
     band: SensorBand,
     *,
     model_cls: type[PSFConvModule] = Unif2Surface,
@@ -1187,7 +1222,7 @@ def apply_psf(
     res_km: float | None = None,
     device: str = "cuda",
 ) -> ImageDict:
-    """Apply a frozen PSFDict to a scene to predict the output variable.
+    """Apply a frozen PSF tree to a scene to predict the output variable.
 
     Two modes:
 
@@ -1200,8 +1235,8 @@ def apply_psf(
     ----------
     scene : ImageDict
         Scene containing the variables required by *model_cls*.
-    psf_dict : PSFDict
-        Frozen PSFDict, typically returned by :func:`fit_psf`.
+    psf_dict : xr.DataTree
+        Frozen PSF tree, typically returned by :func:`fit_psf`.
     band : SensorBand
         Band to apply.
     model_cls : type[PSFConvModule], optional
@@ -1233,20 +1268,19 @@ def apply_psf(
             "`psf_type` is required when `n` is provided."
         )
 
-    _psf: PSFDict = psf_dict
     if n is not None and psf_type is not None:
-        params_raw = psf_dict.params(band) or {}
         params: dict[str, float] = {
-            k: _to_scalar(v) for k, v in params_raw.items()
+            name: _to_scalar(value)
+            for name, value in psf_params(psf_dict, band).items()
         }
         _res_km: float = res_km or _res_from_scene(scene, band)
-        _psf = init_psf_dict(
-            grids={band: PSFGrid(res=_res_km, n=n)},
-            model=psf_type,
-            init_parameters=params,
+        model = model_cls(
+            psfs=_build_psfs(psf_type, [band], _res_km, n, params),
+            device=device,
         )
+    else:
+        model = model_cls(kernels=psf_dict, device=device)
 
-    model = model_cls(psf_dict=_psf, device=device)
     model.eval()
     return model(scene)  # type: ignore[no-any-return]
 
@@ -1266,7 +1300,7 @@ def sample_psf_atm_from_scene(
     n_ph: int = int(1e6),
     res_km: float | None = None,
     cache: CacheStore | None = None,
-) -> PSFDict:
+) -> xr.DataTree:
     """Sample the atmospheric PSF for a given scene.
 
     Derives configuration from *scene* via :func:`load_config` with
@@ -1293,8 +1327,8 @@ def sample_psf_atm_from_scene(
 
     Returns
     -------
-    PSFDict
-        Frozen PSFDict with one ``kernel`` DataArray for *band*.
+    xr.DataTree
+        Frozen PSF tree with one ``kernel`` for *band*.
     """
     cfg = load_config(scene, band, aggregate=True)
     _res_km: float = res_km or _res_from_scene(scene, band)

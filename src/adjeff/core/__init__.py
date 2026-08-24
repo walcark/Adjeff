@@ -18,7 +18,9 @@ Analytical (trainable) PSFs inherit from :class:`PSFGrid`:
 
 Fixed-kernel (non-trainable): :class:`NonAnalyticalPSF`.
 
-Multi-band PSF container: :class:`PSFDict`, :func:`init_psf_dict`.
+Frozen kernels live in an :class:`xarray.DataTree`, one group per band:
+:func:`psf_tree`, :func:`freeze`, :func:`psf_kernel`, :func:`psf_params`.
+Live, gradient-tracked PSFs are a plain ``dict[SensorBand, PSFModule]``.
 
 **Image generation**
 
@@ -43,7 +45,7 @@ from .image_generator import (
     random_image_dict,
 )
 from .non_analytical_psf import NonAnalyticalPSF
-from .psf_dict import PSFDict, init_psf_dict
+from .psf_tree import freeze, psf_kernel, psf_params, psf_tree
 
 __all__ = [
     # Image representation
@@ -59,8 +61,10 @@ __all__ = [
     "MoffatGeneralizedPSF",
     "GeneralizedGaussianPSF",
     "NonAnalyticalPSF",
-    "PSFDict",
-    "init_psf_dict",
+    "psf_tree",
+    "freeze",
+    "psf_kernel",
+    "psf_params",
     # Image generation
     "disk_image_dict",
     "gaussian_image_dict",
