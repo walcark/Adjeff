@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import xarray as xr
@@ -108,9 +109,42 @@ class SweepSampler(SceneModule):
 
         return coerce(type(self).contract)
 
-    def _sweep(self) -> xr.DataArray:
-        """Run the sweep and return the single declared output."""
-        sweeper = Sweeper(type(self).contract, type(self).point_fn)
+    @staticmethod
+    def _restore_coords(arr: xr.DataArray, source: xr.Dataset) -> xr.DataArray:
+        """Give *arr* back the coordinates *source* holds for its dims.
+
+        A sweep axis is labelled by the values swept over it, so xsweep
+        builds coordinates for every dim it produces.  For a dim that is
+        not swept — the spatial ``y`` and ``x`` a scene owns — it has
+        nothing to build them from and falls back on integer positions,
+        which no longer match the scene's own labels.  Assigning such an
+        array into the scene would realign by label and keep only the
+        overlap, leaving the rest NaN.
+        """
+        shared = {
+            str(dim): source.coords[dim]
+            for dim in arr.dims
+            if dim in source.coords and dim in source.dims
+        }
+        return arr.assign_coords(shared) if shared else arr
+
+    def _sweep(self, **bound: Any) -> xr.DataArray:
+        """Run the sweep and return the single declared output.
+
+        Parameters
+        ----------
+        **bound
+            Per-call context bound into the physics function rather than
+            passed as a static: the band's own scene is data, not
+            configuration, and xsweep rightly refuses to fingerprint an
+            arbitrary Dataset.  Scene identity is already keyed by
+            :meth:`SceneModule._input_hashes`, which hashes the input
+            variables through their provenance.
+        """
+        func = type(self).point_fn
+        if bound:
+            func = functools.partial(func, **bound)
+        sweeper = Sweeper(type(self).contract, func)
         result = sweeper(
             self._space(),
             policy=SweepPolicy(batch_size=self.batch_size, dedup=self.dedup),

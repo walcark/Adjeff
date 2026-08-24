@@ -50,9 +50,7 @@ class SphAlbSampler(SweepSampler):
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["sph_alb"]
-    contract: ClassVar[str] = (
-        "batch(aot, rh, h, href) vec(wl) -> sph_alb(wl)"
-    )
+    contract: ClassVar[str] = "batch(aot, rh, h, href) vec(wl) -> sph_alb(wl)"
     point_fn: ClassVar[Callable[..., Any]] = staticmethod(sph_alb)
 
     def __init__(

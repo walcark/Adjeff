@@ -22,6 +22,15 @@ class SensorBand(Enum):
         """Return a simple representation of the band."""
         return f"{self.__class__.__name__}.{self.id}"
 
+    def __cache_token__(self) -> str:
+        """Return a stable, serialisable identity for cache fingerprints.
+
+        An Enum member is not JSON-serialisable, so a cache handed one as
+        context cannot tell when it changes.  The class name and the id
+        pin the band down: two members never share both.
+        """
+        return f"{type(self).__name__}.{self.id}"
+
 
 class S2Band(SensorBand):
     """Sentinel-2 spectral bands.

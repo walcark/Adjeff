@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
-import xarray as xr
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
 from adjeff.core import ImageDict
 
-from ..scene_module_sweep import SceneModuleSweep
+from ..sweep_sampler import SweepSampler
 from ._smartg import rho_toa_sym
 from .rho_atm import RhoAtmSampler
 
 logger = get_logger(__name__)
 
 
-class RhoToaSymSampler(SceneModuleSweep):
+class RhoToaSymSampler(SweepSampler):
     """Compute rho_toa by radial sampling under the symmetric PSF assumption.
 
     Assumes the scene is radially symmetric around the image centre.
@@ -59,8 +58,16 @@ class RhoToaSymSampler(SceneModuleSweep):
 
     required_vars: ClassVar[list[str]] = ["rho_s"]
     output_vars: ClassVar[list[str]] = ["rho_toa"]
-    scalar_dims: ClassVar[list[str]] = ["sza", "vza"]
-    vector_dims: ClassVar[list[str]] = ["aot", "rh", "h", "href"]
+    # `sza` and `vza` stay `loop`, not `batch`: the sensor positions are
+    # built from them, so a call carries one geometry.  The atmospheric
+    # axes ride along as `vec`, which is how Smart-G wants them.
+    contract: ClassVar[str] = (
+        # The output dim order is the one ParamBatch produces inside
+        # _smartg, which broadcasts wl, aot, rh, href, h in that order.
+        "loop(sza, vza) vec(aot, rh, h, href) "
+        "-> rho_toa(aot, rh, href, h, y, x)"
+    )
+    point_fn: ClassVar[Any] = staticmethod(rho_toa_sym)
 
     def __init__(
         self,
@@ -71,6 +78,8 @@ class RhoToaSymSampler(SceneModuleSweep):
         nr: int = 100,
         n_ph: int = int(1e6),
         cache: utils.CacheStore | None = None,
+        batch_size: int = 64,
+        dedup: bool = False,
     ) -> None:
         self.atmo_config = atmo_config
         self.geo_config = geo_config
@@ -78,15 +87,25 @@ class RhoToaSymSampler(SceneModuleSweep):
         self.afgl_type = afgl_type
         self.nr = nr
         self.n_ph = n_ph
-        super().__init__(cache=cache)
+        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
 
     def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
 
+    def _statics(self) -> dict[str, Any]:
+        return {
+            "saa": self.geo_config.saa.item(),
+            "vaa": self.geo_config.vaa.item(),
+            "species": self.atmo_config.species,
+            "sat_height": self.geo_config.sat_height,
+            "afgl_type": self.afgl_type,
+            "remove_rayleigh": self.remove_rayleigh,
+            "nr": self.nr,
+            "n_ph": self.n_ph,
+        }
+
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Run the radial rho_toa computation for every band in the scene."""
-        bundle, _ = self._make_bundle()
-
         scene = RhoAtmSampler(
             atmo_config=self.atmo_config,
             geo_config=self.geo_config,
@@ -97,21 +116,10 @@ class RhoToaSymSampler(SceneModuleSweep):
             cache=self._cache,
         )(scene)
 
+        # One sweep per band: the physics reads the band's own scene, so
+        # the two travel together rather than through the sweep space.
         for band in scene.bands:
-            rho_toa_arr: xr.DataArray = bundle.apply(
-                rho_toa_sym,
-                saa=self.geo_config.saa.item(),
-                vaa=self.geo_config.vaa.item(),
-                rho_s=scene[band],
-                band=band,
-                species=self.atmo_config.species,
-                sat_height=self.geo_config.sat_height,
-                afgl_type=self.afgl_type,
-                remove_rayleigh=self.remove_rayleigh,
-                nr=self.nr,
-                n_ph=self.n_ph,
-            )
-
-            scene[band]["rho_toa"] = rho_toa_arr
+            arr = self._sweep(rho_s=scene[band], band=band)
+            scene[band]["rho_toa"] = self._restore_coords(arr, scene[band])
 
         return scene

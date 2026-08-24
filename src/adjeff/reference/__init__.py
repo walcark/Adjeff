@@ -14,7 +14,7 @@ docstring, so the provenance is visible in the file tree.
 
 A method belongs here when it is someone else's, whether or not it
 shares adjeff's machinery: :class:`WuPsfSampler` is an ordinary
-:class:`~adjeff.modules.SceneModuleSweep`.  What sets it apart is
+:class:`~adjeff.modules.SweepSampler`.  What sets it apart is
 provenance, not shape.
 """
 

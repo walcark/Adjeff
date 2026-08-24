@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **The six radiative samplers run on [xsweep](https://github.com/walcark/xsweep).**
+- **Every sampler runs on [xsweep](https://github.com/walcark/xsweep).**
+  The three that loop over geometry — `RhoToaSampler`, `RhoToaSymSampler`
+  and `WuPsfSampler` — declare `loop(sza, vza) vec(...)`: the sensor grid
+  is rebuilt per angle, so a call carries one geometry and those axes
+  cannot be batched.
+
+- **The six radiative samplers run on xsweep's batch clause.**
   They declare a contract instead of a sweep: `batch(aot, rh, h, href,
   sza) vec(wl) -> tdir_down(wl)`. The atmospheric states stay sweep axes,
   so dedup and resumption keep working, but Smart-G still receives a
@@ -100,6 +106,11 @@ the streaming pipeline; none of them were visible to `ruff` or to
   Excluded from the default run by `addopts` and skipped without CUDA,
   so CI never attempts them. Run with
   `pixi run -e dev-gpu test-integration`.
+
+- `adjeff.sweep` is gone, and with it `SweepBundle`, `UniqueIndex` and
+  `SceneModuleSweep`: 617 lines that xsweep now provides, with a store,
+  resumption and a plan on top. `ParamBatch` stays, no longer pretending
+  to be a sweep engine: it is Smart-G's own flattening of the `vec` axes.
 
 ### Removed
 

@@ -118,9 +118,7 @@ def psf_kernel(tree: xr.DataTree, band: SensorBand) -> xr.DataArray:
     return group.ds[PSF_KERNEL]
 
 
-def psf_params(
-    tree: xr.DataTree, band: SensorBand
-) -> dict[str, xr.DataArray]:
+def psf_params(tree: xr.DataTree, band: SensorBand) -> dict[str, xr.DataArray]:
     """Return the fitted parameter values stored for *band*.
 
     Every variable of the band group except the kernel is a parameter.
