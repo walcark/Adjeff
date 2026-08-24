@@ -106,3 +106,87 @@ def test_pipeline_wrong_dependency_raises():
 
     with pytest.raises(ConfigurationError):
         Pipeline([ModuleB(), TM()])
+
+
+# --- Cache key completeness ---
+
+
+def test_config_dict_raises_on_privately_stored_param():
+    """A param stored under a private name must not be silently dropped.
+
+    Auto-detection reads __init__ params off same-named attributes, so a
+    private name would leave the param out of the cache key and let two
+    different configurations collide on one entry.
+    """
+    from adjeff.exceptions import ConfigurationError
+    from adjeff.modules.test_module import TestModule as TM
+
+    class Hidden(TM):
+        def __init__(self, shift, cache=None):
+            self._shift = shift  # wrong: not visible to _config_dict()
+            super().__init__(cache=cache)
+
+    with pytest.raises(ConfigurationError, match="shift"):
+        Hidden(shift=0.1)._config_dict()
+
+
+def test_sweep_params_reach_the_cache_key():
+    """deduplicate_dims and sweep_chunks must change the cache key.
+
+    Both alter the shape of a sampler's output, so two runs that differ
+    only by one of them must not share a cache entry.
+    """
+    import xarray as xr
+
+    from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
+    from adjeff.core import ImageDict
+    from adjeff.modules.samplers import TdirDownSampler
+
+    common = dict(
+        atmo_config=AtmoConfig(
+            aot=0.1, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+        ),
+        geo_config=GeoConfig(sza=30.0, vza=0.0, saa=120.0, vaa=120.0),
+        spectral_config=SpectralConfig.from_bands([S2Band.B02]),
+        remove_rayleigh=False,
+    )
+    scene = ImageDict({S2Band.B02: xr.Dataset()})
+
+    plain = TdirDownSampler(**common)._cache_key(scene)
+    dedup = TdirDownSampler(
+        **common, deduplicate_dims=["x", "y"]
+    )._cache_key(scene)
+    chunked = TdirDownSampler(**common, sweep_chunks={"wl": 2})._cache_key(
+        scene
+    )
+
+    assert len({plain, dedup, chunked}) == 3
+
+
+def test_loader_resolution_reaches_the_cache_key(tmp_path):
+    """ProductLoader.res must change the cache key.
+
+    The same product loaded at two target resolutions holds different
+    pixels, so the entries must not collide.
+    """
+    from adjeff.modules.loaders.product_loader import ProductLoader
+
+    class Loader(ProductLoader):
+        def ensure_correct_folder(self, path):
+            return None
+
+        def extract_metadata(self):
+            return None
+
+        def reflectance(self, band, btype="SRE"):
+            raise NotImplementedError
+
+        def _compute(self, scene):
+            return scene
+
+    def key(res):
+        return Loader(
+            product_path=tmp_path, bands=[S2Band.B02], res=res
+        )._config_dict()["res"]
+
+    assert key(0.12) != key(0.06)

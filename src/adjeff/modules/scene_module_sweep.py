@@ -122,8 +122,11 @@ class SceneModuleSweep(SceneModule):
         deduplicate_dims: list[str] | None = None,
     ) -> None:
         super().__init__(cache)
-        self._sweep_chunks = sweep_chunks
-        self._deduplicate_dims = deduplicate_dims
+        # Public names: SceneModule._config_dict() reads __init__ params
+        # off same-named attributes, and deduplicate_dims changes the
+        # shape of the output, so it must reach the cache key.
+        self.sweep_chunks = sweep_chunks
+        self.deduplicate_dims = deduplicate_dims
 
     @abstractmethod
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
@@ -161,8 +164,8 @@ class SceneModuleSweep(SceneModule):
         das, _ = _aggregate(list(self._get_configs()), all_names)
 
         dedup: UniqueIndex | None = None
-        if self._deduplicate_dims:
-            dedup, das = UniqueIndex.build(das, self._deduplicate_dims)
+        if self.deduplicate_dims:
+            dedup, das = UniqueIndex.build(das, self.deduplicate_dims)
 
         for name in self.scalar_dims:
             if name in das and das[name].ndim > 1:
@@ -174,7 +177,7 @@ class SceneModuleSweep(SceneModule):
         return SweepBundle(
             scalars={k: das[k] for k in self.scalar_dims if k in das},
             vectors={k: das[k] for k in self.vector_dims if k in das},
-            sweep_chunks=self._sweep_chunks,
+            sweep_chunks=self.sweep_chunks,
         ), dedup
 
     def _apply_bundle(

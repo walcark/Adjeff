@@ -130,6 +130,10 @@ class ProductLoader(SceneSource, ABC):
             raise ImageIOError(f"Product path does not exist: {product_path}")
         self.ensure_correct_folder(product_path)
         self.product_path = product_path
+        # Kept under its own name: _config_dict() reads __init__ params
+        # off same-named attributes, and two runs that differ only by the
+        # target resolution must not share a cache entry.
+        self.res = res
         self._build_band_to_res(bands, res)
         self.extract_metadata()
         self.as_map = as_map
