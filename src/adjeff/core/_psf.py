@@ -109,7 +109,9 @@ class PSFModule(nn.Module, ABC):
         attrs: dict[str, object] = {
             "adjeff:kind": "analytical",
             "adjeff:model": self._model_name,
-            "band": self.band,
+            # The id, not the enum: attrs have to survive a zarr write,
+            # and a SensorBand is not JSON serialisable.
+            "band": self.band.id,
         }
         if params:
             attrs["adjeff:params"] = params

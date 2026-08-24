@@ -14,7 +14,6 @@ import numpy as np
 import torch
 import xarray as xr
 
-from .core.bands import SensorBand
 from .exceptions import AdjeffAccessorError
 from .utils.radial import (
     _profile_to_field,
@@ -69,9 +68,15 @@ class AdjeffDataArrayAccessor:
         """Return the ``adjeff:params`` attribute, or None if absent."""
         return self._da.attrs.get("adjeff:params")
 
-    def band(self) -> SensorBand | None:
-        """Return the ``band`` attribute, or None if absent."""
-        return self._da.attrs.get("band")
+    def band_id(self) -> str | None:
+        """Return the band id this array was produced for, or None.
+
+        The id rather than the :class:`~adjeff.core.SensorBand` itself:
+        the attribute has to survive a zarr round-trip, and an enum is
+        not JSON serialisable.
+        """
+        band_id = self._da.attrs.get("band")
+        return str(band_id) if band_id is not None else None
 
     # ------------------------------------------------------------------
     # Spatial

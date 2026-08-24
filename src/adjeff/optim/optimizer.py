@@ -9,8 +9,8 @@ import structlog
 import torch
 import xarray as xr
 
-from adjeff.core import PSFDict
 from adjeff.core.bands import SensorBand
+from adjeff.core.psf_tree import psf_tree, write_band
 from adjeff.modules.scene_module import TrainableSceneModule
 
 from ._combo_stage import _ComboStage, restore_all_params, save_all_params
@@ -63,8 +63,8 @@ class _Optimizer(abc.ABC):
         self,
         model: TrainableSceneModule,
         zarr_path: str | Path | None = None,
-    ) -> PSFDict:
-        """Optimise all PSFs in *model* and return a :class:`PSFDict`.
+    ) -> xr.DataTree:
+        """Optimise all PSFs in *model* and return a frozen PSF tree.
 
         One independent call to :meth:`_run_combo` is made per
         (atmospheric combo × band) pair found in *train_images*.  Each
@@ -79,13 +79,14 @@ class _Optimizer(abc.ABC):
         zarr_path : str or Path or None
             When provided, each band's stacked kernel is written to zarr
             as it is reconstructed and freed from RAM.  The returned
-            PSFDict is backed by zarr on disk (lazy, no kernel data in
+            tree is backed by zarr on disk (lazy, no kernel data in
             RAM).  When ``None`` (default), kernels are kept in memory.
 
         Returns
         -------
-        PSFDict
-            Kernels stacked over all optimised atmospheric combos.
+        xr.DataTree
+            One group per band, holding the kernel stacked over every
+            optimised atmospheric combo plus the fitted parameters.
         """
         zpath: Path | None = Path(zarr_path) if zarr_path is not None else None
 
@@ -157,7 +158,7 @@ class _Optimizer(abc.ABC):
         # Reconstruct kernels one band at a time so peak memory is
         # n_combos * kernel_size rather than n_bands * n_combos * kernel_size.
         # When zarr_path is set, each band is flushed to disk immediately and
-        # freed from RAM — the returned PSFDict is fully lazy.
+        # freed from RAM — the returned tree is fully lazy.
         stacked: dict[SensorBand, xr.DataArray] = {}
         stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
         for band_id, psf in model.psf_modules.items():
@@ -181,10 +182,8 @@ class _Optimizer(abc.ABC):
             if zpath is not None:
                 ds_vars: dict[str, xr.DataArray] = {"kernel": stacked_kernel}
                 if band_params:
-                    ds_vars.update(
-                        {f"param_{p}": da for p, da in band_params.items()}
-                    )
-                PSFDict._write_band_zarr(zpath / str(b), xr.Dataset(ds_vars))
+                    ds_vars.update(band_params)
+                write_band(zpath / b.id, xr.Dataset(ds_vars))
                 del stacked_kernel
             else:
                 stacked[b] = stacked_kernel
@@ -199,8 +198,8 @@ class _Optimizer(abc.ABC):
             bands=[str(b) for b in (bands if zpath else stacked)],
         )
         if zpath is not None:
-            return PSFDict.open_zarr(zpath, bands)
-        return PSFDict.from_kernels(
+            return xr.open_datatree(zpath, engine="zarr")
+        return psf_tree(
             stacked,
             params=stacked_params if stacked_params else None,
         )

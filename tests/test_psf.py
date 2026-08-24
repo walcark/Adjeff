@@ -106,7 +106,7 @@ def _assert_dataarray_valid(da: xr.DataArray, n: int, band: SensorBand) -> None:
     assert list(da.dims) == ["y_psf", "x_psf"]
     assert "x_psf" in da.coords
     assert "y_psf" in da.coords
-    assert da.attrs.get("band") is band
+    assert da.attrs.get("band") == band.id
     assert "adjeff:kind" in da.attrs
 
 

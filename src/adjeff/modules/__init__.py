@@ -12,9 +12,8 @@ classes to domain-specific implementations:
   scene from scratch (no required input variables).
 - :class:`TrainableSceneModule` — extends :class:`SceneModule` with
   :class:`torch.nn.Module` for gradient-tracked PSF optimisation.
-- :class:`SceneModuleSweep` — extends :class:`SceneModule` with a
-  :class:`~adjeff.sweep.SweepBundle`-driven parameter sweep, used by
-  all Smart-G samplers.
+- :class:`SweepSampler` — extends :class:`SceneModule` with an
+  :mod:`xsweep` batched sweep, used by all Smart-G samplers.
 
 **2. Pipeline**
 
@@ -37,15 +36,15 @@ classes to domain-specific implementations:
 
 from .pipeline import Pipeline
 from .scene_module import SceneModule, TrainableSceneModule
-from .scene_module_sweep import SceneModuleSweep
 from .scene_source import SceneSource
+from .sweep_sampler import SweepSampler
 
 __all__ = [
     # Base classes
     "SceneModule",
     "SceneSource",
     "TrainableSceneModule",
-    "SceneModuleSweep",
+    "SweepSampler",
     # Pipeline
     "Pipeline",
 ]

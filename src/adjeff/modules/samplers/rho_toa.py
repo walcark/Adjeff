@@ -10,24 +10,22 @@ pixels were actually computed.
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
-import numpy as np
-import xarray as xr
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
 from adjeff.core import ImageDict
 
-from ..scene_module_sweep import SceneModuleSweep
+from ..sweep_sampler import SweepSampler
 from ._smartg import rho_toa
 from .rho_atm import RhoAtmSampler
 
 logger = get_logger(__name__)
 
 
-class RhoToaSampler(SceneModuleSweep):
+class RhoToaSampler(SweepSampler):
     """Compute rho_toa by 2D grid sampling without symmetry assumption.
 
     The full 2D surface reflectance map is encoded as an ``Albedo_map``
@@ -64,8 +62,14 @@ class RhoToaSampler(SceneModuleSweep):
 
     required_vars: ClassVar[list[str]] = ["rho_s"]
     output_vars: ClassVar[list[str]] = ["rho_toa"]
-    scalar_dims: ClassVar[list[str]] = ["sza", "vza"]
-    vector_dims: ClassVar[list[str]] = ["aot", "rh", "h", "href"]
+    # `sza` and `vza` stay `loop`: the sensor grid is built from them, so
+    # a call carries one geometry.  The output dim order is the one
+    # ParamBatch produces inside _smartg (wl, aot, rh, href, h).
+    contract: ClassVar[str] = (
+        "loop(sza, vza) vec(aot, rh, h, href) "
+        "-> rho_toa(aot, rh, href, h, y, x)"
+    )
+    point_fn: ClassVar[Any] = staticmethod(rho_toa)
 
     def __init__(
         self,
@@ -80,6 +84,8 @@ class RhoToaSampler(SceneModuleSweep):
         n_alb: int = 1000,
         rho_background: float | Literal["mean", "min", "zero"] = "mean",
         cache: utils.CacheStore | None = None,
+        batch_size: int = 64,
+        dedup: bool = False,
     ) -> None:
         self.atmo_config = atmo_config
         self.geo_config = geo_config
@@ -91,15 +97,29 @@ class RhoToaSampler(SceneModuleSweep):
         self.n_ph = n_ph
         self.n_alb = n_alb
         self.rho_background = rho_background
-        super().__init__(cache=cache)
+        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
 
     def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
 
+    def _statics(self) -> dict[str, Any]:
+        return {
+            "saa": self.geo_config.saa.item(),
+            "vaa": self.geo_config.vaa.item(),
+            "species": self.atmo_config.species,
+            "sat_height": self.geo_config.sat_height,
+            "afgl_type": self.afgl_type,
+            "remove_rayleigh": self.remove_rayleigh,
+            "nx": self.nx,
+            "ny": self.ny,
+            "topleft_pix": self.topleft_pix,
+            "n_ph": self.n_ph,
+            "n_alb": self.n_alb,
+            "rho_background": self.rho_background,
+        }
+
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Run the 2D rho_toa computation for every band in the scene."""
-        bundle, _ = self._make_bundle()
-
         scene = RhoAtmSampler(
             atmo_config=self.atmo_config,
             geo_config=self.geo_config,
@@ -110,39 +130,10 @@ class RhoToaSampler(SceneModuleSweep):
             cache=self._cache,
         )(scene)
 
+        # One sweep per band: the physics reads the band's own scene, so
+        # the two travel together rather than through the sweep space.
         for band in scene.bands:
-            rho_toa_arr: xr.DataArray = bundle.apply(
-                rho_toa,
-                saa=self.geo_config.saa.item(),
-                vaa=self.geo_config.vaa.item(),
-                rho_s=scene[band],
-                band=band,
-                species=self.atmo_config.species,
-                sat_height=self.geo_config.sat_height,
-                afgl_type=self.afgl_type,
-                remove_rayleigh=self.remove_rayleigh,
-                nx=self.nx,
-                ny=self.ny,
-                topleft_pix=self.topleft_pix,
-                n_ph=self.n_ph,
-                n_alb=self.n_alb,
-                rho_background=self.rho_background,
-            )
-            logger.info(
-                "Computed rho_toa (2D).", dims=rho_toa_arr.dims, band=band
-            )
-            scene[band]["rho_toa"] = rho_toa_arr
-
-            x_full = scene[band]["rho_s"].coords["x"].values
-            y_full = scene[band]["rho_s"].coords["y"].values
-            x_s = x_full[self.topleft_pix[0] : self.topleft_pix[0] + self.nx]
-            y_s = y_full[self.topleft_pix[1] : self.topleft_pix[1] + self.ny]
-            valid = xr.DataArray(
-                np.zeros((len(y_full), len(x_full)), dtype=bool),
-                dims=["y", "x"],
-                coords={"y": y_full, "x": x_full},
-            )
-            valid.loc[{"y": y_s, "x": x_s}] = True
-            scene[band]["rho_toa_valid"] = valid
+            arr = self._sweep(rho_s=scene[band], band=band)
+            scene[band]["rho_toa"] = self._restore_coords(arr, scene[band])
 
         return scene

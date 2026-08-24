@@ -79,6 +79,7 @@ class NonAnalyticalPSF(PSFModule):
             attrs={
                 "adjeff:kind": "non_analytical",
                 "adjeff:source": self._source,
-                "band": self.band,
+                # The id, not the enum: see PSFModule.to_dataarray.
+                "band": self.band.id,
             },
         )

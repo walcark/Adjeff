@@ -5,6 +5,64 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Every sampler runs on [xsweep](https://github.com/walcark/xsweep).**
+  The three that loop over geometry — `RhoToaSampler`, `RhoToaSymSampler`
+  and `WuPsfSampler` — declare `loop(sza, vza) vec(...)`: the sensor grid
+  is rebuilt per angle, so a call carries one geometry and those axes
+  cannot be batched.
+
+- **The six radiative samplers run on xsweep's batch clause.**
+  They declare a contract instead of a sweep: `batch(aot, rh, h, href,
+  sza) vec(wl) -> tdir_down(wl)`. The atmospheric states stay sweep axes,
+  so dedup and resumption keep working, but Smart-G still receives a
+  whole group per call — calling it once per state costs 3x, since it
+  amortises the atmospheric profile over the batch.
+
+  `sweep_chunks` and `deduplicate_dims` become `batch_size` and `dedup`,
+  in the samplers, in `RadiativePipeline` and in `api`. `dedup` is now a
+  flag rather than a dim list: xsweep collapses repeated states wherever
+  they are, and guarantees the result is unchanged.
+
+- **`PSFDict` is gone.** It was two types under one name: a mode flag
+  governed six methods, `to_dataarray()` raised in one mode and
+  `get_module()` in the other, and `params()` had two competing storage
+  strategies. Frozen kernels are now an `xarray.DataTree`, one group per
+  band; live PSFs are a plain `dict[SensorBand, PSFModule]`.
+  `PSFConvModule` takes `psfs=` or `kernels=`, exactly one of the two,
+  so the mode is visible at the call site instead of hidden in the
+  object. 362 lines become 164, fully covered.
+- `da.adjeff.band` becomes `da.adjeff.band_id` and returns the id string.
+- **Published methods move to `adjeff.reference`.** `PsfAtmSampler`
+  implements the sampled PSF of Wu et al. (2024), the baseline this work
+  is compared against, but sat unlabelled among adjeff's own samplers
+  with no citation. It is now `adjeff.reference.WuPsfSampler`, in a
+  package where one module means one paper. Reading
+  `adjeff.modules.samplers` tells you what adjeff computes; reading
+  `adjeff.reference` tells you what it is measured against.
+
+  Breaking: `adjeff.modules.samplers.PsfAtmSampler` is gone, with no
+  alias. `api.sample_psf_atm` is unchanged. Cached atmospheric PSFs are
+  invalidated, since the module name enters the cache key.
+
+### Fixed
+
+- **`saa` and `vaa` were declared as arrays and used as scalars.** Every
+  `_smartg` function read `float(saa.flat[0])` from what its signature
+  called an `np.ndarray`. The loop samplers already passed `.item()`;
+  only the radiative ones passed an array. Found by xsweep refusing to
+  fingerprint an ndarray static, which is the check the cache needed.
+
+- **A frozen PSF could not be written to zarr.** `to_dataarray()` stored
+  the `SensorBand` enum in `attrs`, which is not JSON serialisable, so
+  `PSFDict.to_zarr()` raised on any tree built from `to_frozen()`. It
+  went unnoticed because the optimiser's own path dropped attrs on the
+  way. The attribute now holds the band id, and the round-trip is
+  tested, heterogeneous per-band grids included.
+
 ## [0.7.0]
 
 Correctness release. Five defects were found by an audit of the cache and
@@ -48,6 +106,11 @@ the streaming pipeline; none of them were visible to `ruff` or to
   Excluded from the default run by `addopts` and skipped without CUDA,
   so CI never attempts them. Run with
   `pixi run -e dev-gpu test-integration`.
+
+- `adjeff.sweep` is gone, and with it `SweepBundle`, `UniqueIndex` and
+  `SceneModuleSweep`: 617 lines that xsweep now provides, with a store,
+  resumption and a plan on top. `ParamBatch` stays, no longer pretending
+  to be a sweep engine: it is Smart-G's own flattening of the `vec` axes.
 
 ### Removed
 

@@ -1,21 +1,15 @@
 """Atmospheric path reflectance (``rho_atm``) sampler using Smart-G."""
 
-from typing import ClassVar
-
-import xarray as xr
-from structlog import get_logger
+from typing import Any, Callable, ClassVar
 
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
-from adjeff.core import ImageDict
 
-from ..scene_module_sweep import SceneModuleSweep
+from ..sweep_sampler import SweepSampler
 from ._smartg import rho_atm
 
-logger = get_logger(__name__)
 
-
-class RhoAtmSampler(SceneModuleSweep):
+class RhoAtmSampler(SweepSampler):
     """Sample atmospheric path reflectance with Smart-G Monte-Carlo.
 
     ``rho_atm`` is the TOA reflectance contribution of the atmosphere
@@ -54,22 +48,16 @@ class RhoAtmSampler(SceneModuleSweep):
         Result cache; ``None`` disables caching.
     sweep_chunks : dict[str, int] or None, optional
         Chunk sizes for vector dimensions (e.g. ``{"wl": 50}``).
-    deduplicate_dims : list[str] or None, optional
-        Spatial dimensions to deduplicate before sweeping.
+    dedup : bool, optional
+        Collapse repeated states before calling.
     """
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["rho_atm"]
-    scalar_dims: ClassVar[list[str]] = []
-    vector_dims: ClassVar[list[str]] = [
-        "wl",
-        "aot",
-        "rh",
-        "h",
-        "href",
-        "vza",
-        "sza",
-    ]
+    contract: ClassVar[str] = (
+        "batch(aot, rh, h, href, vza, sza) vec(wl) -> rho_atm(wl)"
+    )
+    point_fn: ClassVar[Callable[..., Any]] = staticmethod(rho_atm)
 
     def __init__(
         self,
@@ -80,8 +68,8 @@ class RhoAtmSampler(SceneModuleSweep):
         afgl_type: str = "afgl_exp_h8km",
         n_ph: int = int(2e7),
         cache: utils.CacheStore | None = None,
-        sweep_chunks: dict[str, int] | None = None,
-        deduplicate_dims: list[str] | None = None,
+        batch_size: int = 64,
+        dedup: bool = False,
     ) -> None:
         self.spectral_config = spectral_config
         self.atmo_config = atmo_config
@@ -89,33 +77,18 @@ class RhoAtmSampler(SceneModuleSweep):
         self.afgl_type = afgl_type
         self.remove_rayleigh = remove_rayleigh
         self.n_ph = n_ph
-        super().__init__(
-            cache=cache,
-            sweep_chunks=sweep_chunks,
-            deduplicate_dims=deduplicate_dims,
-        )
+        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
 
     def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
-    def _compute(self, scene: ImageDict) -> ImageDict:
-        """Run the Smart-G sweep and write ``rho_atm`` into each band."""
-        for band in self.spectral_config.bands:
-            if band not in scene.bands:
-                scene[band] = xr.Dataset()
-
-        arr: xr.DataArray = self._apply_bundle(
-            rho_atm,
-            species=self.atmo_config.species,
-            afgl_type=self.afgl_type,
-            remove_rayleigh=self.remove_rayleigh,
-            n_ph=self.n_ph,
-            saa=self.geo_config.saa.values,
-            vaa=self.geo_config.vaa.values,
-            sat_height=self.geo_config.sat_height,
-        )
-
-        for band in self.spectral_config.bands:
-            scene[band]["rho_atm"] = arr.sel(wl=band.wl_nm)
-
-        return scene
+    def _statics(self) -> dict[str, Any]:
+        return {
+            "species": self.atmo_config.species,
+            "afgl_type": self.afgl_type,
+            "remove_rayleigh": self.remove_rayleigh,
+            "n_ph": self.n_ph,
+            "saa": float(self.geo_config.saa.values.flat[0]),
+            "vaa": float(self.geo_config.vaa.values.flat[0]),
+            "sat_height": self.geo_config.sat_height,
+        }

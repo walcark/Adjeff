@@ -77,8 +77,8 @@ def rho_atm(
     afgl_type: str,
     remove_rayleigh: bool,
     n_ph: int,
-    saa: np.ndarray,
-    vaa: np.ndarray,
+    saa: float,
+    vaa: float,
     sat_height: float,
 ) -> xr.DataArray:
     """Compute the atmospheric reflectance (path radiance) with Smart-G.
@@ -107,9 +107,9 @@ def rho_atm(
         If ``True``, Rayleigh scattering is suppressed.
     n_ph : int
         Number of photons per Smart-G call.
-    saa : np.ndarray
+    saa : float
         Solar azimuth angle(s) [°].
-    vaa : np.ndarray
+    vaa : float
         Viewing azimuth angle(s) [°].
     sat_height : float
         Satellite altitude [km].
@@ -124,12 +124,10 @@ def rho_atm(
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    sat_sensor = utils.make_sensors(
-        180.0 - vza, float(vaa.flat[0]), posz=sat_height
-    )
+    sat_sensor = utils.make_sensors(180.0 - vza, vaa, posz=sat_height)
     sun_le = {
         "th_deg": np.atleast_1d(sza.values),
-        "phi_deg": float(saa.flat[0]),
+        "phi_deg": saa,
     }
 
     smartg = Smartg(autoinit=False)
@@ -304,7 +302,7 @@ def tdif_down(
     afgl_type: str,
     remove_rayleigh: bool,
     n_ph: int,
-    saa: np.ndarray,
+    saa: float,
     sat_height: float,
 ) -> xr.DataArray:
     """Compute the downward diffuse transmittance with Smart-G.
@@ -331,7 +329,7 @@ def tdif_down(
         If ``True``, Rayleigh scattering is suppressed.
     n_ph : int
         Number of photons per Smart-G call.
-    saa : np.ndarray
+    saa : float
         Solar azimuth angle(s) [°].
     sat_height : float
         Satellite altitude [km].
@@ -346,9 +344,7 @@ def tdif_down(
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    sun_sensor = utils.make_sensors(
-        180.0 - sza, float(saa.flat[0]), posz=sat_height
-    )
+    sun_sensor = utils.make_sensors(180.0 - sza, saa, posz=sat_height)
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
@@ -396,7 +392,7 @@ def tdif_up(
     afgl_type: str,
     remove_rayleigh: bool,
     n_ph: int,
-    saa: np.ndarray,
+    saa: float,
 ) -> xr.DataArray:
     """Compute the upward diffuse transmittance with Smart-G.
 
@@ -422,7 +418,7 @@ def tdif_up(
         If ``True``, Rayleigh scattering is suppressed.
     n_ph : int
         Number of photons per Smart-G call.
-    saa : np.ndarray
+    saa : float
         Solar azimuth angle(s) [°].
 
     Returns
@@ -436,7 +432,7 @@ def tdif_up(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
     th_deg = np.atleast_1d(np.squeeze(vza.values))
-    sat_le = {"th_deg": th_deg, "phi_deg": float(saa.flat[0])}
+    sat_le = {"th_deg": th_deg, "phi_deg": saa}
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
@@ -831,8 +827,16 @@ def rho_toa_sym(
 
     result = batch.unstack(result)
 
-    # Add pre-computed rho_atm to avoid simulation noise
-    result = result + rho_s["rho_atm"]
+    # Add pre-computed rho_atm to avoid simulation noise. It carries the
+    # sza/vza axes of the sweep that produced it, while this call is at one
+    # geometry, so the matching entry is selected rather than broadcast in:
+    # broadcasting would give the return two dims the contract never
+    # declares, and the result would be placed against the wrong axes.
+    rho_atm = rho_s["rho_atm"]
+    for dim, value in (("sza", sza), ("vza", vza)):
+        if dim in rho_atm.dims:
+            rho_atm = rho_atm.sel({dim: value}, method="nearest", drop=True)
+    result = result + rho_atm
 
     # Reconstruct 2-D field from radial profile: `.compute()` materialises
     # dask chunks introduced by `+ rho_atm` above, because `to_field` uses
