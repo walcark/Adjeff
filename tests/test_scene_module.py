@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from adjeff.core import S2Band, random_image_dict
+from adjeff.core import ImageDict, S2Band, random_image_dict
 from adjeff.exceptions import MissingVariableError
 from adjeff.modules import TestModule
 from adjeff.utils import CacheStore
@@ -232,3 +232,71 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
         module._cache_key(scene), [S2Band.B02], TwoOut.output_vars
     ) is None
     assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
+
+
+# --- Pipeline streaming ---
+
+
+@pytest.fixture
+def streamed_scene():
+    """Return a scene with two swept dims and a species attribute."""
+    import xarray as xr
+
+    da = xr.DataArray(
+        np.arange(2 * 3 * 4 * 4).reshape(2, 3, 4, 4).astype(float),
+        dims=["aot", "rh", "y", "x"],
+        coords={"aot": [0.1, 0.2], "rh": [40.0, 50.0, 60.0]},
+    )
+    return ImageDict(
+        {
+            S2Band.B02: xr.Dataset(
+                {"rho_s": da}, attrs={"adjeff:species": {"sulphate": 1.0}}
+            )
+        }
+    )
+
+
+class _Doubler(TestModule):
+    """Write ``out = 2 * rho_s``, so streaming must not change the result."""
+
+    output_vars = ["out"]
+
+    def _compute(self, scene):  # type: ignore[override]
+        for band in scene.bands:
+            scene[band]["out"] = scene[band]["rho_s"] * 2
+        return scene
+
+
+@pytest.mark.parametrize(
+    "stream_dims",
+    [{"aot": 1}, {"rh": 2}, {"aot": 1, "rh": 1}, {"aot": 1, "rh": 2}],
+)
+def test_streaming_matches_the_full_run(streamed_scene, stream_dims):
+    """Streaming over one or several dims must reproduce the full run.
+
+    Folding the Cartesian product of chunks along a single dimension
+    would stack n0 * n1 pieces on one axis instead of rebuilding the grid.
+    """
+    from adjeff.modules import Pipeline
+
+    reference = Pipeline([_Doubler()])(streamed_scene)[S2Band.B02]["out"]
+    streamed = Pipeline([_Doubler()], stream_dims=stream_dims)(
+        streamed_scene
+    )[S2Band.B02]["out"]
+
+    assert streamed.transpose(*reference.dims).shape == reference.shape
+    np.testing.assert_allclose(
+        streamed.transpose(*reference.dims).values, reference.values
+    )
+
+
+def test_streaming_preserves_dataset_attrs(streamed_scene):
+    """Streaming must carry the band attrs through.
+
+    They hold the aerosol species written by load_scene(); losing them
+    makes load_config() fall back to sulphate without a word.
+    """
+    from adjeff.modules import Pipeline
+
+    out = Pipeline([_Doubler()], stream_dims={"aot": 1})(streamed_scene)
+    assert out[S2Band.B02].attrs["adjeff:species"] == {"sulphate": 1.0}
