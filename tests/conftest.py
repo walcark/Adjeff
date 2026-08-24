@@ -2,10 +2,15 @@
 import pytest
 
 
+# Importing pycuda succeeds wherever it is installed, GPU or not: a CI
+# runner has the package and no device.  Initialising the driver and
+# counting devices is what actually tells the two apart.
 try:
-    import pycuda.driver  # noqa: F401
-    _HAS_CUDA = True
-except ImportError:
+    import pycuda.driver as _drv
+
+    _drv.init()
+    _HAS_CUDA = _drv.Device.count() > 0
+except Exception:
     _HAS_CUDA = False
 
 try:

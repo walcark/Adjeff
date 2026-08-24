@@ -91,7 +91,6 @@ class PsfAtmSampler(SceneModuleSweep):
         """Run the atmospheric PSF sampling for every band in the scene."""
         bundle, _ = self._make_bundle()
 
-        new_scene = ImageDict({b: xr.Dataset() for b in scene.bands})
         for band in scene.bands:
             psf_atm_arr: xr.DataArray = bundle.apply(
                 psf_atm,
@@ -108,5 +107,5 @@ class PsfAtmSampler(SceneModuleSweep):
                 band=band,
             )
 
-            new_scene[band]["psf_atm"] = psf_atm_arr
-        return new_scene
+            scene[band]["psf_atm"] = psf_atm_arr
+        return scene

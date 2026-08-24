@@ -33,6 +33,22 @@ the streaming pipeline; none of them were visible to `ruff` or to
   `load_scene()` was dropped, so `load_config()` fell back to sulphate
   without a word.
 
+- **`PsfAtmSampler` enriches the scene instead of replacing it.** It
+  returned a fresh `ImageDict`, dropping every input variable, which
+  broke the `SceneModule` contract and made it unusable anywhere but
+  first in a pipeline. `api.sample_psf_atm` never noticed because it
+  builds a throwaway scene and reads only `psf_atm`.
+
+### Added
+
+- **Integration tests** (`tests/test_integration.py`, marked
+  `integration`). The unit suite left `_smartg.py` at 16% coverage and
+  `api.py` at 29%: it never ran the physics. These drive the real chain
+  on a tiny grid and found the two defects above on their first run.
+  Excluded from the default run by `addopts` and skipped without CUDA,
+  so CI never attempts them. Run with
+  `pixi run -e dev-gpu test-integration`.
+
 ### Removed
 
 - `SweepBundle.from_configs`, `CacheStore.clear_function` (which looked
@@ -44,6 +60,11 @@ the streaming pipeline; none of them were visible to `ruff` or to
 
 ### Changed
 
+- `geoclide` is pinned below 4. smartg 1.2.0 calls its `get_rotateX_tf`,
+  renamed to `get_rotate_x_tf` in geoclide 4.0.0, which made
+  `PsfAtmSampler` raise `AttributeError`. Only the PSF sampler reaches
+  that code path, so the break was invisible until it ran. Lift the
+  bound once smartg ships a release built against geoclide 4.
 - The GPU environment moves to CUDA 12.9. `nvcc` only learns `sm_120`
   (Blackwell, RTX 50xx) from 12.8 on, and Smart-G compiles its kernels
   for the local compute capability.

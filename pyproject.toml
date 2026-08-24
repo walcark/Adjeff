@@ -47,6 +47,11 @@ sensorsio = "*"
 python = ">=3.11,<3.13"
 pydantic = ">=2.12.5,<3"
 smartg = ">=1.2.0,<2"
+# smartg 1.2.0 calls geoclide's `get_rotateX_tf`, which geoclide 4.0.0
+# renamed to `get_rotate_x_tf`.  Only the PSF sampler reaches that code
+# path, so the break is invisible until `PsfAtmSampler` runs.  Lift this
+# bound once smartg ships a release built against geoclide 4.
+geoclide = ">=3,<4"
 luts = ">=1.0.6,<2"
 xarray = ">=2026.1.0,<2027"
 numpy = ">=2.4.2,<3"
@@ -95,6 +100,10 @@ fmt = { cmd = "ruff format ." }
 lint = { cmd = "ruff check" }
 type-check = { cmd = "mypy src/adjeff --strict" }
 test = { cmd = "pytest tests/ --cov" }
+# Integration tests drive Smart-G on the GPU: minutes, not seconds, and
+# impossible on a CI runner without CUDA.  They are excluded from `test`
+# by the `addopts` below and only run through this task.
+test-integration = { cmd = "pytest tests/ -m integration -v" }
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
 install-sphinx = { cmd = "python -m pip install --upgrade sphinx pydata-sphinx-theme nbsphinx nbsphinx-link" }
 build-doc = { cmd = "sphinx-build -b html source build/html", cwd = "docs" }
@@ -103,6 +112,16 @@ build-doc = { cmd = "sphinx-build -b html source build/html", cwd = "docs" }
 install-build = { cmd = "python -m pip install --upgrade build twine" }
 build = { cmd = "python -m build" }
 upload-testpypi = { cmd = "python -m twine upload --repository testpypi dist/*" }
+
+[tool.pytest.ini_options]
+# `-m "not integration"` is what keeps the GPU tests out of CI: the
+# default run, and therefore `pixi run test`, never selects them.  The
+# tests also carry `requires_cuda`, so forcing them on a machine without
+# a GPU skips rather than fails.
+addopts = "-m 'not integration'"
+markers = [
+  "integration: drives Smart-G on a CUDA GPU; excluded from the default run",
+]
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
