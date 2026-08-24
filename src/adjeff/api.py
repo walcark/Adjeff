@@ -56,11 +56,7 @@ from adjeff.modules.models import Unif2Surface
 from adjeff.modules.models.psf_conv_module import (
     PSFConvModule,
 )  # not in models.__init__
-from adjeff.modules.samplers import (
-    PsfAtmSampler,
-    RadiativePipeline,
-    RhoToaSymSampler,
-)
+from adjeff.modules.samplers import RadiativePipeline, RhoToaSymSampler
 from adjeff.optim import (
     AdamConfig,
     AdamStage,
@@ -72,6 +68,7 @@ from adjeff.optim import (
     TrainingImages,
 )
 from adjeff.optim._combo_stage import _ComboStage  # private module
+from adjeff.reference import WuPsfSampler
 from adjeff.utils import CacheStore
 
 # ---------------------------------------------------------------------------
@@ -894,7 +891,7 @@ def sample_psf_atm(
     Internally builds a constant input scene to carry the spatial grid
     (only ``res`` and ``n`` matter to the sampler — the reflectance values
     are irrelevant), runs
-    :class:`~adjeff.modules.samplers.PsfAtmSampler`, then wraps the
+    :class:`~adjeff.reference.WuPsfSampler`, then wraps the
     resulting ``psf_atm`` DataArrays into a PSF tree.
 
     Requires a CUDA GPU (delegates to Smart-G).
@@ -934,7 +931,7 @@ def sample_psf_atm(
         bands=bands,
         n=n,
     )
-    sampler = PsfAtmSampler(
+    sampler = WuPsfSampler(
         atmo_config=atmo_config,
         geo_config=geo_config,
         remove_rayleigh=remove_rayleigh,

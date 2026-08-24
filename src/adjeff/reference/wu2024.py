@@ -1,4 +1,24 @@
-"""Atmospheric PSF (``psf_atm``) sampler using Smart-G backward tracing."""
+"""The sampled PSF of Wu et al. (2024), reimplemented on Smart-G.
+
+Reference
+---------
+Wu, Y. et al. (2024). Sensor-generic adjacency-effect correction for
+remote sensing of coastal and inland waters.  *Remote Sensing of
+Environment*, 315, 114433.
+
+The method has no closed-form expression: the PSF is *sampled* by Monte
+Carlo rather than fitted to a parametric shape.  Photons are launched
+backward from the sensor and the energy they deposit on a surface
+entity, as a function of its position, is the PSF.
+
+What it deliberately leaves out is the earth-atmosphere coupling: a
+photon that bounces off the surface, scatters in the atmosphere and
+comes back down is not counted.  That assumption is what adjeff drops,
+and comparing against this sampler is how the difference is measured.
+The upstream implementation, T-Mart, exposes only a corrected image and
+never the kernel, so the method is reimplemented here to make the
+comparison possible at the PSF level.
+"""
 
 from __future__ import annotations
 
@@ -10,15 +30,18 @@ from structlog import get_logger
 import adjeff.atmosphere as atmo
 import adjeff.utils as utils
 from adjeff.core import ImageDict
-
-from ..scene_module_sweep import SceneModuleSweep
-from ._smartg import psf_atm
+from adjeff.modules.samplers._smartg import psf_atm
+from adjeff.modules.scene_module_sweep import SceneModuleSweep
 
 logger = get_logger(__name__)
 
 
-class PsfAtmSampler(SceneModuleSweep):
-    """Compute the atmospheric PSF by Smart-G backward photon tracing.
+class WuPsfSampler(SceneModuleSweep):
+    """Sample the atmospheric PSF the way Wu et al. (2024) do.
+
+    A published method rather than one of adjeff's own: it lives in
+    :mod:`adjeff.reference` because its purpose is to be compared
+    against, not to be improved.
 
     Photons are launched backward from the sensor, propagated through
     the atmosphere until they hit a Smart-G ``Entity`` placed on the

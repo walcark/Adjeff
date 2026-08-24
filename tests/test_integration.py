@@ -30,11 +30,8 @@ from adjeff.api import (
 )
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import ImageDict, S2Band, disk_image_dict, psf_kernel
-from adjeff.modules.samplers import (
-    PsfAtmSampler,
-    RadiativePipeline,
-    TdirDownSampler,
-)
+from adjeff.modules.samplers import RadiativePipeline, TdirDownSampler
+from adjeff.reference import WuPsfSampler
 from adjeff.utils import CacheStore
 from conftest import requires_cuda
 
@@ -254,9 +251,9 @@ def test_deduplication_matches_the_plain_sweep(config):
 # --- PSF sampler on a scene ---
 
 
-def test_psf_atm_sampler_writes_into_the_scene(config, surface):
-    """PsfAtmSampler enriches the scene rather than replacing it."""
-    scene = PsfAtmSampler(
+def test_wu_sampler_writes_into_the_scene(config, surface):
+    """WuPsfSampler enriches the scene rather than replacing it."""
+    scene = WuPsfSampler(
         atmo_config=config["atmo_config"],
         geo_config=config["geo_config"],
         remove_rayleigh=False,

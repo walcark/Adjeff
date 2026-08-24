@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   so the mode is visible at the call site instead of hidden in the
   object. 362 lines become 164, fully covered.
 - `da.adjeff.band` becomes `da.adjeff.band_id` and returns the id string.
+- **Published methods move to `adjeff.reference`.** `PsfAtmSampler`
+  implements the sampled PSF of Wu et al. (2024), the baseline this work
+  is compared against, but sat unlabelled among adjeff's own samplers
+  with no citation. It is now `adjeff.reference.WuPsfSampler`, in a
+  package where one module means one paper. Reading
+  `adjeff.modules.samplers` tells you what adjeff computes; reading
+  `adjeff.reference` tells you what it is measured against.
+
+  Breaking: `adjeff.modules.samplers.PsfAtmSampler` is gone, with no
+  alias. `api.sample_psf_atm` is unchanged. Cached atmospheric PSFs are
+  invalidated, since the module name enters the cache key.
 
 ### Fixed
 

@@ -25,16 +25,15 @@ by the 5S radiative transfer formula::
 - :class:`RhoToaSymSampler` — radial sampling (symmetric PSF assumption).
 - :class:`RhoToaSampler`    — full 2D grid sampling (arbitrary surface).
 
-**Atmospheric PSF**:
-
-- :class:`PsfAtmSampler`   — atmospheric PSF via backward photon tracing.
+**Atmospheric PSF**: see :class:`adjeff.reference.WuPsfSampler`, which
+implements a published method and therefore lives in
+:mod:`adjeff.reference` rather than here.
 
 **Convenience pipeline**:
 
 - :class:`RadiativePipeline` — chains all six standard samplers.
 """
 
-from .psf_atm import PsfAtmSampler
 from .radiatives import RadiativePipeline
 from .rho_atm import RhoAtmSampler
 from .rho_toa import RhoToaSampler
@@ -46,7 +45,6 @@ from .tdir_down import TdirDownSampler
 from .tdir_up import TdirUpSampler
 
 __all__ = [
-    "PsfAtmSampler",
     "RadiativePipeline",
     "RhoAtmSampler",
     "RhoToaSampler",
