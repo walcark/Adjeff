@@ -110,6 +110,11 @@ class VoigtPSF(PSFModule):
     Linearly mixes a Gaussian (width *sigma*) and a Lorentzian (width
     *gamma*) using the Thompson et al. mixing parameter η.
 
+    The Lorentzian falls as ``r^{-2}``, so ``∫ P(r) r dr`` diverges
+    logarithmically on a plane whenever ``η > 0``: this kernel is always
+    normalised against the grid it is evaluated on, and its encircled
+    energy radii are properties of that grid rather than of the profile.
+
     Parameters
     ----------
     grid : PSFGrid
@@ -186,7 +191,15 @@ class KingPSF(PSFModule):
     """Trainable King profile PSF kernel.
 
     The kernel follows ``(1 + r² / (2σ²γ))^{-γ}``, producing a
-    power-law tail controlled by *gamma*.
+    power-law tail in ``r^{-2γ}``.
+
+    On a plane, ``∫ P(r) r dr`` converges only for ``γ > 1``: below that
+    the kernel carries no scale of its own and the grid, rather than the
+    physics, sets its normalisation.  At ``γ = 0.4`` on a 141 km grid,
+    half of the energy sits beyond 79 km.  *gamma* is therefore bounded
+    to :data:`GAMMA_BOUNDS` through a sigmoid rather than merely kept
+    positive.  The region below the bound is also where the loss surface
+    turns concave, which stalls a quasi-Newton step.
 
     Parameters
     ----------
@@ -197,8 +210,14 @@ class KingPSF(PSFModule):
     sigma : float
         Initial core width [km].
     gamma : float
-        Initial power-law index.
+        Initial power-law index.  Clamped into :data:`GAMMA_BOUNDS`.
     """
+
+    #: Range the power-law index is confined to.  The lower end is the
+    #: integrability threshold; the upper end is far above any value an
+    #: atmospheric fit has produced, and only keeps the sigmoid on a
+    #: usable slope.
+    GAMMA_BOUNDS: ClassVar[tuple[float, float]] = (1.0, 5.0)
 
     _model_name: ClassVar[str] = "King"
 
@@ -217,11 +236,15 @@ class KingPSF(PSFModule):
             max_val=1e2,
             name="sigma",
         )
+        low, high = self.GAMMA_BOUNDS
         self.gamma = ConstrainedParameter(
-            init_value=torch.tensor(gamma, dtype=torch.float32),
-            transform=ExpTransform(),
-            min_val=1e-1,
-            max_val=1e1,
+            init_value=torch.tensor(
+                min(max(gamma, low + 1e-3), high - 1e-3),
+                dtype=torch.float32,
+            ),
+            transform=SigmoidTransform(low, high),
+            min_val=low,
+            max_val=high,
             name="gamma",
         )
 
@@ -246,6 +269,11 @@ class MoffatGeneralizedPSF(PSFModule):
 
     The kernel follows ``(1 + (r/α)^{2β})^{-γ}``.  Setting *beta* = 1
     and *gamma* = β recovers the standard Moffat profile.
+
+    The tail falls as ``r^{-2βγ}``, so the profile has finite energy on a
+    plane only for ``βγ > 1``.  That is a constraint on the product,
+    which a per-parameter bound cannot express, so it is left to the
+    caller: check it on the fitted values rather than assume it.
 
     Parameters
     ----------
