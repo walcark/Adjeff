@@ -2,8 +2,6 @@
 
 from typing import Any
 
-import numpy as np
-import pytest
 import xarray as xr
 
 from adjeff.atmosphere import AtmoConfig
@@ -46,4 +44,3 @@ def test_dataset_values():
     cfg = AtmoConfig(**_SCALAR)
     xr.testing.assert_equal(cfg.dataset["aot"], cfg.aot)
     xr.testing.assert_equal(cfg.dataset["rh"], cfg.rh)
-

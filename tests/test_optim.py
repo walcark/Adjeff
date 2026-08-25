@@ -1,12 +1,12 @@
 """Tests for adjeff.optim (Loss, metrics, training set, optimizers)."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 import torch
 import torch.nn as nn
-from unittest.mock import MagicMock, patch
 
 from adjeff.exceptions import ConfigurationError, OptimizationWarning
-
 
 # ---------------------------------------------------------------------------
 # Loss
@@ -51,6 +51,8 @@ def test_lbfgs_degenerated_line_search_warns():
     with (
         pytest.warns(OptimizationWarning, match="degenerated"),
         patch("torch.optim.LBFGS.step", side_effect=IndexError("bracket collapse")),
-        patch.object(stage, "_total_loss", return_value=torch.tensor(0.5, requires_grad=True)),
+        patch.object(
+            stage, "_total_loss", return_value=torch.tensor(0.5, requires_grad=True)
+        ),
     ):
         stage._run_combo(model, S2Band.B02, MagicMock(), "aot=0.1")

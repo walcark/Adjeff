@@ -2,17 +2,19 @@
 
 import numpy as np
 import pytest
+from _test_module import TestModule
 
 from adjeff.core import ImageDict, S2Band, random_image_dict
 from adjeff.exceptions import MissingVariableError
-from _test_module import TestModule
 from adjeff.utils import CacheStore
 
 
 @pytest.fixture
 def scene():
     """Return a small single-band scene with rho_s."""
-    return random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0)
+    return random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
+    )
 
 
 # --- TestModule compute ---
@@ -63,8 +65,12 @@ def test_cache_hit_returns_same_values(tmp_path, scene):
 def test_cache_different_inputs_differ(tmp_path):
     """Two scenes with different content produce different outputs."""
     cache = CacheStore(tmp_path)
-    scene_a = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0)
-    scene_b = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=1)
+    scene_a = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
+    )
+    scene_b = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=1
+    )
     module = TestModule(cache=cache)
     r_a = module(scene_a)
     r_b = module(scene_b)
@@ -79,7 +85,9 @@ def test_cache_different_inputs_differ(tmp_path):
 
 def test_missing_required_var_raises():
     """TestModule raises MissingVariableError when rho_s is absent."""
-    scene = random_image_dict(bands=[S2Band.B02], variables=["rho_toa"], res_km=0.01, n=8, seed=0)
+    scene = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_toa"], res_km=0.01, n=8, seed=0
+    )
     with pytest.raises(MissingVariableError):
         TestModule()(scene)
 
@@ -88,11 +96,15 @@ def test_missing_required_var_raises():
 
 
 def test_pipeline_wrong_dependency_raises():
-    """Pipeline raises ConfigurationError when a dependency is declared
-    as a pipeline output but not produced before it is needed."""
+    """Pipeline rejects a dependency declared but not yet produced.
+
+    The variable is a pipeline output, so the mistake is one of order
+    rather than of declaration.
+    """
+    from _test_module import TestModule as TM
+
     from adjeff.exceptions import ConfigurationError
     from adjeff.modules import Pipeline
-    from _test_module import TestModule as TM
 
     # Module A requires rho_s and produces rho_toa.
     # Module B requires rho_toa and produces rho_unif.
@@ -118,8 +130,9 @@ def test_config_dict_raises_on_privately_stored_param():
     private name would leave the param out of the cache key and let two
     different configurations collide on one entry.
     """
-    from adjeff.exceptions import ConfigurationError
     from _test_module import TestModule as TM
+
+    from adjeff.exceptions import ConfigurationError
 
     class Hidden(TM):
         def __init__(self, shift, cache=None):
@@ -198,7 +211,6 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
     import shutil
 
     import xarray as xr
-
     from _test_module import TestModule as TM
 
     class TwoOut(TM):
@@ -225,9 +237,10 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
     shutil.rmtree(path)
     stored.to_zarr(path, mode="w")
 
-    assert cache.load_vars(
-        module._cache_key(scene), [S2Band.B02], TwoOut.output_vars
-    ) is None
+    assert (
+        cache.load_vars(module._cache_key(scene), [S2Band.B02], TwoOut.output_vars)
+        is None
+    )
     assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
 
 
@@ -277,9 +290,9 @@ def test_streaming_matches_the_full_run(streamed_scene, stream_dims):
     from adjeff.modules import Pipeline
 
     reference = Pipeline([_Doubler()])(streamed_scene)[S2Band.B02]["out"]
-    streamed = Pipeline([_Doubler()], stream_dims=stream_dims)(
-        streamed_scene
-    )[S2Band.B02]["out"]
+    streamed = Pipeline([_Doubler()], stream_dims=stream_dims)(streamed_scene)[
+        S2Band.B02
+    ]["out"]
 
     assert streamed.transpose(*reference.dims).shape == reference.shape
     np.testing.assert_allclose(
@@ -316,9 +329,9 @@ def test_cache_ignores_the_encoding_of_a_reloaded_array(tmp_path, scene):
 
     # Stand in for a reload: an encoding that contradicts the cache's
     # own one-per-combo chunking along a swept dim.
-    stacked = xr.concat(
-        [result[S2Band.B02]["rho_toa"]] * 3, dim="aot"
-    ).chunk({"aot": 1})
+    stacked = xr.concat([result[S2Band.B02]["rho_toa"]] * 3, dim="aot").chunk(
+        {"aot": 1}
+    )
     stacked.encoding["chunks"] = (3, *stacked.shape[1:])
     result[S2Band.B02]["rho_toa"] = stacked
 

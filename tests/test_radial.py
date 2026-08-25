@@ -1,3 +1,5 @@
+"""Tests for the radial binning helpers."""
+
 import math
 
 import numpy as np
@@ -6,7 +8,6 @@ import torch
 import xarray as xr
 
 from adjeff.utils.radial import bin_radial, natural_npix, radial_distances
-
 
 # Fixtures
 
@@ -17,7 +18,9 @@ def simple_ds():
     x = np.linspace(-2.0, 2.0, 5, dtype=np.float32)
     y = np.linspace(-2.0, 2.0, 5, dtype=np.float32)
     data = np.ones((5, 5), dtype=np.float32)
-    return xr.Dataset({"img": xr.DataArray(data, dims=["y", "x"], coords={"x": x, "y": y})})
+    return xr.Dataset(
+        {"img": xr.DataArray(data, dims=["y", "x"], coords={"x": x, "y": y})}
+    )
 
 
 @pytest.fixture
@@ -27,7 +30,11 @@ def psf_ds():
     y = np.linspace(-2.0, 2.0, 5, dtype=np.float32)
     data = np.ones((5, 5), dtype=np.float32)
     return xr.Dataset(
-        {"psf": xr.DataArray(data, dims=["y_psf", "x_psf"], coords={"x_psf": x, "y_psf": y})}
+        {
+            "psf": xr.DataArray(
+                data, dims=["y_psf", "x_psf"], coords={"x_psf": x, "y_psf": y}
+            )
+        }
     )
 
 

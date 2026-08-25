@@ -1,6 +1,6 @@
 """Test whether the working environment has Dask or Cuda."""
-import pytest
 
+import pytest
 
 # Importing pycuda succeeds wherever it is installed, GPU or not: a CI
 # runner has the package and no device.  Initialising the driver and
@@ -15,6 +15,7 @@ except Exception:
 
 try:
     import dask  # noqa: F401
+
     _HAS_DASK = True
 except ImportError:
     _HAS_DASK = False

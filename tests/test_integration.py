@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import xarray as xr
+from conftest import requires_cuda
 
 from adjeff.api import (
     make_full_config,
@@ -33,7 +34,6 @@ from adjeff.core import ImageDict, S2Band, disk_image_dict, psf_kernel
 from adjeff.modules.samplers import RadiativePipeline, TdirDownSampler
 from adjeff.reference import WuPsfSampler
 from adjeff.utils import CacheStore
-from conftest import requires_cuda
 
 pytestmark = [pytest.mark.integration, requires_cuda]
 
@@ -95,11 +95,14 @@ def _finite_in(da: xr.DataArray, low: float, high: float) -> None:
 
 def test_radiative_pipeline_produces_all_six_quantities(config):
     """RadiativePipeline writes the six 5S quantities, all in [0, 1]."""
-    scene = RadiativePipeline(**config, remove_rayleigh=False, n_ph_sph_alb=N_PH,
-                              n_ph_rho_atm=N_PH, n_ph_tdif_up=N_PH,
-                              n_ph_tdif_down=N_PH)(
-        ImageDict({BAND: xr.Dataset()})
-    )
+    scene = RadiativePipeline(
+        **config,
+        remove_rayleigh=False,
+        n_ph_sph_alb=N_PH,
+        n_ph_rho_atm=N_PH,
+        n_ph_tdif_up=N_PH,
+        n_ph_tdif_down=N_PH,
+    )(ImageDict({BAND: xr.Dataset()}))
 
     for var in RADIATIVE_VARS:
         assert var in scene[BAND], f"{var} missing from the output"
@@ -224,12 +227,8 @@ def test_deduplication_matches_the_plain_sweep(config):
     result expanded back.  This is the path a wrong cache key silently
     corrupted before 0.7.0, and nothing else exercises it.
     """
-    aot_map = xr.DataArray(
-        np.array([[0.1, 0.4], [0.4, 0.1]]), dims=["y", "x"]
-    )
-    atmo = AtmoConfig(
-        aot=aot_map, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
-    )
+    aot_map = xr.DataArray(np.array([[0.1, 0.4], [0.4, 0.1]]), dims=["y", "x"])
+    atmo = AtmoConfig(aot=aot_map, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0})
     sampler = TdirDownSampler(
         atmo_config=atmo,
         geo_config=config["geo_config"],
@@ -288,9 +287,7 @@ def test_fit_learns_a_psf_and_records_its_parameters(config, surface):
 
     train = run_forward_pipeline(surface, **config, n_ph=N_PH, nr=32)
     images = TrainingImages(images=[train], weights=[1.0])
-    model = make_model(
-        Unif2Surface, GaussPSF, [BAND], RES_KM, N, {"sigma": 1.0}
-    )
+    model = make_model(Unif2Surface, GaussPSF, [BAND], RES_KM, N, {"sigma": 1.0})
 
     tree = fit(
         model,
@@ -325,7 +322,7 @@ def test_batched_angles_match_one_call_per_angle():
     separate calls give.  Getting this wrong does not raise: it returns
     a value computed for another point's geometry.
     """
-    from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
+    from adjeff.atmosphere import AtmoConfig
     from adjeff.modules.samplers import TdifUpSampler
 
     n_ph = int(1e5)
@@ -333,7 +330,10 @@ def test_batched_angles_match_one_call_per_angle():
     def tdif_up(vza):
         sampler = TdifUpSampler(
             atmo_config=AtmoConfig(
-                aot=0.3, rh=50.0, h=0.0, href=2.0,
+                aot=0.3,
+                rh=50.0,
+                h=0.0,
+                href=2.0,
                 species={"sulphate": 1.0},
             ),
             geo_config=GeoConfig(sza=30.0, vza=vza, saa=120.0, vaa=120.0),
@@ -355,8 +355,7 @@ def test_batched_angles_match_one_call_per_angle():
     np.testing.assert_allclose(batched, alone, rtol=0.08)
 
 
-def test_a_second_run_reads_back_the_scene_it_computed(config, surface,
-                                                       tmp_path):
+def test_a_second_run_reads_back_the_scene_it_computed(config, surface, tmp_path):
     """The pipeline must not depend on whether its cache is warm.
 
     `rho_atm` is a single Monte-Carlo number, and `RhoToaSym` used to

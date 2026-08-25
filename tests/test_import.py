@@ -37,7 +37,6 @@ def test_import_without_smartg():
     )
 
     assert proc.returncode == 0, (
-        "importing adjeff without SMARTG_DIR_AUXDATA failed:\n"
-        f"{proc.stderr[-2000:]}"
+        f"importing adjeff without SMARTG_DIR_AUXDATA failed:\n{proc.stderr[-2000:]}"
     )
     assert "ok" in proc.stdout

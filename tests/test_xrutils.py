@@ -1,7 +1,9 @@
-import xarray as xr
-import pytest
+"""Tests for the xarray grid helpers."""
 
-from adjeff.utils.xrutils import grid, square_grid
+import pytest
+import xarray as xr
+
+from adjeff.utils.xrutils import square_grid
 
 
 @pytest.mark.parametrize(
@@ -14,6 +16,7 @@ from adjeff.utils.xrutils import grid, square_grid
     ],
 )
 def test_grid_coordinates(n, res, x):
+    """square_grid places n samples of width res around zero."""
     g = square_grid(n=n, res=res)
     g_test = xr.Coordinates(dict(x=x, y=x))
     xr.testing.assert_allclose(g, g_test, rtol=1e-5)

@@ -22,7 +22,9 @@ def test_resolve_n_scalar_n():
 def test_resolve_n_dict_n():
     """Pass through a per-band n mapping unchanged."""
     mapping = {S2Band.B02: 50, S2Band.B01: 200}
-    result = _resolve_n([S2Band.B02, S2Band.B01], res_km=RES_B02, n=mapping, extent_km=None)
+    result = _resolve_n(
+        [S2Band.B02, S2Band.B01], res_km=RES_B02, n=mapping, extent_km=None
+    )
     assert result == mapping
 
 
@@ -67,15 +69,17 @@ def test_gaussian_image_dict_shape():
 
 
 def test_gaussian_image_dict_extent_km_shape():
-    """Gaussian generator with extent_km produces a shape consistent with band resolution."""
+    """extent_km gives a shape consistent with the band resolution."""
     extent = 1.0
-    scene = gaussian_image_dict(sigma=1.0, res_km=RES_B02, extent_km=extent, bands=[S2Band.B02])
+    scene = gaussian_image_dict(
+        sigma=1.0, res_km=RES_B02, extent_km=extent, bands=[S2Band.B02]
+    )
     expected_n = round(extent / RES_B02)
     assert scene[S2Band.B02]["rho_s"].shape == (expected_n, expected_n)
 
 
 def test_gaussian_image_dict_multiband_shape():
-    """Gaussian generator with extent_km produces different n for bands with different resolution."""
+    """extent_km gives a different n per band resolution."""
     res = {S2Band.B02: RES_B02, S2Band.B01: RES_B01}
     scene = gaussian_image_dict(
         sigma=1.0, res_km=res, extent_km=1.0, bands=[S2Band.B02, S2Band.B01]
@@ -88,7 +92,9 @@ def test_gaussian_image_dict_multiband_shape():
 
 def test_gaussian_center_equals_rho_max():
     """Gaussian generator peak value at center equals rho_max for very large sigma."""
-    scene = gaussian_image_dict(sigma=1e6, res_km=RES_B02, rho_min=0.0, rho_max=0.8, n=11, bands=[S2Band.B02])
+    scene = gaussian_image_dict(
+        sigma=1e6, res_km=RES_B02, rho_min=0.0, rho_max=0.8, n=11, bands=[S2Band.B02]
+    )
     da = scene[S2Band.B02]["rho_s"]
     center = da.shape[0] // 2
     assert da.values[center, center] == pytest.approx(0.8, abs=1e-3)
@@ -96,7 +102,9 @@ def test_gaussian_center_equals_rho_max():
 
 def test_gaussian_boundary_approaches_rho_min():
     """Gaussian generator values at the boundary approach rho_min for small sigma."""
-    scene = gaussian_image_dict(sigma=0.001, res_km=RES_B02, rho_min=0.2, rho_max=1.0, n=11, bands=[S2Band.B02])
+    scene = gaussian_image_dict(
+        sigma=0.001, res_km=RES_B02, rho_min=0.2, rho_max=1.0, n=11, bands=[S2Band.B02]
+    )
     da = scene[S2Band.B02]["rho_s"]
     assert da.values[0, 0] == pytest.approx(0.2, abs=1e-3)
 
@@ -112,7 +120,9 @@ def test_disk_image_dict_shape():
 
 def test_disk_image_dict_values():
     """Disk generator assigns rho_max inside the disk and rho_min outside."""
-    scene = disk_image_dict(radius=0.05, res_km=RES_B02, rho_min=0.0, rho_max=1.0, n=11, bands=[S2Band.B02])
+    scene = disk_image_dict(
+        radius=0.05, res_km=RES_B02, rho_min=0.0, rho_max=1.0, n=11, bands=[S2Band.B02]
+    )
     da = scene[S2Band.B02]["rho_s"]
     x = da.coords["x"].values
     y = da.coords["y"].values
@@ -127,15 +137,21 @@ def test_disk_image_dict_values():
 
 def test_random_image_dict_shape():
     """Random generator produces an n×n DataArray per band and variable."""
-    scene = random_image_dict(bands=[S2Band.B02], variables=["rho_s", "rho_toa"], res_km=RES_B02, n=16)
+    scene = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s", "rho_toa"], res_km=RES_B02, n=16
+    )
     assert scene[S2Band.B02]["rho_s"].shape == (16, 16)
     assert scene[S2Band.B02]["rho_toa"].shape == (16, 16)
 
 
 def test_random_image_dict_reproducible():
     """Random generator with the same seed produces identical data."""
-    s1 = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=42)
-    s2 = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=42)
+    s1 = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=42
+    )
+    s2 = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=42
+    )
     np.testing.assert_array_equal(
         s1[S2Band.B02]["rho_s"].values, s2[S2Band.B02]["rho_s"].values
     )
@@ -143,8 +159,12 @@ def test_random_image_dict_reproducible():
 
 def test_random_image_dict_different_seeds():
     """Random generator with distinct seeds produces different data."""
-    s1 = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=0)
-    s2 = random_image_dict(bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=1)
+    s1 = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=0
+    )
+    s2 = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s"], res_km=RES_B02, n=16, seed=1
+    )
     assert not np.array_equal(
         s1[S2Band.B02]["rho_s"].values, s2[S2Band.B02]["rho_s"].values
     )

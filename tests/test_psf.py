@@ -7,15 +7,14 @@ import xarray as xr
 
 from adjeff.core._psf import PSFGrid
 from adjeff.core.analytical_psf import (
-    GeneralizedGaussianPSF,
     GaussPSF,
+    GeneralizedGaussianPSF,
     KingPSF,
     MoffatGeneralizedPSF,
     VoigtPSF,
 )
 from adjeff.core.bands import S2Band, SensorBand
 from adjeff.core.non_analytical_psf import NonAnalyticalPSF
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -30,6 +29,7 @@ def grid() -> PSFGrid:
 
 @pytest.fixture
 def band() -> SensorBand:
+    """Return the band every PSF fixture is built on."""
     return S2Band.B04
 
 
@@ -71,7 +71,7 @@ def test_grid_as_coords_centered(grid):
 
 
 def test_grid_meshgrid_shape(grid):
-    """meshgrid must return two (n, n) float32 tensors."""
+    """Meshgrid must return two (n, n) float32 tensors."""
     X, Y = grid.meshgrid()
     assert X.shape == (grid.n, grid.n)
     assert Y.shape == (grid.n, grid.n)
@@ -118,27 +118,38 @@ _ANALYTICAL_PSF_CASES = pytest.mark.parametrize(
     "psf_cls,kwargs,model_name,param_keys",
     [
         pytest.param(
-            GaussPSF, {"sigma": 1.0}, "Gaussian", {"sigma"},
+            GaussPSF,
+            {"sigma": 1.0},
+            "Gaussian",
+            {"sigma"},
             id="Gauss",
         ),
         pytest.param(
-            GeneralizedGaussianPSF, {"sigma": 1.0, "n": 0.3},
-            "GeneralizedGaussian", {"sigma", "n"},
+            GeneralizedGaussianPSF,
+            {"sigma": 1.0, "n": 0.3},
+            "GeneralizedGaussian",
+            {"sigma", "n"},
             id="GeneralizedGaussian",
         ),
         pytest.param(
-            VoigtPSF, {"sigma": 1.0, "gamma": 1.0},
-            "Voigt", {"sigma", "gamma"},
+            VoigtPSF,
+            {"sigma": 1.0, "gamma": 1.0},
+            "Voigt",
+            {"sigma", "gamma"},
             id="Voigt",
         ),
         pytest.param(
-            KingPSF, {"sigma": 1.0, "gamma": 2.0},
-            "King", {"sigma", "gamma"},
+            KingPSF,
+            {"sigma": 1.0, "gamma": 2.0},
+            "King",
+            {"sigma", "gamma"},
             id="King",
         ),
         pytest.param(
-            MoffatGeneralizedPSF, {"alpha": 1.0, "beta": 1.0, "gamma": 1.0},
-            "MoffatGeneralized", {"alpha", "beta", "gamma"},
+            MoffatGeneralizedPSF,
+            {"alpha": 1.0, "beta": 1.0, "gamma": 1.0},
+            "MoffatGeneralized",
+            {"alpha", "beta", "gamma"},
             id="MoffatGeneralized",
         ),
     ],
@@ -146,14 +157,18 @@ _ANALYTICAL_PSF_CASES = pytest.mark.parametrize(
 
 
 @_ANALYTICAL_PSF_CASES
-def test_analytical_psf_kernel_valid(psf_cls, kwargs, model_name, param_keys, grid, band):
-    """Every analytical PSF must return a (n, n) non-negative normalised float32 kernel."""
+def test_analytical_psf_kernel_valid(
+    psf_cls, kwargs, model_name, param_keys, grid, band
+):
+    """Every analytical PSF returns a normalised float32 (n, n) kernel."""
     psf = psf_cls(grid=grid, band=band, **kwargs)
     _assert_kernel_valid(psf.forward(), grid.n)
 
 
 @_ANALYTICAL_PSF_CASES
-def test_analytical_psf_peak_at_center(psf_cls, kwargs, model_name, param_keys, grid, band):
+def test_analytical_psf_peak_at_center(
+    psf_cls, kwargs, model_name, param_keys, grid, band
+):
     """Every radially-symmetric PSF must peak at the center pixel."""
     psf = psf_cls(grid=grid, band=band, **kwargs)
     k = psf.forward()
@@ -162,8 +177,10 @@ def test_analytical_psf_peak_at_center(psf_cls, kwargs, model_name, param_keys, 
 
 
 @_ANALYTICAL_PSF_CASES
-def test_analytical_psf_to_dataarray(psf_cls, kwargs, model_name, param_keys, grid, band):
-    """to_dataarray must return a valid annotated DataArray with the correct model name."""
+def test_analytical_psf_to_dataarray(
+    psf_cls, kwargs, model_name, param_keys, grid, band
+):
+    """to_dataarray returns an annotated DataArray naming its model."""
     psf = psf_cls(grid=grid, band=band, **kwargs)
     da = psf.to_dataarray()
     _assert_dataarray_valid(da, grid.n, band)
@@ -203,6 +220,7 @@ def flat_kernel(grid) -> np.ndarray:
 
 @pytest.fixture
 def non_analytical_psf(grid, band, flat_kernel) -> NonAnalyticalPSF:
+    """Return a PSF wrapping a fixed, non-trainable kernel."""
     return NonAnalyticalPSF(grid=grid, band=band, kernel=flat_kernel)
 
 

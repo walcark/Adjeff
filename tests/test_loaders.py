@@ -1,8 +1,5 @@
 """Tests for adjeff.modules.loaders (ProductLoader, MajaLoader)."""
 
-import xml.etree.ElementTree as ET
-from pathlib import Path
-
 import numpy as np
 import pytest
 import xarray as xr
