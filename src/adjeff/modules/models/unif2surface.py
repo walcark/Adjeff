@@ -55,12 +55,12 @@ class Unif2Surface(PSFConvModule):
         Device for convolutions (default ``"cuda"``).
     """
 
-    required_vars: ClassVar[list[str]] = [
+    _required_vars: ClassVar[list[str]] = [
         "rho_unif",
         "tdir_up",
         "tdif_up",
         "sph_alb",
     ]
-    output_vars: ClassVar[list[str]] = ["rho_s"]
+    _output_vars: ClassVar[list[str]] = ["rho_s"]
     _conv_input: ClassVar[str] = "rho_unif"
     _formula: ClassVar[Any] = staticmethod(_rho_s_from_rho_env)

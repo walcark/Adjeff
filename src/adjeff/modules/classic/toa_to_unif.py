@@ -27,7 +27,7 @@ class Toa2Unif(SceneModule):
     Produced variable: ``rho_unif``.
     """
 
-    required_vars: ClassVar[list[str]] = [
+    _required_vars: ClassVar[list[str]] = [
         "rho_toa",
         "tdir_up",
         "tdif_up",
@@ -36,16 +36,17 @@ class Toa2Unif(SceneModule):
         "rho_atm",
         "sph_alb",
     ]
-    output_vars: ClassVar[list[str]] = ["rho_unif"]
+    _output_vars: ClassVar[list[str]] = ["rho_unif"]
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Invert the 5S model, assuming rho_s=rho_env=rho_unif."""
         for band in scene.bands:
             ds = scene[band]
-            rho_toa_star = ds["rho_toa"] - ds["rho_atm"]
-            t_up = ds["tdir_up"] + ds["tdif_up"]
-            t_down = ds["tdir_down"] + ds["tdif_down"]
-            ds["rho_unif"] = rho_toa_star / (
-                ds["sph_alb"] * rho_toa_star + t_up * t_down
+            at = self._slot
+            rho_toa_star = ds[at("rho_toa")] - ds[at("rho_atm")]
+            t_up = ds[at("tdir_up")] + ds[at("tdif_up")]
+            t_down = ds[at("tdir_down")] + ds[at("tdif_down")]
+            ds[at("rho_unif")] = rho_toa_star / (
+                ds[at("sph_alb")] * rho_toa_star + t_up * t_down
             )
         return scene

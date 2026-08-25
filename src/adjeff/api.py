@@ -1010,7 +1010,8 @@ def fit_psf(
     xr.DataTree
         Frozen PSF tree with one optimised kernel per band.
     """
-    _target_var: str = target_var or model_cls.output_vars[0]
+    # Read off the class, so the role rather than any instance's slot.
+    _target_var: str = target_var or model_cls._output_vars[0]
     _res_km: float = res_km or _res_from_scene(scene, bands[0])
     _stages = default_stages() if stages is None else stages
     _radii = train_radii or [1.0, 5.0, 50.0]

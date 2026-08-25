@@ -49,8 +49,8 @@ class SphAlbSampler(SweepSampler):
         Collapse repeated states before calling.
     """
 
-    required_vars: ClassVar[list[str]] = []
-    output_vars: ClassVar[list[str]] = ["sph_alb"]
+    _required_vars: ClassVar[list[str]] = []
+    _output_vars: ClassVar[list[str]] = ["sph_alb"]
     contract: ClassVar[str] = "batch(aot, rh, h, href) vec(wl) -> sph_alb(wl)"
     point_fn: ClassVar[Callable[..., Any]] = staticmethod(sph_alb)
 
@@ -64,13 +64,16 @@ class SphAlbSampler(SweepSampler):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rename: dict[str, str] | None = None,
     ) -> None:
         self.spectral_config = spectral_config
         self.atmo_config = atmo_config
         self.afgl_type = afgl_type
         self.remove_rayleigh = remove_rayleigh
         self.n_ph = n_ph
-        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
+        super().__init__(
+            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
+        )
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.spectral_config, self.atmo_config)

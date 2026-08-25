@@ -34,15 +34,16 @@ class SceneSource(SceneModule):
         Optional on-disk cache.
     """
 
-    required_vars: ClassVar[list[str]] = []
+    _required_vars: ClassVar[list[str]] = []
 
     def __init__(
         self,
         bands: list["SensorBand"],
         cache: CacheStore | None = None,
+        rename: dict[str, str] | None = None,
     ) -> None:
         self._bands = bands
-        super().__init__(cache=cache)
+        super().__init__(cache=cache, rename=rename)
 
     @property
     def bands(self) -> list["SensorBand"]:

@@ -108,13 +108,13 @@ class ProductLoader(SceneSource, ABC):
     _BASE_OUTPUT_VARS: ClassVar[list[str]] = ["rho_s"]
 
     @property
-    def output_vars(self) -> list[str]:  # type: ignore[override]
-        """Aggregate output variables declared by active mixins."""
-        result = list(self._BASE_OUTPUT_VARS)
+    def output_vars(self) -> list[str]:
+        """Aggregate output slots declared by active mixins."""
+        roles = list(self._BASE_OUTPUT_VARS)
         for cls in type(self).__mro__:
             contrib: list[str] = cls.__dict__.get("_output_vars_contribution", [])
-            result.extend(contrib)
-        return result
+            roles.extend(contrib)
+        return [self._slot(role) for role in roles]
 
     def __init__(
         self,
@@ -123,6 +123,7 @@ class ProductLoader(SceneSource, ABC):
         res: float | list[float],
         as_map: bool = False,
         cache: CacheStore | None = None,
+        rename: dict[str, str] | None = None,
     ) -> None:
         if not product_path.is_dir():
             raise ImageIOError(f"Product path does not exist: {product_path}")
@@ -135,7 +136,7 @@ class ProductLoader(SceneSource, ABC):
         self._build_band_to_res(bands, res)
         self.extract_metadata()
         self.as_map = as_map
-        super().__init__(bands=bands, cache=cache)
+        super().__init__(bands=bands, cache=cache, rename=rename)
 
     def _build_band_to_res(
         self,

@@ -57,11 +57,11 @@ class RhoToaSymSampler(SweepSampler):
         Number of photons per sensor.
     """
 
-    required_vars: ClassVar[list[str]] = ["rho_s"]
-    output_vars: ClassVar[list[str]] = ["rho_toa"]
+    _required_vars: ClassVar[list[str]] = ["rho_s"]
+    _output_vars: ClassVar[list[str]] = ["rho_toa"]
     #: Reused when the scene carries it, computed otherwise.  Keyed so
     #: that two different path reflectances cannot share one entry.
-    optional_vars: ClassVar[list[str]] = ["rho_atm"]
+    _optional_vars: ClassVar[list[str]] = ["rho_atm"]
     # `sza` and `vza` stay `loop`, not `batch`: the sensor positions are
     # built from them, so a call carries one geometry.  The atmospheric
     # axes ride along as `vec`, which is how Smart-G wants them.
@@ -83,6 +83,7 @@ class RhoToaSymSampler(SweepSampler):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rename: dict[str, str] | None = None,
     ) -> None:
         self.atmo_config = atmo_config
         self.geo_config = geo_config
@@ -90,7 +91,9 @@ class RhoToaSymSampler(SweepSampler):
         self.afgl_type = afgl_type
         self.nr = nr
         self.n_ph = n_ph
-        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
+        super().__init__(
+            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
+        )
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
@@ -123,6 +126,8 @@ class RhoToaSymSampler(SweepSampler):
         # the two travel together rather than through the sweep space.
         for band in scene.bands:
             arr = self._sweep(rho_s=scene[band], band=band)
-            scene[band]["rho_toa"] = self._restore_coords(arr, scene[band])
+            scene[band][self._slot("rho_toa")] = self._restore_coords(
+                arr, scene[band]
+            )
 
         return scene

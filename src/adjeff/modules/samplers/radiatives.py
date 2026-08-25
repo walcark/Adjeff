@@ -75,6 +75,7 @@ class RadiativePipeline(Pipeline):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rename: dict[str, str] | None = None,
     ) -> None:
         common: dict[str, Any] = dict(
             atmo_config=atmo_config,

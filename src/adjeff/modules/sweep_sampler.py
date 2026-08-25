@@ -67,8 +67,9 @@ class SweepSampler(SceneModule):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rename: dict[str, str] | None = None,
     ) -> None:
-        super().__init__(cache)
+        super().__init__(cache, rename=rename)
         # Public names: SceneModule._config_dict() reads __init__ params
         # off same-named attributes.  batch_size cannot change a value and
         # dedup cannot either, but both are cheap to hash and leaving them
@@ -159,5 +160,5 @@ class SweepSampler(SceneModule):
         for band in self.spectral_config.bands:  # type: ignore[attr-defined]
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
-            scene[band][name] = arr.sel(wl=band.wl_nm)
+            scene[band][self._slot(name)] = arr.sel(wl=band.wl_nm)
         return scene

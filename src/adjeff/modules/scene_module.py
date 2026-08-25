@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from abc import abstractmethod
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import joblib  # type: ignore[import-untyped]
 import structlog
@@ -88,19 +88,51 @@ class SceneModule:
         memory for as long as the caller keeps the scene.
     """
 
-    required_vars: ClassVar[list[str]] = []
-    output_vars: ClassVar[list[str]] = []
+    _required_vars: ClassVar[list[str]] = []
+    _output_vars: ClassVar[list[str]] = []
     #: Variables the module consumes when the scene carries them and
     #: computes itself when it does not.  They enter the cache key only
     #: when present: declaring them in ``required_vars`` would forbid the
     #: standalone call that produces them, while leaving them out
     #: entirely would let two different inputs share one entry.
-    optional_vars: ClassVar[list[str]] = []
+    _optional_vars: ClassVar[list[str]] = []
 
-    def __init__(self, cache: CacheStore | None = None) -> None:
+    def __init__(
+        self,
+        cache: CacheStore | None = None,
+        rename: dict[str, str] | None = None,
+    ) -> None:
         super().__init__()
         self._cache = cache if cache is not None else CacheStore()
         self._log = logger.bind(module=type(self).__name__)
+        self.rename = dict(rename or {})
+        roles = {*self._required_vars, *self._output_vars, *self._optional_vars}
+        unknown = sorted(set(self.rename) - roles)
+        if unknown:
+            known = ", ".join(sorted(roles)) or "none"
+            raise ConfigurationError(
+                f"{type(self).__name__} has no role named {unknown!r}; "
+                f"it declares: {known}."
+            )
+
+    def _slot(self, role: str) -> str:
+        """Return the Dataset name *role* is read from or written to."""
+        return self.rename.get(role, role)
+
+    @property
+    def required_vars(self) -> list[str]:
+        """Slot names this module reads."""
+        return [self._slot(role) for role in self._required_vars]
+
+    @property
+    def output_vars(self) -> list[str]:
+        """Slot names this module writes."""
+        return [self._slot(role) for role in self._output_vars]
+
+    @property
+    def optional_vars(self) -> list[str]:
+        """Slot names this module reuses when the scene carries them."""
+        return [self._slot(role) for role in self._optional_vars]
 
     def __call__(self, scene: "ImageDict") -> "ImageDict":
         """Apply the module to *scene*."""
@@ -133,29 +165,54 @@ class SceneModule:
         key = self._cache_key(scene)
         log = self._log.bind(key=key[:8])
 
-        cached = self._cache.load_vars(key, scene.bands, self.output_vars)
+        cached = self._cache.load_vars(key, scene.bands, self._output_vars)
         if cached is not None:
-            for band, var_map in cached.items():
-                ds = scene[band]
-                for var_name, da in var_map.items():
-                    ds[var_name] = da
+            self._write_roles(scene, cached)
             log.info("done", bands=[str(b) for b in scene.bands], cached=True)
             return scene
 
         scene = self._compute(scene)
         self._stamp_provenance(scene, key)
-        self._cache.save_vars(key, scene, self.output_vars)
+        self._cache.save_vars(key, self._role_view(scene), self._output_vars)
         # Replace in-memory arrays with lazy Zarr-backed views so large
         # outputs (e.g. rho_toa at all atmospheric combos) are not kept
         # fully in RAM when the caller stores multiple scenes.
-        lazy = self._cache.load_vars(key, scene.bands, self.output_vars)
+        lazy = self._cache.load_vars(key, scene.bands, self._output_vars)
         if lazy is not None:
-            for band, var_map in lazy.items():
-                ds = scene[band]
-                for var_name, da in var_map.items():
-                    ds[var_name] = da
+            self._write_roles(scene, lazy)
         log.info("done", bands=[str(b) for b in scene.bands], cached=False)
         return scene
+
+    def _role_view(self, scene: "ImageDict") -> "ImageDict":
+        """Return *scene*'s outputs under their role names.
+
+        The cache is keyed by role, so it must be filled by role too:
+        two runs that differ only by where they put their result share
+        one entry, and either of them can read it back.
+        """
+        from adjeff.core import ImageDict
+
+        return ImageDict(
+            {
+                band: xr.Dataset(
+                    {
+                        role: scene[band][self._slot(role)]
+                        for role in self._output_vars
+                        if self._slot(role) in scene[band]
+                    }
+                )
+                for band in scene.bands
+            }
+        )
+
+    def _write_roles(
+        self, scene: "ImageDict", by_band: dict[Any, dict[str, xr.DataArray]]
+    ) -> None:
+        """Write role-named arrays into the slots this instance uses."""
+        for band, var_map in by_band.items():
+            ds = scene[band]
+            for role, da in var_map.items():
+                ds[self._slot(role)] = da
 
     @abstractmethod
     def _compute(self, scene: "ImageDict") -> "ImageDict":
@@ -175,7 +232,9 @@ class SceneModule:
 
     # Parameters excluded from auto-detection: they're infrastructure, not
     # computation config (don't affect the output value for given inputs).
-    _INFRA_PARAMS: ClassVar[frozenset[str]] = frozenset(("self", "cache", "chunks"))
+    _INFRA_PARAMS: ClassVar[frozenset[str]] = frozenset(
+        ("self", "cache", "chunks", "rename")
+    )
 
     def _config_dict(self) -> dict[str, object]:
         """Return frozen configuration for cache keying.
@@ -226,9 +285,14 @@ class SceneModule:
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
-            present = [var for var in self.optional_vars if var in ds]
-            for var in [*self.required_vars, *present]:
-                hashes[f"{band}.{var}"] = self._var_hash(ds[var])
+            present = [
+                role for role in self._optional_vars if self._slot(role) in ds
+            ]
+            for role in [*self._required_vars, *present]:
+                # Keyed by role, read by slot: two runs that differ only
+                # by where they put their result compute the same thing
+                # and must share one entry.
+                hashes[f"{band}.{role}"] = self._var_hash(ds[self._slot(role)])
         return hashes
 
     @staticmethod
@@ -264,9 +328,13 @@ class TrainableSceneModule(nn.Module, SceneModule):
     :func:`~adjeff.optim.fit`.
     """
 
-    def __init__(self, cache: CacheStore | None = None) -> None:
+    def __init__(
+        self,
+        cache: CacheStore | None = None,
+        rename: dict[str, str] | None = None,
+    ) -> None:
         nn.Module.__init__(self)
-        SceneModule.__init__(self, cache=cache)
+        SceneModule.__init__(self, cache=cache, rename=rename)
 
     def forward(self, scene: "ImageDict") -> "ImageDict":
         """Delegate to :meth:`SceneModule.forward` (resolves MRO ambiguity)."""

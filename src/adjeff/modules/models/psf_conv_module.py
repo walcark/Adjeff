@@ -64,13 +64,14 @@ class PSFConvModule(TrainableSceneModule):
         kernels: xr.DataTree | None = None,
         cache: CacheStore | None = None,
         device: torch.device | str = "cuda",
+        rename: dict[str, str] | None = None,
     ) -> None:
         if (psfs is None) == (kernels is None):
             raise ConfigurationError(
                 "Pass exactly one of `psfs` (live modules, for training) "
                 "or `kernels` (a frozen PSF tree, for inference)."
             )
-        super().__init__(cache=cache)
+        super().__init__(cache=cache, rename=rename)
         self._device = torch.device(device)
         self._kernels = kernels
         self._psfs: nn.ModuleDict = nn.ModuleDict(
@@ -180,14 +181,19 @@ class PSFConvModule(TrainableSceneModule):
         for band in scene.bands:
             ds = scene[band]
             rho_env = fft_convolve_2D(
-                ds[self._conv_input].compute(),
+                ds[self._slot(self._conv_input)].compute(),
                 self._kernel_for(band),
                 padding="reflect",
                 conv_type="same",
                 device=self._device,
             )
+            # The formula is written in roles, so the slots are resolved
+            # on the way in and on the way out, never inside it.
             ds[self.output_vars[0]] = self._formula(
-                **{k: ds[k].compute() for k in self.required_vars},
+                **{
+                    role: ds[self._slot(role)].compute()
+                    for role in self._required_vars
+                },
                 rho_env=rho_env,
             )
         return scene
