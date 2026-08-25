@@ -40,7 +40,5 @@ class AtmoConfig(_Config):
         """Ensure that the species mix is equal to 1.0."""
         prop_sum: float = sum(self.species.values())
         if not isclose(prop_sum, 1.0, abs_tol=1e-5):
-            raise ValueError(
-                f"Species proportions should be 1.0, not {prop_sum}."
-            )
+            raise ValueError(f"Species proportions should be 1.0, not {prop_sum}.")
         return self

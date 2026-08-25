@@ -16,9 +16,7 @@ computed that could not be written by hand with the modules themselves.
 
 Typical usage
 -------------
->>> cfg = make_full_config(
-...     bands=[S2Band.B03], aot=0.1, rh=50.0, sza=30.0, vza=0.0
-... )
+>>> cfg = make_full_config(bands=[S2Band.B03], aot=0.1, rh=50.0, sza=30.0, vza=0.0)
 >>> model = make_model(
 ...     Unif2Surface,
 ...     KingPSF,
@@ -295,9 +293,7 @@ def make_full_config(
         A plain ``dict`` with three typed entries.
     """
     return FullConfig(
-        atmo_config=_make_atmo_config(
-            aot=aot, rh=rh, h=h, href=href, species=species
-        ),
+        atmo_config=_make_atmo_config(aot=aot, rh=rh, h=h, href=href, species=species),
         geo_config=_make_geo_config(
             sza=sza, vza=vza, saa=saa, vaa=vaa, sat_height=sat_height
         ),
@@ -770,9 +766,7 @@ def run_radiatives_from_scene(
         s = s.shallow_copy()
         for band in s.bands:
             scene_band = ImageDict({band: s[band]})
-            config = load_config(
-                scene_band, band, n_bins=n_bins, species=species
-            )
+            config = load_config(scene_band, band, n_bins=n_bins, species=species)
             radiative = RadiativePipeline(
                 atmo_config=config["atmo_config"],
                 geo_config=config["geo_config"],
@@ -919,9 +913,7 @@ def load_config(
     from adjeff.exceptions import ConfigurationError
 
     if aggregate and n_bins is not None:
-        raise ConfigurationError(
-            "`aggregate` and `n_bins` are mutually exclusive."
-        )
+        raise ConfigurationError("`aggregate` and `n_bins` are mutually exclusive.")
 
     ds = scene[band]
     missing = [v for v in _REQUIRED_VARS if v not in ds]
@@ -1110,14 +1102,11 @@ def apply_psf(
     from adjeff.exceptions import ConfigurationError
 
     if n is not None and psf_type is None:
-        raise ConfigurationError(
-            "`psf_type` is required when `n` is provided."
-        )
+        raise ConfigurationError("`psf_type` is required when `n` is provided.")
 
     if n is not None and psf_type is not None:
         params: dict[str, float] = {
-            name: _to_scalar(value)
-            for name, value in psf_params(tree, band).items()
+            name: _to_scalar(value) for name, value in psf_params(tree, band).items()
         }
         _res_km: float = res_km or _res_from_scene(scene, band)
         model = model_cls(

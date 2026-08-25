@@ -70,8 +70,7 @@ class RhoToaSampler(SweepSampler):
     # a call carries one geometry.  The output dim order is the one
     # ParamBatch produces inside _smartg (wl, aot, rh, href, h).
     contract: ClassVar[str] = (
-        "loop(sza, vza) vec(aot, rh, h, href) "
-        "-> rho_toa(aot, rh, href, h, y, x)"
+        "loop(sza, vza) vec(aot, rh, h, href) -> rho_toa(aot, rh, href, h, y, x)"
     )
     point_fn: ClassVar[Any] = staticmethod(rho_toa)
 

@@ -564,9 +564,7 @@ def sph_alb(
     )["flux_down (0+)"].to_xarray()
     smartg.clear_context()
 
-    res = adapt_smartg_output(
-        res, expand={"wavelength": atm.axes["wavelength"]}
-    )
+    res = adapt_smartg_output(res, expand={"wavelength": atm.axes["wavelength"]})
     res = batch.unstack(
         xr.DataArray(
             res.values,
@@ -630,13 +628,11 @@ def rho_toa(
     y_full = rho_s["rho_s"].coords["y"].values
     if topleft_pix[0] + nx > len(x_full):
         raise ConfigurationError(
-            f"topleft_pix[0] + nx must be <= {len(x_full)}, "
-            f"got {topleft_pix[0] + nx}"
+            f"topleft_pix[0] + nx must be <= {len(x_full)}, got {topleft_pix[0] + nx}"
         )
     if topleft_pix[1] + ny > len(y_full):
         raise ConfigurationError(
-            f"topleft_pix[1] + ny must be <= {len(y_full)}, "
-            f"got {topleft_pix[1] + ny}"
+            f"topleft_pix[1] + ny must be <= {len(y_full)}, got {topleft_pix[1] + ny}"
         )
 
     x_sample = x_full[topleft_pix[0] : topleft_pix[0] + nx]
@@ -691,12 +687,8 @@ def rho_toa(
     # maps sensor index i*nx + j to (y_sample[i], x_sample[j]).
     si = list(result.dims).index("sensor")
     new_shape = result.shape[:si] + (ny, nx) + result.shape[si + 1 :]
-    new_dims = (
-        list(result.dims[:si]) + ["y", "x"] + list(result.dims[si + 1 :])
-    )
-    extra_coords = {
-        k: result.coords[k] for k in result.coords if k != "sensor"
-    }
+    new_dims = list(result.dims[:si]) + ["y", "x"] + list(result.dims[si + 1 :])
+    extra_coords = {k: result.coords[k] for k in result.coords if k != "sensor"}
     result_2d = xr.DataArray(
         result.values.reshape(new_shape),
         dims=new_dims,
@@ -882,9 +874,7 @@ def rho_toa_sym(
     # dask chunks introduced by `+ rho_atm` above, because `to_field` uses
     # `apply_ufunc` without dask support.
     # TODO: add dask support to apply_ufunc with parallelize=True.
-    return xr.DataArray(
-        result.compute().adjeff.to_field(rho_s).sel(wl=band.wl_nm)
-    )
+    return xr.DataArray(result.compute().adjeff.to_field(rho_s).sel(wl=band.wl_nm))
 
 
 def _radial_sensors(

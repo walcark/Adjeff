@@ -56,9 +56,7 @@ class RhoAtmSampler(SweepSampler):
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["rho_atm"]
-    contract: ClassVar[str] = (
-        "batch(aot, rh, h, href, vza, sza) vec(wl) -> rho_atm(wl)"
-    )
+    contract: ClassVar[str] = "batch(aot, rh, h, href, vza, sza) vec(wl) -> rho_atm(wl)"
     point_fn: ClassVar[Callable[..., Any]] = staticmethod(rho_atm)
 
     def __init__(

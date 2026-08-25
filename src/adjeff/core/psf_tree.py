@@ -95,9 +95,7 @@ def freeze(modules: dict[SensorBand, PSFModule]) -> xr.DataTree:
     xr.DataTree
         Frozen kernels reflecting the current parameter values.
     """
-    return psf_tree(
-        {band: psf.to_dataarray() for band, psf in modules.items()}
-    )
+    return psf_tree({band: psf.to_dataarray() for band, psf in modules.items()})
 
 
 def psf_kernel(tree: xr.DataTree, band: SensorBand) -> xr.DataArray:
@@ -139,9 +137,7 @@ def psf_params(tree: xr.DataTree, band: SensorBand) -> dict[str, xr.DataArray]:
     """
     dataset = tree[band.id].ds
     return {
-        str(name): dataset[name]
-        for name in dataset.data_vars
-        if name != PSF_KERNEL
+        str(name): dataset[name] for name in dataset.data_vars if name != PSF_KERNEL
     }
 
 

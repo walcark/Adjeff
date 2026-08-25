@@ -68,8 +68,7 @@ class RhoToaSymSampler(SweepSampler):
     contract: ClassVar[str] = (
         # The output dim order is the one ParamBatch produces inside
         # _smartg, which broadcasts wl, aot, rh, href, h in that order.
-        "loop(sza, vza) vec(aot, rh, h, href) "
-        "-> rho_toa(aot, rh, href, h, y, x)"
+        "loop(sza, vza) vec(aot, rh, h, href) -> rho_toa(aot, rh, href, h, y, x)"
     )
     point_fn: ClassVar[Any] = staticmethod(rho_toa_sym)
 

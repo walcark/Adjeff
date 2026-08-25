@@ -112,9 +112,7 @@ class ProductLoader(SceneSource, ABC):
         """Aggregate output variables declared by active mixins."""
         result = list(self._BASE_OUTPUT_VARS)
         for cls in type(self).__mro__:
-            contrib: list[str] = cls.__dict__.get(
-                "_output_vars_contribution", []
-            )
+            contrib: list[str] = cls.__dict__.get("_output_vars_contribution", [])
             result.extend(contrib)
         return result
 

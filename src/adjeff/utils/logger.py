@@ -65,10 +65,7 @@ class MultilineConsoleRenderer:
 
         if self._pad_keys:
             width = max(len(k) for k in event_dict)
-            lines = [
-                f"{self._indent}{k:<{width}} = {v}"
-                for k, v in event_dict.items()
-            ]
+            lines = [f"{self._indent}{k:<{width}} = {v}" for k, v in event_dict.items()]
         else:
             lines = [f"{self._indent}{k} = {v}" for k, v in event_dict.items()]
 

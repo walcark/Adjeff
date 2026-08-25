@@ -178,9 +178,7 @@ class MajaLoader(
         pattern: str = f"S2*{tile}*.DBL.DIR/*{tile}*ALT_R2.TIF"
         glob_mnt = list(self.mnt_path.glob(pattern))
         if len(glob_mnt) == 0:
-            raise ImageIOError(
-                f"No DEM file found for tile {tile} in {self.mnt_path}."
-            )
+            raise ImageIOError(f"No DEM file found for tile {tile} in {self.mnt_path}.")
 
         with rasterio.open(glob_mnt[0]) as src:
             arr = src.read(1).astype(float)
@@ -231,9 +229,7 @@ class MajaLoader(
                 xr.DataArray(vza, dims="vza", coords=dict(vza=vza)),
                 xr.DataArray(vaa, dims="vaa", coords=dict(vaa=vaa)),
             )
-        raise ImageIOError(
-            f"Viewing angles for band {band} not found in product XML."
-        )
+        raise ImageIOError(f"Viewing angles for band {band} not found in product XML.")
 
     def _sza_saa(self) -> tuple[xr.DataArray, xr.DataArray]:
         """Return the Sun Zenith and Azimuth angles."""
@@ -291,8 +287,7 @@ def downsample_res(
     int_data_res = int(round(1000 * data_res))
     if (int_target_res % int_data_res != 0) or (int_target_res < int_data_res):
         raise ConfigurationError(
-            f"Target res {int_target_res} should "
-            f" be divisible by {int_data_res}."
+            f"Target res {int_target_res} should  be divisible by {int_data_res}."
         )
     factor: int = int_target_res // int_data_res
     return block_reduce(

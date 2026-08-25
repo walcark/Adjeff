@@ -103,9 +103,9 @@ def _profile_to_field(
     r_u = r[unique_idx]
     v_u = values[unique_idx]
 
-    result: np.ndarray = PchipInterpolator(r_u, v_u, extrapolate=True)(
-        rr
-    ).astype(np.float32)
+    result: np.ndarray = PchipInterpolator(r_u, v_u, extrapolate=True)(rr).astype(
+        np.float32
+    )
     return result
 
 
@@ -136,9 +136,7 @@ def radial_distances(
     """
     if isinstance(source, xr.Dataset):
         if var_name is None:
-            raise ValueError(
-                "var_name is required when source is an xr.Dataset"
-            )
+            raise ValueError("var_name is required when source is an xr.Dataset")
         da = source[var_name]
     else:
         da = source
@@ -180,9 +178,7 @@ def natural_npix(
     """
     if isinstance(source, xr.Dataset):
         if var_name is None:
-            raise ValueError(
-                "var_name is required when source is an xr.Dataset"
-            )
+            raise ValueError("var_name is required when source is an xr.Dataset")
         da = source[var_name]
     else:
         da = source

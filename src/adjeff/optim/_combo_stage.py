@@ -38,8 +38,7 @@ def save_all_params(
     """Return a snapshot of all PSF unconstrained parameters."""
     return {
         band_id: {
-            name: p.data.clone()
-            for name, p in cast(nn.Module, psf).named_parameters()
+            name: p.data.clone() for name, p in cast(nn.Module, psf).named_parameters()
         }
         for band_id, psf in model.psf_modules.items()
     }

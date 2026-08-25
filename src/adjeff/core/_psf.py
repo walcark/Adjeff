@@ -35,13 +35,9 @@ class PSFGrid:
         from adjeff.exceptions import ConfigurationError
 
         if self.res <= 0:
-            raise ConfigurationError(
-                f"PSFGrid.res must be > 0, got {self.res}."
-            )
+            raise ConfigurationError(f"PSFGrid.res must be > 0, got {self.res}.")
         if (self.n < 3) or (self.n % 2 == 0):
-            raise ConfigurationError(
-                f"PSFGrid.n must be odd and ≥ 3, got {self.n}."
-            )
+            raise ConfigurationError(f"PSFGrid.n must be odd and ≥ 3, got {self.n}.")
 
     def as_coords(self) -> xr.Coordinates:
         """Return centered xarray coordinates for the PSF grid."""

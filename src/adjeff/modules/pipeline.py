@@ -64,9 +64,7 @@ class Pipeline:
         all_produced = {v for m in self._modules for v in m.output_vars}
         produced: set[str] = set()
         for mod in self._modules:
-            pipeline_missing = (
-                set(mod.required_vars) & all_produced
-            ) - produced
+            pipeline_missing = (set(mod.required_vars) & all_produced) - produced
             if pipeline_missing:
                 raise ConfigurationError(
                     f"{type(mod).__name__} requires "
@@ -157,11 +155,7 @@ class Pipeline:
             sub_scene = ImageDict(
                 {
                     band: scene[band].isel(
-                        {
-                            d: s
-                            for d, s in selector.items()
-                            if d in scene[band].dims
-                        }
+                        {d: s for d, s in selector.items() if d in scene[band].dims}
                     )
                     for band in scene.bands
                 }

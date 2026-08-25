@@ -123,9 +123,7 @@ class ImageDict:
         """
         for var in vars:
             missing_bands = [
-                bid
-                for bid, ds in self._data.items()
-                if var not in ds.data_vars
+                bid for bid, ds in self._data.items() if var not in ds.data_vars
             ]
             if missing_bands:
                 raise MissingVariableError(
@@ -139,9 +137,7 @@ class ImageDict:
         on the copy do not affect the original. Existing DataArrays are shared
         in memory and dask graphs are preserved (no compute triggered).
         """
-        return ImageDict(
-            {band: ds.copy(deep=False) for band, ds in self._data.items()}
-        )
+        return ImageDict({band: ds.copy(deep=False) for band, ds in self._data.items()})
 
     def __getitem__(self, band: SensorBand) -> xr.Dataset:
         """Return the Dataset for *band*."""
