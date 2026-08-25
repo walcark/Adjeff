@@ -311,3 +311,24 @@ def test_king_gamma_stays_bounded_under_gradient_steps(grid, band):
 
     low, high = KingPSF.GAMMA_BOUNDS
     assert low <= psf.param_dict()["gamma"] <= high
+
+
+# ---------------------------------------------------------------------------
+# SensorBand — reverse wavelength lookup
+# ---------------------------------------------------------------------------
+
+
+def test_band_from_wavelength():
+    """A figure names a band by its wavelength, so the enum should too."""
+    from adjeff.core import S2Band
+
+    assert S2Band.from_wl(560.0) is S2Band.B03
+    assert S2Band.from_wl(665.0) is S2Band.B04
+
+
+def test_band_from_wavelength_rejects_an_unknown_centre():
+    """An approximate wavelength is an error, not a nearest neighbour."""
+    from adjeff.core import S2Band
+
+    with pytest.raises(KeyError, match="560"):
+        S2Band.from_wl(600.0)

@@ -22,6 +22,41 @@ class SensorBand(Enum):
         """Return a simple representation of the band."""
         return f"{self.__class__.__name__}.{self.id}"
 
+    @classmethod
+    def from_wl(cls, wl_nm: float, tol_nm: float = 0.5) -> "SensorBand":
+        """Return the band centred on *wl_nm*.
+
+        Parameters
+        ----------
+        wl_nm : float
+            Central wavelength in nanometres, as a figure or a command
+            line names a band.
+        tol_nm : float, optional
+            How far from a band centre a request may fall.  The Sentinel-2
+            centres are tens of nanometres apart, so the default is tight
+            enough to make an approximate value an error rather than a
+            silent neighbour.
+
+        Returns
+        -------
+        SensorBand
+            The matching member.
+
+        Raises
+        ------
+        KeyError
+            If no band lies within *tol_nm*, listing the centres that do
+            exist.
+        """
+        for member in cls:
+            if abs(member.wl_nm - float(wl_nm)) <= tol_nm:
+                return member
+        known = ", ".join(f"{m.wl_nm:.0f}" for m in cls)
+        raise KeyError(
+            f"No {cls.__name__} within {tol_nm} nm of {wl_nm} nm. "
+            f"Centres are: {known}."
+        )
+
     def __cache_token__(self) -> str:
         """Return a stable, serialisable identity for cache fingerprints.
 

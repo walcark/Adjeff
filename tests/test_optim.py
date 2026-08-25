@@ -173,3 +173,25 @@ def test_every_metric_honours_the_domain_it_is_given(metric_name):
     assert float(
         metric(elsewhere, sample.target, sample.dist, inside)
     ) == pytest.approx(reference, rel=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# TrainingImages
+# ---------------------------------------------------------------------------
+
+
+def test_training_images_weights_default_to_uniform():
+    """Every caller wrote `[1.0] * len(images)` by hand."""
+    from adjeff.optim import TrainingImages
+
+    images = [object(), object(), object()]
+
+    assert TrainingImages(images=images).per_image == [1.0, 1.0, 1.0]
+
+
+def test_training_images_rejects_a_wrong_number_of_weights():
+    """A weight per image, or none at all."""
+    from adjeff.optim import TrainingImages
+
+    with pytest.raises(ConfigurationError, match="one per image"):
+        TrainingImages(images=[object(), object()], weights=[1.0])
