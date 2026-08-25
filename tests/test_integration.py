@@ -353,3 +353,24 @@ def test_batched_angles_match_one_call_per_angle():
     assert abs(alone[1] - alone[0]) > 0.05
     # Monte-Carlo noise at 1e5 photons is around one percent.
     np.testing.assert_allclose(batched, alone, rtol=0.08)
+
+
+def test_a_second_run_reads_back_the_scene_it_computed(config, surface,
+                                                       tmp_path):
+    """The pipeline must not depend on whether its cache is warm.
+
+    `rho_atm` is a single Monte-Carlo number, and `RhoToaSym` used to
+    draw its own rather than reuse the one already in the scene.  On a
+    cold run that second draw won, on a warm run it never happened, so
+    `rho_toa` ended up built with one draw and inverted with another:
+    a constant bias on `rho_unif`, present only when the cache was warm.
+    """
+    cache = CacheStore(tmp_path)
+    common = dict(**config, n_ph=N_PH, nr=32, cache=cache)
+
+    cold = run_forward_pipeline(surface, **common)[BAND]["rho_unif"]
+    warm = run_forward_pipeline(surface, **common)[BAND]["rho_unif"]
+
+    cold_values = np.asarray(cold.values, dtype=float)
+    warm_values = np.asarray(warm.values, dtype=float)
+    np.testing.assert_array_equal(warm_values, cold_values)

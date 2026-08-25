@@ -327,3 +327,32 @@ def test_cache_ignores_the_encoding_of_a_reloaded_array(tmp_path, scene):
     back = cache.load_vars("some-key", [S2Band.B02], ["rho_toa"])
     assert back is not None
     assert back[S2Band.B02]["rho_toa"].sizes["aot"] == 3
+
+
+def test_optional_vars_enter_the_key_only_when_present(tmp_path, scene):
+    """An optional input must key the entry it contributed to.
+
+    A module that computes a variable when the scene lacks it, and reuses
+    the scene's own when it has one, produces two different outputs from
+    the same declared inputs.  Leaving that variable out of the key lets
+    the two share an entry.
+    """
+    import xarray as xr
+
+    class OptionalModule(TestModule):
+        optional_vars = ["rho_atm"]
+
+    cache = CacheStore(tmp_path)
+    module = OptionalModule(cache=cache)
+    plain = module._cache_key(scene)
+
+    with_var = scene.shallow_copy()
+    with_var[S2Band.B02]["rho_atm"] = xr.DataArray(0.06)
+    keyed = module._cache_key(with_var)
+
+    other = scene.shallow_copy()
+    other[S2Band.B02]["rho_atm"] = xr.DataArray(0.07)
+
+    assert plain != keyed, "an optional input present must change the key"
+    assert keyed != module._cache_key(other), "two values, two keys"
+    assert plain == module._cache_key(scene.shallow_copy())

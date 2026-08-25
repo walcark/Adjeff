@@ -86,6 +86,12 @@ class SceneModule:
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = []
+    #: Variables the module consumes when the scene carries them and
+    #: computes itself when it does not.  They enter the cache key only
+    #: when present: declaring them in ``required_vars`` would forbid the
+    #: standalone call that produces them, while leaving them out
+    #: entirely would let two different inputs share one entry.
+    optional_vars: ClassVar[list[str]] = []
 
     def __init__(self, cache: CacheStore | None = None) -> None:
         super().__init__()
@@ -212,25 +218,30 @@ class SceneModule:
     def _input_hashes(self, scene: "ImageDict") -> dict[str, str]:
         """Return a stable hash per ``(band, variable)`` pair in *scene*.
 
-        Uses the DataArray's provenance key when available to avoid
-        re-hashing large arrays; falls back to ``joblib.hash`` of the
-        raw values.
+        Covers ``required_vars`` plus whichever ``optional_vars`` the
+        scene happens to carry.  Uses the DataArray's provenance key when
+        available to avoid re-hashing large arrays; falls back to
+        ``joblib.hash`` of the raw values.
         """
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
-            for var in self.required_vars:
-                da: xr.DataArray = ds[var]
-                provenance_key: str | None = da.attrs.get(
-                    "_adjeff_provenance", {}
-                ).get("key")
-                hash_val: str = str(
-                    provenance_key
-                    if provenance_key is not None
-                    else joblib.hash(da.values)
-                )
-                hashes[f"{band}.{var}"] = hash_val
+            present = [var for var in self.optional_vars if var in ds]
+            for var in [*self.required_vars, *present]:
+                hashes[f"{band}.{var}"] = self._var_hash(ds[var])
         return hashes
+
+    @staticmethod
+    def _var_hash(da: xr.DataArray) -> str:
+        """Return the provenance key of *da*, or a hash of its values."""
+        provenance_key: str | None = da.attrs.get(
+            "_adjeff_provenance", {}
+        ).get("key")
+        return str(
+            provenance_key
+            if provenance_key is not None
+            else joblib.hash(da.values)
+        )
 
     def _stamp_provenance(self, scene: "ImageDict", key: str) -> None:
         """Tag each output DataArray with module name and cache key."""

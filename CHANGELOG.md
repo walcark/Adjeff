@@ -5,6 +5,35 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The forward pipeline gave a different scene on a warm cache.**
+  `rho_atm` is a single Monte-Carlo number, and `RhoToaSym` drew its own
+  instead of reusing the one `RadiativePipeline` had already put in the
+  scene.  On a cold run that second draw overwrote the first and fed
+  `Toa2Unif`; on a warm run the sampler came from the cache, its
+  `_compute` never ran, and `Toa2Unif` saw the first draw instead.
+  `rho_toa` was then built with one draw and inverted with another,
+  leaving a constant bias of around `6e-5` on the whole `rho_unif` field.
+  Both `RhoToaSym` and `RhoToa` now reuse the scene's `rho_atm` when it
+  is there, and declare it in the new `optional_vars` so that two
+  different path reflectances cannot share one cache entry.
+
+  The bias was small in absolute terms but decided the outcome of any
+  radial energy mask: a 99% mask on `rho_unif` kept 4% of the grid
+  without it and 95% with it.
+
+  Breaking: `RhoToaSym` and `RhoToa` cache entries are invalidated, since
+  `rho_atm` now takes part in their key.
+
+- **`SceneModule.optional_vars`** declares inputs a module consumes when
+  the scene carries them and computes itself otherwise.  They enter the
+  cache key only when present, which `required_vars` could not express:
+  declaring them there would forbid the standalone call that produces
+  them.
+
 ## [0.8.0]
 
 ### Changed

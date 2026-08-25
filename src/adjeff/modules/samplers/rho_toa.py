@@ -21,7 +21,7 @@ from adjeff.utils._config import ConfigProtocol
 
 from ..sweep_sampler import SweepSampler
 from ._smartg import rho_toa
-from .rho_atm import RhoAtmSampler
+from .rho_atm import ensure_rho_atm
 
 logger = get_logger(__name__)
 
@@ -63,6 +63,9 @@ class RhoToaSampler(SweepSampler):
 
     required_vars: ClassVar[list[str]] = ["rho_s"]
     output_vars: ClassVar[list[str]] = ["rho_toa"]
+    #: Reused when the scene carries it, computed otherwise.  Keyed so
+    #: that two different path reflectances cannot share one entry.
+    optional_vars: ClassVar[list[str]] = ["rho_atm"]
     # `sza` and `vza` stay `loop`: the sensor grid is built from them, so
     # a call carries one geometry.  The output dim order is the one
     # ParamBatch produces inside _smartg (wl, aot, rh, href, h).
@@ -121,15 +124,15 @@ class RhoToaSampler(SweepSampler):
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Run the 2D rho_toa computation for every band in the scene."""
-        scene = RhoAtmSampler(
+        scene = ensure_rho_atm(
+            scene,
             atmo_config=self.atmo_config,
             geo_config=self.geo_config,
-            spectral_config=atmo.SpectralConfig.from_bands(scene.bands),
             remove_rayleigh=self.remove_rayleigh,
             afgl_type=self.afgl_type,
             n_ph=int(3e7),
             cache=self._cache,
-        )(scene)
+        )
 
         # One sweep per band: the physics reads the band's own scene, so
         # the two travel together rather than through the sweep space.
