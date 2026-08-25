@@ -1,9 +1,15 @@
 """Loss landscape and encircled-energy utilities for PSF parameter spaces.
 
 Both :func:`loss_landscape` and :func:`energy_radius_landscape` accept any
-list of :class:`~adjeff.core._psf.PSFModule` instances — Gaussian, King,
+list of :class:`~adjeff.core._psf.PSFModule` instances: Gaussian, King,
 Voigt, Moffat, or any custom subclass.  The caller is responsible for
 building the parameter grid and reshaping the returned 1-D arrays.
+
+:func:`loss_landscape` also accepts any model and any loss.  It used to
+hardcode the convolution of :class:`~adjeff.modules.models.Unif2Surface`
+and the variable names it reads, and to reach inside the loss object for
+its metric and its mask, which made the promise of the paragraph above
+false for everything but that one pair.
 """
 
 from __future__ import annotations
@@ -18,9 +24,9 @@ from tqdm import tqdm  # type: ignore[import-untyped]
 from adjeff.core import SensorBand
 from adjeff.core._psf import PSFModule
 from adjeff.modules.models.unif2surface import _rho_s_from_rho_env
+from adjeff.modules.scene_module import TrainableSceneModule
 from adjeff.utils import fft_convolve_2D_torch
 
-from .loss import Loss
 from .training_set import (
     TrainingImages,
     TrainingSample,
@@ -28,11 +34,33 @@ from .training_set import (
     training_set,
 )
 
+#: What `loss_landscape` needs of a loss: to be callable the way `fit`
+#: calls it.  `Loss` satisfies it, and so does anything else.
+LossFn = Callable[
+    [Callable[[dict[str, torch.Tensor]], torch.Tensor], list[TrainingSample]],
+    torch.Tensor,
+]
+
+
+def _model_forward_fn(
+    model: TrainableSceneModule, band: SensorBand, kernel: torch.Tensor
+) -> Callable[[dict[str, torch.Tensor]], torch.Tensor]:
+    """Return the per-band forward pass of *model*, on a given kernel."""
+
+    def _fwd(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        return model.forward_band(band, kernel=kernel, **inputs)
+
+    return _fwd
+
 
 def _make_forward_fn(
     kernel: torch.Tensor,
 ) -> Callable[[dict[str, torch.Tensor]], torch.Tensor]:
-    """Unif2Surface forward closure for a pre-moved kernel."""
+    """Return the Unif2Surface forward pass for a pre-moved kernel.
+
+    Used when :func:`loss_landscape` is given no model, which keeps the
+    call short for the common case.
+    """
 
     def _fwd(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
         rho_unif = inputs["rho_unif"]
@@ -57,28 +85,39 @@ def loss_landscape(
     train_images: TrainingImages,
     band: SensorBand,
     psf_modules: list[PSFModule],
-    loss: Loss,
+    loss: LossFn,
+    model: TrainableSceneModule | None = None,
     device: str = "cpu",
 ) -> np.ndarray:
     """Evaluate the loss for each PSF in *psf_modules*.
 
-    For each PSF, its kernel is applied as a Unif2Surface convolution on
-    the training images and the loss is computed.  Loss values are averaged
-    over all atmospheric parameter combinations found in *train_images*.
+    For each PSF, its kernel is applied to the training images and the
+    loss is computed.  Loss values are averaged over all atmospheric
+    parameter combinations found in *train_images*.
 
     Parameters
     ----------
     train_images : TrainingImages
-        Pre-computed scenes (must contain ``rho_unif``, ``tdir_up``,
-        ``tdif_up``, ``sph_alb``, and ``rho_s``).
+        Pre-computed scenes.  They must carry whatever the model
+        declares in ``required_vars`` and ``output_vars``, which for
+        :class:`~adjeff.modules.models.Unif2Surface` means ``rho_unif``,
+        ``tdir_up``, ``tdif_up``, ``sph_alb`` and ``rho_s``.
     band : SensorBand
         Band to evaluate.
     psf_modules : list[PSFModule]
         Any :class:`~adjeff.core._psf.PSFModule` instances
         (e.g. :class:`~adjeff.core.GeneralizedGaussianPSF`,
         :class:`~adjeff.core.KingPSF`, …).
-    loss : Loss
-        Loss function instance.
+    loss : Loss or callable
+        Anything with the signature ``loss(forward_fn, samples)``.  The
+        built-in :class:`Loss` satisfies it, and so does a custom
+        callable, which is what makes it possible to map a surface for a
+        metric this package does not ship.
+    model : TrainableSceneModule or None, optional
+        Model whose forward pass the kernels feed.  ``None`` keeps the
+        :class:`~adjeff.modules.models.Unif2Surface` convolution, which
+        is what the manuscript's figures use.  When given, the variable
+        names are read off the model rather than assumed.
     device : str
         Torch device for convolutions (default ``"cpu"``).
 
@@ -88,8 +127,12 @@ def loss_landscape(
         Mean loss across all atmospheric combos for each PSF.
         The caller is responsible for reshaping to a parameter grid.
     """
-    input_names = ["rho_unif", "tdir_up", "tdif_up", "sph_alb"]
-    target_name = "rho_s"
+    if model is None:
+        input_names = ["rho_unif", "tdir_up", "tdif_up", "sph_alb"]
+        target_name = "rho_s"
+    else:
+        input_names = list(model.required_vars)
+        target_name = model.output_vars[0]
     dev = torch.device(device)
 
     combos = list(
@@ -117,22 +160,15 @@ def loss_landscape(
     with torch.no_grad():
         for i, psf in tqdm(enumerate(psf_modules), total=len(psf_modules)):
             kernel = psf.forward().to(dev)
-            fwd = _make_forward_fn(kernel)
+            if model is None:
+                forward = _make_forward_fn(kernel)
+            else:
+                forward = _model_forward_fn(model, band, kernel)
             total = 0.0
             for samples in prefetched:
-                combo_losses = []
-                for sample in samples:
-                    pred = fwd(sample.inputs)
-                    mask = (
-                        sample.inputs.get("rho_unif")
-                        if loss.mask_on == "rho_unif"
-                        else None
-                    )
-                    combo_losses.append(
-                        loss.metric(pred, sample.target, sample.dist, mask)
-                        * sample.weight
-                    )
-                total += float(torch.stack(combo_losses).sum().item())
+                # The loss is called exactly as `fit` calls it, which is
+                # what lets any callable stand in for the built-in one.
+                total += float(loss(forward, samples).item())
             result[i] = total / n_combos
 
     return result

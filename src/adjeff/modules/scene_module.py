@@ -281,6 +281,15 @@ class TrainableSceneModule(nn.Module, SceneModule):
     def forward_band(
         self,
         band: "SensorBand",
+        *,
+        kernel: torch.Tensor | None = None,
         **inputs: torch.Tensor,
     ) -> torch.Tensor:
-        """Differentiable per-band forward pass for the training loop."""
+        """Differentiable per-band forward pass for the training loop.
+
+        *kernel* overrides the band's own PSF for one call, without
+        installing it in the model.  It is part of the contract because
+        that is what evaluating a candidate costs: mapping a loss
+        surface would otherwise have to reach into the model's private
+        state, or reimplement its forward pass.
+        """

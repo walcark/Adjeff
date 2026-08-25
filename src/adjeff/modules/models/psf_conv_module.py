@@ -128,13 +128,32 @@ class PSFConvModule(TrainableSceneModule):
         modules = [cast(PSFModule, m) for m in self._psfs.values()]
         return freeze({m.band: m for m in modules})
 
-    def forward_band(self, band: SensorBand, **inputs: torch.Tensor) -> torch.Tensor:
+    def forward_band(
+        self,
+        band: SensorBand,
+        *,
+        kernel: torch.Tensor | None = None,
+        **inputs: torch.Tensor,
+    ) -> torch.Tensor:
         """Differentiable per-band forward pass (2-D tensors, autograd).
 
         Only available in training mode.
+
+        Parameters
+        ----------
+        band : SensorBand
+            Band to run.
+        kernel : torch.Tensor or None, optional
+            Kernel to convolve with, overriding the band's own PSF.
+            Used to evaluate a candidate without installing it in the
+            model, which is what mapping a loss surface amounts to.
+        **inputs : torch.Tensor
+            The variables named in ``required_vars``.
         """
         d = self._device
-        kernel = self.psf_modules[band.id].forward().to(d)
+        if kernel is None:
+            kernel = self.psf_modules[band.id].forward()
+        kernel = kernel.to(d)
         rho_env = fft_convolve_2D_torch(
             inputs[self._conv_input].to(d),
             kernel,
