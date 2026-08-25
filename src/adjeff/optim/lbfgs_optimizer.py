@@ -75,9 +75,7 @@ class LBFGSStage(_ComboStage):
     ) -> None:
         """L-BFGS optimisation loop for one combo."""
         best_params = save_all_params(model)
-        params_to_opt = list(
-            cast(nn.Module, model.psf_modules[band.id]).parameters()
-        )
+        params_to_opt = list(cast(nn.Module, model.psf_modules[band.id]).parameters())
         opt = torch.optim.LBFGS(
             params=params_to_opt,
             lr=self.config.learning_rate,
@@ -101,8 +99,13 @@ class LBFGSStage(_ComboStage):
                 # PyTorch strong-Wolfe line search can raise IndexError when
                 # the bracket collapses on a numerically flat loss surface.
                 # Treat as convergence and exit cleanly.
+                # Two channels on purpose: `warnings` is the public,
+                # catchable signal, but Python shows it once per call
+                # site, which hides how often it happens over a sweep of
+                # thousands of fits.  The log line is the one that counts
+                # them, hence `warning` and not `info`.
                 msg = "L-BFGS line search degenerated, stopping early."
-                logger.info(msg)
+                logger.warning(msg, step=self.nloop)
                 warnings.warn(msg, OptimizationWarning, stacklevel=2)
                 break
             loss = float(loss_tensor.item())
