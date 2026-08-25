@@ -86,6 +86,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The cache refused to store an array it had just handed back.**
+  `forward` swaps its outputs for lazy zarr-backed views, so they carry
+  the file's own `encoding["chunks"]`; `to_zarr` honours that encoding
+  over the chunking the cache asks for and raises rather than write. It
+  only showed up once a swept dimension was longer than one, since the
+  two chunkings agree otherwise. The cache and `write_band` now drop the
+  encoding they did not choose.
+
 - **A batched Smart-G call mixed up the angles between its points.**
   `tdif_down`, `tdif_up` and `rho_atm` ask Smart-G for one direction per
   point, but the engine evaluates every direction for every atmosphere

@@ -75,7 +75,11 @@ class CacheStore:
 
         for band in scene.bands:
             ds = scene[band]
-            subset = ds[variables]
+            # The cache decides its own chunking, so any encoding an
+            # array carries from the file it was read back from has to
+            # go: `to_zarr` honours `encoding["chunks"]` over the dask
+            # chunks below, and refuses the write when the two disagree.
+            subset = ds[variables].drop_encoding()
             dest = self._cache_dir / key / f"{band}.zarr"
             dest.parent.mkdir(parents=True, exist_ok=True)
 
