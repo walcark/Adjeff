@@ -113,11 +113,23 @@ def _residual(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
     return (tensor1 - tensor2) / _get_scale(tensor2)
 
 
-def _rad_weights(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:
+def _rad_weights(
+    dists: torch.Tensor, mask_tensor: torch.Tensor | None
+) -> torch.Tensor:
+    """Return the radial weights, restricted to *mask_tensor*.
+
+    Two kinds of mask are accepted, told apart by their dtype.  A float
+    field is a *source*: the mask keeps the pixels within its 99% radial
+    energy, which is how ``rho_unif`` has always been used here.  A
+    boolean tensor is the mask itself, already decided by the caller,
+    which is what a fixed radius amounts to.
+    """
     w = radial_weights(dists)
-    if mask_tensor is not None:
-        w = w * radial_mask(mask_tensor, dists, _MASK_THRESHOLD).float()
-    return w
+    if mask_tensor is None:
+        return w
+    if mask_tensor.dtype == torch.bool:
+        return w * mask_tensor.float()
+    return w * radial_mask(mask_tensor, dists, _MASK_THRESHOLD).float()
 
 
 # ---------------------------------------------------------------------------

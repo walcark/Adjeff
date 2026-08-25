@@ -13,14 +13,6 @@ from adjeff.exceptions import ConfigurationError, OptimizationWarning
 # ---------------------------------------------------------------------------
 
 
-def test_loss_invalid_mask_on_raises():
-    """Loss raises ConfigurationError for an invalid mask_on value."""
-    from adjeff.optim import Loss, Metric
-
-    with pytest.raises(ConfigurationError, match="mask_on"):
-        Loss(metric=Metric.MSE_RAD, mask_on="invalid")
-
-
 def _sample(n: int = 8):
     """Return one training sample on a small square grid."""
     from adjeff.optim.training_set import TrainingSample
@@ -39,30 +31,49 @@ def _sample(n: int = 8):
     )
 
 
-def test_residual_scale_ignores_the_prediction():
-    """A defect far from the pixels under test must not shrink the error.
+def test_loss_unknown_mask_variable_names_what_is_available():
+    """An unknown mask variable must say what the sample does carry.
 
-    The residual used to be divided by ``max(|pred|, |truth|)``, so a
-    prediction going wrong anywhere raised the scale everywhere, and the
-    error measured on untouched pixels fell with it.  The reference
-    alone sets the scale, and it does not move while the optimiser
-    searches.
+    The name is no longer restricted to `rho_unif`, so a typo can only
+    be caught when the training data is in hand.
     """
-    from adjeff.optim import Metric
+    from adjeff.optim import Loss, Metric
 
-    sample = _sample(16)
-    pred = sample.target + 0.1
-    inside = sample.dist <= 3.0
+    loss = Loss(metric=Metric.MSE_RAD, mask_on="rho_uniff")
 
-    clean = float(Metric.MSE_RAD(pred, sample.target, sample.dist, None))
+    with pytest.raises(ConfigurationError, match="rho_unif"):
+        loss._mask_for(_sample())
 
-    spoiled = pred.clone()
-    spoiled[sample.dist > 5.0] += 10.0
-    scaled = float(Metric.MSE_RAD(spoiled, sample.target, sample.dist, None))
 
-    # The defect is real, so the unmasked error must grow, never shrink.
-    assert scaled > clean
-    assert bool(torch.equal(pred[inside], spoiled[inside]))
+def test_loss_rejects_a_non_positive_radius():
+    """A radius mask must be a positive number of kilometres."""
+    from adjeff.optim import Loss, Metric
+
+    with pytest.raises(ConfigurationError, match="radius"):
+        Loss(metric=Metric.MSE_RAD, mask_on=0.0)
+
+
+def test_loss_radius_mask_is_a_disc_that_does_not_move():
+    """A radius mask depends on the grid alone, not on the prediction."""
+    from adjeff.optim import Loss, Metric
+
+    sample = _sample()
+    mask = Loss(metric=Metric.MSE_RAD, mask_on=2.0)._mask_for(sample)
+
+    assert mask is not None
+    assert mask.dtype == torch.bool
+    assert bool(mask[sample.dist <= 2.0].all())
+    assert not bool(mask[sample.dist > 2.0].any())
+
+
+def test_loss_variable_mask_is_the_field_itself():
+    """A named mask hands the metric the field, which derives the cut."""
+    from adjeff.optim import Loss, Metric
+
+    sample = _sample()
+    mask = Loss(metric=Metric.MSE_RAD, mask_on="rho_unif")._mask_for(sample)
+
+    assert mask is sample.inputs["rho_unif"]
 
 
 # ---------------------------------------------------------------------------
@@ -100,3 +111,37 @@ def test_lbfgs_degenerated_line_search_warns():
         ),
     ):
         stage._run_combo(model, S2Band.B02, MagicMock(), "aot=0.1")
+
+
+def test_radial_metric_accepts_a_ready_made_mask():
+    """A boolean mask is used as is, a float field drives a CDF cut.
+
+    The two are told apart by dtype, so a fixed radius and an energy
+    fraction can share one parameter without a second argument.
+    """
+    from adjeff.optim import Metric
+
+    sample = _sample(16)
+    pred = sample.target + 0.1
+
+    inside = sample.dist <= 3.0
+    on_disc = float(
+        Metric.MSE_RAD(pred, sample.target, sample.dist, inside)
+    )
+    everywhere = float(
+        Metric.MSE_RAD(pred, sample.target, sample.dist, None)
+    )
+
+    # A constant offset gives the same mean square error either way, so
+    # the mask changes which pixels are averaged, not the value.
+    assert on_disc == pytest.approx(everywhere, rel=1e-5)
+
+    # A defect confined outside the disc must be invisible to the mask.
+    spoiled = pred.clone()
+    spoiled[sample.dist > 5.0] += 10.0
+    assert float(
+        Metric.MSE_RAD(spoiled, sample.target, sample.dist, inside)
+    ) == pytest.approx(on_disc, rel=1e-5)
+    assert float(
+        Metric.MSE_RAD(spoiled, sample.target, sample.dist, None)
+    ) > 10.0 * everywhere
