@@ -16,10 +16,15 @@ from smartg.visualizegeo import Entity, Plane, Transformation
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
-import adjeff.utils as utils
 from adjeff.core import GeneralizedGaussianPSF, PSFGrid, SensorBand
 from adjeff.exceptions import ConfigurationError
 from adjeff.utils import fft_convolve_2D
+from adjeff.utils.smartgutils import (
+    adapt_smartg_output,
+    compute_optical_depth,
+    make_sensors,
+)
+from adjeff.utils.xrutils import ParamBatch
 
 if TYPE_CHECKING:
     from smartg.smartg import Sensor
@@ -41,16 +46,14 @@ def _make_atmosphere(
     species: dict[str, float],
     afgl_type: str,
     remove_rayleigh: bool,
-) -> tuple[Any, utils.ParamBatch, int]:
+) -> tuple[Any, ParamBatch, int]:
     """Build a batched Smart-G atmosphere from atmospheric DataArrays.
 
-    Returns the MLUT atmosphere, the :class:`~adjeff.utils.ParamBatch`
+    Returns the MLUT atmosphere, the :class:`~adjeff.ParamBatch`
     used to build it, and the number of atmospheric profiles
     (``atm_size``).
     """
-    batch = utils.ParamBatch.from_dataarrays(
-        wl=wl, aot=aot, rh=rh, href=href, h=h
-    )
+    batch = ParamBatch.from_dataarrays(wl=wl, aot=aot, rh=rh, href=href, h=h)
     atm = atmo.create_atmosphere(
         batch.as_dict(),
         species=species,
@@ -124,7 +127,7 @@ def rho_atm(
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    sat_sensor = utils.make_sensors(180.0 - vza, vaa, posz=sat_height)
+    sat_sensor = make_sensors(180.0 - vza, vaa, posz=sat_height)
     sun_le = {
         "th_deg": np.atleast_1d(sza.values),
         "phi_deg": saa,
@@ -141,7 +144,7 @@ def rho_atm(
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
 
-    res = utils.adapt_smartg_output(
+    res = adapt_smartg_output(
         res,
         squeeze=["Azimuth angles"],
         rename={"sensor index": "vza", "Zenith angles": "sza"},
@@ -218,7 +221,7 @@ def tdir_down(
     atm, batch, _ = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    od = utils.compute_optical_depth(atm)
+    od = compute_optical_depth(atm)
     od = batch.unstack(
         xr.DataArray(
             od.values,
@@ -279,7 +282,7 @@ def tdir_up(
     atm, batch, _ = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    od = utils.compute_optical_depth(atm)
+    od = compute_optical_depth(atm)
     od = batch.unstack(
         xr.DataArray(od, dims=["index"], coords={"index": batch.index_coord}),
     )
@@ -344,7 +347,7 @@ def tdif_down(
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    sun_sensor = utils.make_sensors(180.0 - sza, saa, posz=sat_height)
+    sun_sensor = make_sensors(180.0 - sza, saa, posz=sat_height)
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
@@ -358,7 +361,7 @@ def tdif_down(
     )["flux_down (0+)"].to_xarray()
     smartg.clear_context()
 
-    res = utils.adapt_smartg_output(
+    res = adapt_smartg_output(
         res,
         rename={"sensor index": "sza"},
         coords={"sza": sza.values},
@@ -444,7 +447,7 @@ def tdif_up(
         NF=int(1e3),
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
-    res = utils.adapt_smartg_output(
+    res = adapt_smartg_output(
         res,
         squeeze=["Azimuth angles"],
         rename={"Zenith angles": "vza"},
@@ -524,7 +527,7 @@ def sph_alb(
     )["flux_down (0+)"].to_xarray()
     smartg.clear_context()
 
-    res = utils.adapt_smartg_output(
+    res = adapt_smartg_output(
         res, expand={"wavelength": atm.axes["wavelength"]}
     )
     res = batch.unstack(
@@ -628,7 +631,7 @@ def rho_toa(
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
 
-    result = utils.adapt_smartg_output(
+    result = adapt_smartg_output(
         result,
         squeeze=["Azimuth angles", "Zenith angles"],
         rename={"sensor index": "sensor"},
@@ -639,7 +642,7 @@ def rho_toa(
         },
     )
 
-    result = utils.adapt_smartg_output(
+    result = adapt_smartg_output(
         result,
         rename={"wavelength": "index"},
         coords={"index": batch.index_coord},
@@ -808,7 +811,7 @@ def rho_toa_sym(
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
 
-    result = utils.adapt_smartg_output(
+    result = adapt_smartg_output(
         result,
         squeeze=["Azimuth angles", "Zenith angles"],
         rename={"sensor index": "r"},
@@ -819,7 +822,7 @@ def rho_toa_sym(
         },
     )
 
-    result = utils.adapt_smartg_output(
+    result = adapt_smartg_output(
         result,
         rename={"wavelength": "index"},
         coords={"index": batch.index_coord},
@@ -978,7 +981,7 @@ def psf_atm(
     ).to_xarray()
     smartg.clear_context()
 
-    result = utils.adapt_smartg_output(
+    result = adapt_smartg_output(
         result["C_Receiver"].isel(Categories=0),
         rename={"X_Cell_Index": "x", "Y_Cell_Index": "y"},
         squeeze=["Categories"],

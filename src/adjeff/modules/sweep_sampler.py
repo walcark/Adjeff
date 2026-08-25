@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any, Callable, ClassVar
 import xarray as xr
 from xsweep import Sweeper, SweepPolicy
 
-from adjeff.utils import CacheStore, ConfigProtocol
+from adjeff.utils import CacheStore
+from adjeff.utils._config import ConfigProtocol
 
 from .scene_module import SceneModule
 

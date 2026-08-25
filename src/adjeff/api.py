@@ -1,21 +1,23 @@
 """High-level convenience API for the Adjeff library.
 
-New functions added from api_bis:
+Every function here composes lower-level building blocks; nothing is
+computed that could not be written by hand with the modules themselves.
 
-- :func:`load_scene`        — generic loader with species persistence.
-- :func:`load_maja`         — load_scene pre-wired for MajaLoader.
-- :func:`load_config`       — FullConfig from a scene with aggregation.
-- :func:`fit_psf`           — end-to-end PSF fitting in one call.
-- :func:`apply_psf`         — apply a frozen PSF tree to a scene.
-- :func:`sample_psf_atm_from_scene` — atmospheric PSF from a scene.
+**Loading**: :func:`load_scene`, :func:`load_maja`.
 
+**Configuration**: :func:`make_full_config` from scalars,
+:func:`load_config` from an already-loaded scene.
+
+**Pipelines**: :func:`run_radiatives_from_scene`,
+:func:`run_forward_pipeline`.
+
+**PSF**: :func:`make_model`, :func:`fit_psf`, :func:`apply_psf`,
+:func:`sample_psf_atm`, :func:`sample_psf_atm_from_scene`.
 
 Typical usage
 -------------
 >>> cfg = make_full_config(
-...     atmo=make_atmo_config(aot=0.1, rh=50.0),
-...     geo=make_geo_config(sza=30.0, vza=0.0),
-...     bands=[S2Band.B03],
+...     bands=[S2Band.B03], aot=0.1, rh=50.0, sza=30.0, vza=0.0
 ... )
 >>> model = make_model(
 ...     Unif2Surface,
@@ -71,6 +73,26 @@ from adjeff.utils import CacheStore
 # ---------------------------------------------------------------------------
 # Internal helper
 # ---------------------------------------------------------------------------
+
+__all__ = [
+    "FullConfig",
+    # Loading
+    "load_scene",
+    "load_maja",
+    # Configuration
+    "make_full_config",
+    "load_config",
+    # Pipelines
+    "run_radiatives_from_scene",
+    "run_forward_pipeline",
+    # PSF
+    "make_model",
+    "fit_psf",
+    "apply_psf",
+    "sample_psf_atm",
+    "sample_psf_atm_from_scene",
+]
+
 
 _Scalar = float | list[float] | xr.DataArray
 
@@ -131,7 +153,7 @@ def _da(val: _Scalar, dim: str) -> xr.DataArray:
 # ---------------------------------------------------------------------------
 
 
-def make_atmo_config(
+def _make_atmo_config(
     aot: _Scalar = 0.1,
     rh: _Scalar = 50.0,
     h: _Scalar = 0.0,
@@ -171,7 +193,7 @@ def make_atmo_config(
     )
 
 
-def make_geo_config(
+def _make_geo_config(
     sza: _Scalar = 30.0,
     vza: _Scalar = 0.0,
     saa: _Scalar = 120.0,
@@ -220,75 +242,6 @@ class FullConfig(TypedDict):
     spectral_config: SpectralConfig
 
 
-def config_from_scene(
-    scene: ImageDict,
-    band: SensorBand,
-    n_bins: int | None = None,
-    species: dict[str, float] | None = None,
-) -> FullConfig:
-    """Build a :class:`FullConfig` from parameters stored in an ImageDict.
-
-    Reads atmospheric and geometric parameters directly from
-    ``scene[band]``, avoiding manual extraction and the coordinate-
-    alignment pitfalls that arise when building configs independently
-    from the scene.
-
-    Parameters
-    ----------
-    scene : ImageDict
-        Scene produced by a :class:`~adjeff.modules.loaders.ProductLoader`
-        (must contain ``aot``, ``h``, ``rh``, ``href``, ``vza``, ``vaa``,
-        ``sza``, ``saa`` in the Dataset for *band*).
-    band : SensorBand
-        Band from which to read the parameters.
-    n_bins : int or None, optional
-        If provided, ``aot`` and ``h`` are digitized to *n_bins* unique
-        values before building the config, reducing the number of unique
-        atmospheric configurations to simulate.
-    species : dict[str, float] or None, optional
-        Aerosol species mix summing to 1.0.  Defaults to
-        ``{"sulphate": 1.0}`` when ``None``.
-
-    Returns
-    -------
-    FullConfig
-        A plain dict with keys ``"atmo_config"``, ``"geo_config"``,
-        ``"spectral_config"``.
-
-    Raises
-    ------
-    MissingVariableError
-        If any of the required variables are absent from ``scene[band]``.
-    """
-    _REQUIRED = ["aot", "h", "rh", "href", "vza", "vaa", "sza", "saa"]
-    ds = scene[band]
-    missing = [v for v in _REQUIRED if v not in ds]
-    if missing:
-        raise MissingVariableError(
-            f"Variables {missing!r} are missing from band {band!r}. "
-            "Load the scene with a ProductLoader first."
-        )
-
-    aot: xr.DataArray = ds["aot"]
-    h: xr.DataArray = ds["h"]
-    if n_bins is not None:
-        aot = aot.adjeff.digitize(n_bins=n_bins)
-        h = h.adjeff.digitize(n_bins=n_bins)
-
-    return make_full_config(
-        bands=scene.bands,
-        aot=aot,
-        h=h,
-        rh=ds["rh"],
-        href=ds["href"],
-        vza=ds["vza"],
-        vaa=ds["vaa"],
-        sza=ds["sza"],
-        saa=ds["saa"],
-        species=species,
-    )
-
-
 def make_full_config(
     bands: list[SensorBand],
     aot: _Scalar = 0.1,
@@ -304,8 +257,8 @@ def make_full_config(
 ) -> FullConfig:
     """Build a complete config dict from raw parameters.
 
-    Single entry point that internally calls :func:`make_atmo_config`,
-    :func:`make_geo_config`, and :class:`~adjeff.atmosphere.SpectralConfig`.
+    Single entry point that internally calls :func:`_make_atmo_config`,
+    :func:`_make_geo_config`, and :class:`~adjeff.atmosphere.SpectralConfig`.
     The returned dict has keys ``"atmo_config"``, ``"geo_config"``,
     ``"spectral_config"`` and can be unpacked directly with ``**cfg`` into
     :class:`~adjeff.modules.samplers.RadiativePipeline` and
@@ -342,10 +295,10 @@ def make_full_config(
         A plain ``dict`` with three typed entries.
     """
     return FullConfig(
-        atmo_config=make_atmo_config(
+        atmo_config=_make_atmo_config(
             aot=aot, rh=rh, h=h, href=href, species=species
         ),
-        geo_config=make_geo_config(
+        geo_config=_make_geo_config(
             sza=sza, vza=vza, saa=saa, vaa=vaa, sat_height=sat_height
         ),
         spectral_config=SpectralConfig.from_bands(bands),
@@ -817,11 +770,8 @@ def run_radiatives_from_scene(
         s = s.shallow_copy()
         for band in s.bands:
             scene_band = ImageDict({band: s[band]})
-            config = config_from_scene(
-                scene=scene_band,
-                band=band,
-                n_bins=n_bins,
-                species=species,
+            config = load_config(
+                scene_band, band, n_bins=n_bins, species=species
             )
             radiative = RadiativePipeline(
                 atmo_config=config["atmo_config"],
@@ -929,15 +879,19 @@ def load_config(
     n_bins: int | None = None,
     species: dict[str, float] | None = None,
 ) -> FullConfig:
-    """Build a :class:`FullConfig` from a scene with optional aggregation.
+    """Build a :class:`FullConfig` from the fields stored in a scene.
 
-    Extends :func:`config_from_scene` with:
+    Reads the atmospheric and geometric parameters from ``scene[band]``,
+    which avoids the coordinate-alignment pitfalls of building a config
+    independently from the scene it describes.  On top of that:
 
     - **Species recovery** from ``scene[band].attrs["adjeff:species"]``
       (written by :func:`load_scene`) when *species* is ``None``.
     - **Spatial aggregation** (``aggregate=True``) to reduce all fields to
       scalars via ``.mean()``, useful when a single representative
       atmospheric state is needed.
+    - **Digitisation** (``n_bins``) of ``aot`` and ``h``, which cuts the
+      number of distinct atmospheric states to simulate.
 
     Parameters
     ----------

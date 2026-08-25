@@ -10,7 +10,7 @@ from pydantic.functional_validators import BeforeValidator as Before
 
 from adjeff.core.bands import SensorBand
 from adjeff.exceptions import ConfigurationError
-from adjeff.utils import _Config, to_arr
+from adjeff.utils._config import _Config, to_arr
 
 
 class SpectralConfig(_Config):

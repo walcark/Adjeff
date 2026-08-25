@@ -557,7 +557,9 @@ scene_corrected = apply_psf(scene, tree, band=S2Band.B03)
 | `load_maja(...)` | `load_scene` pre-wired for `MajaLoader` |
 | `load_config(scene, band)` | `FullConfig` from a scene (with aggregation / digitisation) |
 | `make_full_config(bands, ...)` | `FullConfig` from raw scalars |
+| `run_radiatives_from_scene(scene)` | The six radiative quantities, config read from the scene |
 | `run_forward_pipeline(scene, **cfg)` | Radiatives → rho_toa → rho_unif |
+| `make_model(model_cls, psf_type, ...)` | One live PSF module per band, wrapped in a model |
 | `fit_psf(scene, bands, psf_type, ...)` | End-to-end PSF fitting in one call |
 | `apply_psf(scene, psf_tree, band)` | Apply a frozen PSF tree to a scene |
 | `sample_psf_atm(bands, ...)` | Atmospheric PSF from explicit config |

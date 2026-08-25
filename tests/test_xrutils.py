@@ -1,7 +1,7 @@
 import xarray as xr
 import pytest
 
-from adjeff.utils import square_grid, grid
+from adjeff.utils.xrutils import grid, square_grid
 
 
 @pytest.mark.parametrize(

@@ -8,7 +8,6 @@ from .accessor import AdjeffDataArrayAccessor
 from .api import (
     FullConfig,
     apply_psf,
-    config_from_scene,
     fit_psf,
     load_config,
     load_maja,
@@ -43,7 +42,6 @@ __all__ = [
     "load_scene",
     "load_maja",
     # API — config
-    "config_from_scene",
     "load_config",
     "make_full_config",
     # API — model
