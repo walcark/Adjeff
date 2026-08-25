@@ -94,14 +94,23 @@ def rmse_rad(
 # ---------------------------------------------------------------------------
 
 
-def _get_scale(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
-    scale1 = tensor1.abs().max().clamp(min=torch.finfo(tensor1.dtype).eps)
-    scale2 = tensor2.abs().max().clamp(min=torch.finfo(tensor2.dtype).eps)
-    return torch.maximum(scale1, scale2)
+def _get_scale(target: torch.Tensor) -> torch.Tensor:
+    """Return the amplitude the residual is expressed against.
+
+    The reference alone sets it.  Taking the larger of the two, as this
+    did, made the metric depend on the prediction in two unwanted ways:
+    the scale moved while the optimiser searched, and a masked metric
+    stopped being a function of its own mask.  A prediction that goes
+    wrong far outside the mask raised the scale for everyone, and the
+    error measured on unchanged pixels inside the mask fell by two
+    orders of magnitude.
+    """
+    return target.abs().max().clamp(min=torch.finfo(target.dtype).eps)
 
 
 def _residual(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
-    return (tensor1 - tensor2) / _get_scale(tensor1, tensor2)
+    """Return the prediction error, in units of the reference amplitude."""
+    return (tensor1 - tensor2) / _get_scale(tensor2)
 
 
 def _rad_weights(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:

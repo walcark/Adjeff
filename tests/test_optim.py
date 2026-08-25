@@ -21,6 +21,50 @@ def test_loss_invalid_mask_on_raises():
         Loss(metric=Metric.MSE_RAD, mask_on="invalid")
 
 
+def _sample(n: int = 8):
+    """Return one training sample on a small square grid."""
+    from adjeff.optim.training_set import TrainingSample
+
+    yy, xx = torch.meshgrid(
+        torch.arange(n, dtype=torch.float32),
+        torch.arange(n, dtype=torch.float32),
+        indexing="ij",
+    )
+    dist = torch.hypot(yy - n // 2, xx - n // 2)
+    return TrainingSample(
+        inputs={"rho_unif": torch.rand(n, n)},
+        target=torch.rand(n, n),
+        dist=dist,
+        weight=1.0,
+    )
+
+
+def test_residual_scale_ignores_the_prediction():
+    """A defect far from the pixels under test must not shrink the error.
+
+    The residual used to be divided by ``max(|pred|, |truth|)``, so a
+    prediction going wrong anywhere raised the scale everywhere, and the
+    error measured on untouched pixels fell with it.  The reference
+    alone sets the scale, and it does not move while the optimiser
+    searches.
+    """
+    from adjeff.optim import Metric
+
+    sample = _sample(16)
+    pred = sample.target + 0.1
+    inside = sample.dist <= 3.0
+
+    clean = float(Metric.MSE_RAD(pred, sample.target, sample.dist, None))
+
+    spoiled = pred.clone()
+    spoiled[sample.dist > 5.0] += 10.0
+    scaled = float(Metric.MSE_RAD(spoiled, sample.target, sample.dist, None))
+
+    # The defect is real, so the unmasked error must grow, never shrink.
+    assert scaled > clean
+    assert bool(torch.equal(pred[inside], spoiled[inside]))
+
+
 # ---------------------------------------------------------------------------
 # LBFGSStage — OptimizationWarning on degenerated line search
 # ---------------------------------------------------------------------------
