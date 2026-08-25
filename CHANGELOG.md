@@ -34,6 +34,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   declaring them there would forbid the standalone call that produces
   them.
 
+### Added
+
+- **`SceneModule.optional_vars`** declares inputs a module consumes when
+  the scene carries them and computes itself otherwise.  They enter the
+  cache key only when present, which `required_vars` could not express:
+  declaring them there would forbid the standalone call that produces
+  them.
+
+### Removed
+
+- `GeoConfig.sun_le`, `sat_le`, `sun_sensor` and `sat_sensor`, plus
+  `satellite_relative_position`.  None had a caller outside the tests;
+  `_smartg.py` builds those dictionaries and sensors locally.  They were
+  not merely redundant: `satellite_relative_position` computes its
+  `x` offset from `180 - vaa` where the production path uses `vaa`, so
+  the two disagree on the sign. Deleting is safer than unifying, since
+  only the used path is validated by the article's figures.
+
+### Changed
+
+- **`import adjeff` no longer needs `SMARTG_DIR_AUXDATA`.** Two
+  module-level Smart-G imports remained in `atmosphere/atmo_factory.py`
+  and `atmosphere/surface.py`, where 23 others are already deferred into
+  function bodies.  Anyone who only wants the CPU half of the library,
+  the accessor, the image generators, the PSF models, the radial
+  analysis, can now import it.  Covered by `test_import_without_smartg`,
+  which runs in a subprocess with the variable removed.
+- A degenerated L-BFGS line search is logged at `warning` instead of
+  `info`.  The public `OptimizationWarning` is unchanged: Python shows a
+  warning once per call site, which hides how often the case occurs over
+  a sweep, so the log line is the one that counts them.
+- The 88 column limit of the project guidelines replaces 79, and the
+  tests join the lint and format scope.
+
 ## [0.8.0]
 
 ### Changed
