@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import xarray as xr
-from smartg.water import Albedo_cst
 
 from adjeff.exceptions import ConfigurationError
 
@@ -48,6 +47,7 @@ class SurfaceFactory:
     def surface(self, arr: xr.Dataset) -> LambSurface:
         """Return a Lambertian Surface object based on the input image."""
         from smartg.smartg import LambSurface
+        from smartg.water import Albedo_cst
 
         kind = arr["rho_s"].adjeff.kind()
         if kind == "analytical":
@@ -114,6 +114,7 @@ class SurfaceFactory:
             Smart-G Environment with ``ENV=5`` and an ``Albedo_map``.
         """
         from smartg.smartg import Albedo_map, Environment
+        from smartg.water import Albedo_cst
 
         da = arr["rho_s"]
         # adjeff stores (y, x); Smart-G Albedo_map expects (x, y) ordering
@@ -147,9 +148,7 @@ class SurfaceFactory:
         return Environment(ENV=5, ALB=alb_map)
 
 
-def analytical_environment(
-    model: str, params: dict[str, float]
-) -> Environment:
+def analytical_environment(model: str, params: dict[str, float]) -> Environment:
     """Return the Smart-G Environment for an analytical surface.
 
     Parameters
@@ -173,6 +172,7 @@ def analytical_environment(
         If *model* is not ``"gauss"`` or ``"disk"``.
     """
     from smartg.smartg import Environment
+    from smartg.water import Albedo_cst
 
     if model == "gauss":
         return Environment(

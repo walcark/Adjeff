@@ -4,7 +4,6 @@ import numpy as np
 import structlog
 import xarray as xr
 from luts.luts import MLUT  # type: ignore[import-untyped]
-from smartg.atmosphere import AerOPAC, AtmAFGL
 
 from adjeff.exceptions import ConfigurationError, MissingVariableError
 
@@ -112,9 +111,7 @@ def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
     # Reference dimension
     first = next(iter(params.values()))
     if len(first.dims) != 1:
-        raise ConfigurationError(
-            "Each parameter must have exactly one dimension"
-        )
+        raise ConfigurationError("Each parameter must have exactly one dimension")
 
     dim = first.dims[0]
     size = first.sizes[dim]
@@ -122,9 +119,7 @@ def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
     # Check consistency
     for name, arr in params.items():
         if arr.dims != (dim,):
-            raise ConfigurationError(
-                f"{name} has dims {arr.dims}, expected {(dim,)}"
-            )
+            raise ConfigurationError(f"{name} has dims {arr.dims}, expected {(dim,)}")
         if arr.sizes[dim] != size:
             raise ConfigurationError(
                 f"{name} has size {arr.sizes[dim]}, expected {size}"
@@ -133,9 +128,7 @@ def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
     # Build list of dicts
     result = []
     for i in range(size):
-        result.append(
-            {name: float(arr.data[i]) for name, arr in params.items()}
-        )
+        result.append({name: float(arr.data[i]) for name, arr in params.items()})
 
     return result
 
@@ -185,6 +178,11 @@ def create_atmafgl(
     MLUT
         The multi-LUT representing the Smart-G atmosphere instance.
     """
+    # Deferred like every other Smart-G import in the package: importing
+    # smartg raises unless SMARTG_DIR_AUXDATA is set, and half of adjeff
+    # never touches the radiative transfer at all.
+    from smartg.atmosphere import AerOPAC, AtmAFGL
+
     aer_mix: list[AerOPAC] = [
         AerOPAC(
             filename=aer,
