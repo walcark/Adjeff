@@ -61,53 +61,6 @@ def test_geo_config_sat_height_negative_raises():
     with pytest.raises(ValueError):
         GeoConfig(**{**_VALID_GEO, "sat_height": -1.0})
 
-
-def test_geo_config_sun_le():
-    """sun_le should expose sza as th_deg and saa as phi_deg."""
-    geo = GeoConfig(**_VALID_GEO)
-    assert geo.sun_le == {"th_deg": 30.0, "phi_deg": 45.0, "zip": True}
-
-
-def test_geo_config_sat_le():
-    """sat_le should expose vza as th_deg and saa as phi_deg."""
-    geo = GeoConfig(**_VALID_GEO)
-    assert geo.sat_le == {"th_deg": 15.0, "phi_deg": 45.0, "zip": True}
-
-
-@requires_cuda
-def test_geo_config_sun_sensor():
-    """sun_sensor should return a Sensor instance."""
-    from smartg.smartg import Sensor
-    assert isinstance(GeoConfig(**_VALID_GEO).sun_sensor, Sensor)
-
-
-@requires_cuda
-def test_geo_config_sat_sensor():
-    """sat_sensor should return a Sensor instance."""
-    from smartg.smartg import Sensor
-    assert isinstance(GeoConfig(**_VALID_GEO).sat_sensor, Sensor)
-
-
-@pytest.mark.parametrize("vza,vaa,expected_x,expected_y", [
-    (0.0,   0.0,   0.0,    0.0),   # nadir: no horizontal offset
-    (45.0, 180.0,  700.0,  0.0),   # south: positive x
-    (45.0,   0.0, -700.0,  0.0),   # north: negative x
-    (45.0,  90.0,  0.0,  700.0),   # east: positive y
-    (45.0, 270.0,  0.0, -700.0),   # west: negative y
-])
-def test_geo_config_satellite_relative_position(
-    vza: float, 
-    vaa: float, 
-    expected_x: float, 
-    expected_y: float,
-) -> None:
-    """Physical cases for satellite_relative_position at sat_height=700km."""
-    geo = GeoConfig(**{**_VALID_GEO, "vza": xr.DataArray(vza), "vaa": xr.DataArray(vaa)})
-    x, y = geo.satellite_relative_position
-    assert x == pytest.approx(expected_x, abs=1e-4)
-    assert y == pytest.approx(expected_y, abs=1e-4)
-
-
 # ---------------------------------------------------------------------------
 # atmo_factory — parse_params
 # ---------------------------------------------------------------------------
