@@ -21,8 +21,7 @@ from ._combo_stage import (
     save_all_params,
 )
 from ._config import OptimizerConfig
-from .optimizer import SingleStageOptimizer
-from .training_set import TrainingImages, TrainingSet
+from .training_set import TrainingSet
 
 logger = structlog.get_logger(__name__)
 
@@ -59,8 +58,8 @@ class LBFGSStage(_ComboStage):
     """Single-combo optimization stage using L-BFGS.
 
     Implements :meth:`_run_combo` with a ``torch.optim.LBFGS`` optimizer
-    and strong-Wolfe line search.  Used directly by :class:`LBFGSOptimizer`
-    and can be chained in an :class:`~adjeff.optim.OptimizerPipeline`.
+    and strong-Wolfe line search.  Selected by :func:`~adjeff.optim.fit`
+    for every :class:`LBFGSConfig` it is given.
     """
 
     def __init__(self, config: LBFGSConfig) -> None:
@@ -70,16 +69,15 @@ class LBFGSStage(_ComboStage):
     def _run_combo(
         self,
         model: TrainableSceneModule,
-        band_sets: list[tuple[SensorBand, TrainingSet]],
+        band: SensorBand,
+        data: TrainingSet,
         combo_str: str,
     ) -> None:
         """L-BFGS optimisation loop for one combo."""
         best_params = save_all_params(model)
-        params_to_opt = [
-            p
-            for b, _ in band_sets
-            for p in cast(nn.Module, model.psf_modules[b.id]).parameters()
-        ]
+        params_to_opt = list(
+            cast(nn.Module, model.psf_modules[band.id]).parameters()
+        )
         opt = torch.optim.LBFGS(
             params=params_to_opt,
             lr=self.config.learning_rate,
@@ -90,11 +88,9 @@ class LBFGSStage(_ComboStage):
             tolerance_change=self.config.tolerance_change,
         )
 
-        def closure(
-            _band_sets: list[tuple[SensorBand, TrainingSet]] = band_sets,
-        ) -> torch.Tensor:
+        def closure() -> torch.Tensor:
             opt.zero_grad(set_to_none=True)
-            loss = self._total_loss(model, _band_sets)
+            loss = self._total_loss(model, band, data)
             loss.backward()  # type: ignore[no-untyped-call]
             return loss
 
@@ -105,7 +101,7 @@ class LBFGSStage(_ComboStage):
                 # PyTorch strong-Wolfe line search can raise IndexError when
                 # the bracket collapses on a numerically flat loss surface.
                 # Treat as convergence and exit cleanly.
-                msg = "L-BFGS line search degenerated — stopping early."
+                msg = "L-BFGS line search degenerated, stopping early."
                 logger.info(msg)
                 warnings.warn(msg, OptimizationWarning, stacklevel=2)
                 break
@@ -131,43 +127,3 @@ class LBFGSStage(_ComboStage):
             self.previous_loss = loss
 
         restore_all_params(model, best_params)
-
-
-class LBFGSOptimizer(SingleStageOptimizer):
-    """PSF optimizer using L-BFGS.
-
-    Parameters
-    ----------
-    train_images : TrainingImages
-        Collection of training scenes.
-    config : LBFGSConfig
-        L-BFGS-specific configuration.
-    device : str
-        PyTorch device (default ``"cuda"``).
-
-    Example
-    -------
-    >>> optimizer = LBFGSOptimizer(
-    ...     train_images=train_images,
-    ...     config=LBFGSConfig(
-    ...         min_steps=5,
-    ...         max_steps=50,
-    ...         loss_relative_tolerance=1e-4,
-    ...         loss=Loss(Metric.MSE_RAD),
-    ...     ),
-    ... )
-    >>> psf_dict = optimizer.run(model)
-    """
-
-    def __init__(
-        self,
-        train_images: TrainingImages,
-        config: LBFGSConfig,
-        device: str = "cuda",
-    ) -> None:
-        super().__init__(
-            stage=LBFGSStage(config),
-            train_images=train_images,
-            device=device,
-        )
-        self.config: LBFGSConfig = config

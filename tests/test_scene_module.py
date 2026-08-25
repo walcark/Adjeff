@@ -297,3 +297,33 @@ def test_streaming_preserves_dataset_attrs(streamed_scene):
 
     out = Pipeline([_Doubler()], stream_dims={"aot": 1})(streamed_scene)
     assert out[S2Band.B02].attrs["adjeff:species"] == {"sulphate": 1.0}
+
+
+def test_cache_ignores_the_encoding_of_a_reloaded_array(tmp_path, scene):
+    """An array read back from zarr must be storable again.
+
+    `forward` swaps its outputs for lazy zarr-backed views, which carry
+    the file's own `encoding["chunks"]`.  `to_zarr` honours that encoding
+    over the chunking the cache asks for and refuses the write when the
+    two disagree, which is what happens as soon as a swept dimension is
+    longer than one.
+    """
+    import xarray as xr
+
+    cache = CacheStore(tmp_path)
+    module = TestModule(cache=cache)
+    result = module(scene)
+
+    # Stand in for a reload: an encoding that contradicts the cache's
+    # own one-per-combo chunking along a swept dim.
+    stacked = xr.concat(
+        [result[S2Band.B02]["rho_toa"]] * 3, dim="aot"
+    ).chunk({"aot": 1})
+    stacked.encoding["chunks"] = (3, *stacked.shape[1:])
+    result[S2Band.B02]["rho_toa"] = stacked
+
+    cache.save_vars("some-key", result, ["rho_toa"])
+
+    back = cache.load_vars("some-key", [S2Band.B02], ["rho_toa"])
+    assert back is not None
+    assert back[S2Band.B02]["rho_toa"].sizes["aot"] == 3

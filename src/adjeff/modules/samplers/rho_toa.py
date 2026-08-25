@@ -15,8 +15,9 @@ from typing import Any, ClassVar, Literal
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
-import adjeff.utils as utils
 from adjeff.core import ImageDict
+from adjeff.utils import CacheStore
+from adjeff.utils._config import ConfigProtocol
 
 from ..sweep_sampler import SweepSampler
 from ._smartg import rho_toa
@@ -83,7 +84,7 @@ class RhoToaSampler(SweepSampler):
         n_ph: int = int(1e6),
         n_alb: int = 1000,
         rho_background: float | Literal["mean", "min", "zero"] = "mean",
-        cache: utils.CacheStore | None = None,
+        cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
     ) -> None:
@@ -99,7 +100,7 @@ class RhoToaSampler(SweepSampler):
         self.rho_background = rho_background
         super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
 
-    def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
+    def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
 
     def _statics(self) -> dict[str, Any]:

@@ -7,8 +7,9 @@ from typing import Any, ClassVar
 from structlog import get_logger
 
 import adjeff.atmosphere as atmo
-import adjeff.utils as utils
 from adjeff.core import ImageDict
+from adjeff.utils import CacheStore
+from adjeff.utils._config import ConfigProtocol
 
 from ..sweep_sampler import SweepSampler
 from ._smartg import rho_toa_sym
@@ -77,7 +78,7 @@ class RhoToaSymSampler(SweepSampler):
         afgl_type: str = "afgl_exp_h8km",
         nr: int = 100,
         n_ph: int = int(1e6),
-        cache: utils.CacheStore | None = None,
+        cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
     ) -> None:
@@ -89,7 +90,7 @@ class RhoToaSymSampler(SweepSampler):
         self.n_ph = n_ph
         super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
 
-    def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
+    def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
 
     def _statics(self) -> dict[str, Any]:

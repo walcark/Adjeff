@@ -177,7 +177,7 @@ class SceneModule:
         ``_INFRA_PARAMS`` (``cache``, ``chunks``) that do not affect
         output values.
 
-        Subclasses with privately-stored params (e.g. ``_psf_dict``)
+        Subclasses with privately-stored params (e.g. ``_psfs``)
         must override this method.
 
         Raises
@@ -254,7 +254,7 @@ class TrainableSceneModule(nn.Module, SceneModule):
     per-band PSF modules via :attr:`psf_modules`.
 
     These two additions form the contract consumed by
-    :class:`~adjeff.optim._Optimizer`.
+    :func:`~adjeff.optim.fit`.
     """
 
     def __init__(self, cache: CacheStore | None = None) -> None:

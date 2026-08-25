@@ -25,7 +25,7 @@ Live, gradient-tracked PSFs are a plain ``dict[SensorBand, PSFModule]``.
 **Image generation**
 
 :func:`gaussian_image_dict`, :func:`disk_image_dict`,
-:func:`random_image_dict`, :func:`extend_analytical`.
+:func:`random_image_dict`.
 """
 
 from ._psf import PSFGrid
@@ -40,7 +40,6 @@ from .bands import S2Band, SensorBand
 from .image_dict import ImageDict
 from .image_generator import (
     disk_image_dict,
-    extend_analytical,
     gaussian_image_dict,
     random_image_dict,
 )
@@ -69,5 +68,4 @@ __all__ = [
     "disk_image_dict",
     "gaussian_image_dict",
     "random_image_dict",
-    "extend_analytical",
 ]

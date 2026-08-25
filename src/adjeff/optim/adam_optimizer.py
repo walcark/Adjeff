@@ -19,8 +19,7 @@ from ._combo_stage import (
     save_all_params,
 )
 from ._config import OptimizerConfig
-from .optimizer import SingleStageOptimizer
-from .training_set import TrainingImages, TrainingSet
+from .training_set import TrainingSet
 
 logger = structlog.get_logger(__name__)
 
@@ -42,8 +41,8 @@ class AdamStage(_ComboStage):
     """Single-combo optimization stage using Adam gradient descent.
 
     Implements :meth:`_run_combo` with ``torch.optim.Adam``.  Typically
-    used as a warm-up stage before :class:`LBFGSStage` in an
-    :class:`~adjeff.optim.OptimizerPipeline`.
+    used as a warm-up stage before :class:`LBFGSStage`; selected by
+    :func:`~adjeff.optim.fit` for every :class:`AdamConfig` it is given.
     """
 
     def __init__(self, config: AdamConfig) -> None:
@@ -53,21 +52,20 @@ class AdamStage(_ComboStage):
     def _run_combo(
         self,
         model: TrainableSceneModule,
-        band_sets: list[tuple[SensorBand, TrainingSet]],
+        band: SensorBand,
+        data: TrainingSet,
         combo_str: str,
     ) -> None:
         """Adam optimisation loop for one combo."""
         best_params = save_all_params(model)
-        params_to_opt = [
-            p
-            for b, _ in band_sets
-            for p in cast(nn.Module, model.psf_modules[b.id]).parameters()
-        ]
+        params_to_opt = list(
+            cast(nn.Module, model.psf_modules[band.id]).parameters()
+        )
         adam = torch.optim.Adam(params_to_opt, lr=self.config.lr)
 
         while self.nloop < self.config.max_steps:
             adam.zero_grad(set_to_none=True)
-            loss_t = self._total_loss(model, band_sets)
+            loss_t = self._total_loss(model, band, data)
             loss_t.backward()  # type: ignore[no-untyped-call]
             adam.step()
             loss = float(loss_t)
@@ -92,43 +90,3 @@ class AdamStage(_ComboStage):
             self.previous_loss = loss
 
         restore_all_params(model, best_params)
-
-
-class AdamOptimizer(SingleStageOptimizer):
-    """PSF optimizer using Adam gradient descent.
-
-    Parameters
-    ----------
-    train_images : TrainingImages
-        Collection of training scenes.
-    config : AdamConfig
-        Adam-specific configuration.
-    device : str
-        PyTorch device (default ``"cuda"``).
-
-    Example
-    -------
-    >>> optimizer = AdamOptimizer(
-    ...     train_images=train_images,
-    ...     config=AdamConfig(
-    ...         min_steps=5,
-    ...         max_steps=50,
-    ...         loss_relative_tolerance=1e-4,
-    ...         loss=Loss(Metric.RMSE_RAD),
-    ...     ),
-    ... )
-    >>> psf_dict = optimizer.run(model)
-    """
-
-    def __init__(
-        self,
-        train_images: TrainingImages,
-        config: AdamConfig,
-        device: str = "cuda",
-    ) -> None:
-        super().__init__(
-            stage=AdamStage(config),
-            train_images=train_images,
-            device=device,
-        )
-        self.config: AdamConfig = config

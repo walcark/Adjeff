@@ -48,11 +48,9 @@ def test_lbfgs_degenerated_line_search_warns():
     model = MagicMock()
     model.psf_modules = {S2Band.B02.id: psf_mock}
 
-    band_sets = [(S2Band.B02, MagicMock())]
-
     with (
         pytest.warns(OptimizationWarning, match="degenerated"),
         patch("torch.optim.LBFGS.step", side_effect=IndexError("bracket collapse")),
         patch.object(stage, "_total_loss", return_value=torch.tensor(0.5, requires_grad=True)),
     ):
-        stage._run_combo(model, band_sets, "aot=0.1")
+        stage._run_combo(model, S2Band.B02, MagicMock(), "aot=0.1")

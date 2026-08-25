@@ -159,4 +159,4 @@ def write_band(dest: Path, dataset: xr.Dataset) -> None:
     """
     dims = {str(d) for da in dataset.data_vars.values() for d in da.dims}
     chunks = {d: 1 if d not in _SPATIAL_DIMS else -1 for d in dims}
-    dataset.chunk(chunks).to_zarr(dest, mode="w")
+    dataset.drop_encoding().chunk(chunks).to_zarr(dest, mode="w")

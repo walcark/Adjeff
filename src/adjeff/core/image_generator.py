@@ -5,7 +5,7 @@ import structlog
 import xarray as xr
 
 from adjeff.exceptions import ConfigurationError
-from adjeff.utils import square_grid
+from adjeff.utils.xrutils import square_grid
 
 from .bands import S2Band, SensorBand
 from .image_dict import ImageDict
@@ -286,50 +286,6 @@ def disk_image_dict(
         )
 
     return ImageDict(band_datasets)
-
-
-def extend_analytical(da: xr.DataArray, n_ext: int) -> xr.DataArray:
-    """Re-evaluate an analytical DataArray on a larger square grid.
-
-    The extended grid has the same resolution and center as *da* but
-    ``n_ext`` pixels per side.  Only "gaussian" and "disk" models are
-    supported; both use the parameters stored in ``da.attrs``.
-
-    Parameters
-    ----------
-    da : xr.DataArray
-        Analytical DataArray (``adjeff:kind == "analytical"``).
-    n_ext : int
-        Number of pixels per dimension of the extended grid.
-
-    Returns
-    -------
-    xr.DataArray
-        DataArray evaluated on the extended grid, same attrs as *da*.
-
-    """
-    model = da.attrs.get("adjeff:model")
-    params: dict[str, float] = da.attrs.get("adjeff:params", {})
-    res = float(da.coords["x"][1] - da.coords["x"][0])
-    coords = square_grid(n_ext, res)
-
-    if model == "gauss":
-        data = _gaussian_data(
-            coords, params["sigma"], params["rho_min"], params["rho_max"]
-        )
-    elif model == "disk":
-        data = _disk_data(
-            coords, params["radius"], params["rho_min"], params["rho_max"]
-        )
-    else:
-        raise ConfigurationError(f"Unknown analytical model: {model!r}")
-
-    return xr.DataArray(
-        np.asarray(data, dtype=np.float32),
-        dims=["y", "x"],
-        coords=coords,
-        attrs=da.attrs,
-    )
 
 
 def random_image_dict(

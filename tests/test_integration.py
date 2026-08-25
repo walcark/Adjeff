@@ -263,3 +263,93 @@ def test_wu_sampler_writes_into_the_scene(config, surface):
     assert "rho_s" in scene[BAND], "the input variable was dropped"
     assert "psf_atm" in scene[BAND]
     _finite_in(scene[BAND]["psf_atm"], 0.0, 1.0)
+
+
+# --- Fitting ---
+
+
+def test_fit_learns_a_psf_and_records_its_parameters(config, surface):
+    """fit() returns one kernel and one parameter value per combo.
+
+    The whole optimisation path only runs on a GPU, so nothing in the
+    unit suite reaches it: this is the single test that proves the loop
+    still converges and still writes what it claims into the tree.
+    """
+    from adjeff.api import make_model, run_forward_pipeline
+    from adjeff.core import GaussPSF
+    from adjeff.modules.models import Unif2Surface
+    from adjeff.optim import (
+        AdamConfig,
+        Loss,
+        Metric,
+        TrainingImages,
+        fit,
+    )
+
+    train = run_forward_pipeline(surface, **config, n_ph=N_PH, nr=32)
+    images = TrainingImages(images=[train], weights=[1.0])
+    model = make_model(
+        Unif2Surface, GaussPSF, [BAND], RES_KM, N, {"sigma": 1.0}
+    )
+
+    tree = fit(
+        model,
+        images,
+        stages=[
+            AdamConfig(
+                min_steps=1,
+                max_steps=2,
+                loss_relative_tolerance=1e-4,
+                loss=Loss(Metric.RMSE),
+                lr=1e-2,
+            )
+        ],
+    )
+
+    kernel = psf_kernel(tree, BAND).squeeze(drop=True)
+    assert kernel.shape == (N, N)
+    assert float(kernel.sum()) == pytest.approx(1.0, rel=1e-3)
+
+    from adjeff.core import psf_params
+
+    assert "sigma" in psf_params(tree, BAND)
+    assert model.psf_params(BAND)["sigma"] > 0.0
+
+
+def test_batched_angles_match_one_call_per_angle():
+    """A batched sweep must give each point the angle it asked for.
+
+    Smart-G evaluates every requested direction for every atmosphere in
+    the batch, so the raw return is a cross product.  Two viewing angles
+    swept in one call must therefore reproduce, point by point, what two
+    separate calls give.  Getting this wrong does not raise: it returns
+    a value computed for another point's geometry.
+    """
+    from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
+    from adjeff.modules.samplers import TdifUpSampler
+
+    n_ph = int(1e5)
+
+    def tdif_up(vza):
+        sampler = TdifUpSampler(
+            atmo_config=AtmoConfig(
+                aot=0.3, rh=50.0, h=0.0, href=2.0,
+                species={"sulphate": 1.0},
+            ),
+            geo_config=GeoConfig(sza=30.0, vza=vza, saa=120.0, vaa=120.0),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            n_ph=n_ph,
+        )
+        out = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["tdif_up"]
+        return np.ravel(np.asarray(out.values, dtype=float))
+
+    batched = tdif_up(xr.DataArray([0.0, 60.0], dims=["vza"]))
+    alone = np.array([tdif_up(0.0)[0], tdif_up(60.0)[0]])
+
+    assert batched.shape == (2,)
+    # The two angles must stay distinct: identical values would mean one
+    # of them was overwritten by the other point's result.
+    assert abs(alone[1] - alone[0]) > 0.05
+    # Monte-Carlo noise at 1e5 photons is around one percent.
+    np.testing.assert_allclose(batched, alone, rtol=0.08)

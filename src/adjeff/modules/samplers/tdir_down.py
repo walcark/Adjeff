@@ -3,7 +3,8 @@
 from typing import Any, Callable, ClassVar
 
 import adjeff.atmosphere as atmo
-import adjeff.utils as utils
+from adjeff.utils import CacheStore
+from adjeff.utils._config import ConfigProtocol
 
 from ..sweep_sampler import SweepSampler
 from ._smartg import tdir_down
@@ -68,7 +69,7 @@ class TdirDownSampler(SweepSampler):
         remove_rayleigh: bool,
         afgl_type: str = "afgl_exp_h8km",
         n_ph: int = int(1e2),
-        cache: utils.CacheStore | None = None,
+        cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
     ) -> None:
@@ -80,7 +81,7 @@ class TdirDownSampler(SweepSampler):
         self.n_ph = n_ph
         super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
 
-    def _get_configs(self) -> tuple[utils.ConfigProtocol, ...]:
+    def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.spectral_config, self.atmo_config, self.geo_config)
 
     def _statics(self) -> dict[str, Any]:

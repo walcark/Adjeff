@@ -1,21 +1,23 @@
 """High-level convenience API for the Adjeff library.
 
-New functions added from api_bis:
+Every function here composes lower-level building blocks; nothing is
+computed that could not be written by hand with the modules themselves.
 
-- :func:`load_scene`        — generic loader with species persistence.
-- :func:`load_maja`         — load_scene pre-wired for MajaLoader.
-- :func:`load_config`       — FullConfig from a scene with aggregation.
-- :func:`fit_psf`           — end-to-end PSF fitting in one call.
-- :func:`apply_psf`         — apply a frozen PSF tree to a scene.
-- :func:`sample_psf_atm_from_scene` — atmospheric PSF from a scene.
+**Loading**: :func:`load_scene`, :func:`load_maja`.
 
+**Configuration**: :func:`make_full_config` from scalars,
+:func:`load_config` from an already-loaded scene.
+
+**Pipelines**: :func:`run_radiatives_from_scene`,
+:func:`run_forward_pipeline`.
+
+**PSF**: :func:`make_model`, :func:`fit_psf`, :func:`apply_psf`,
+:func:`sample_psf_atm`, :func:`sample_psf_atm_from_scene`.
 
 Typical usage
 -------------
 >>> cfg = make_full_config(
-...     atmo=make_atmo_config(aot=0.1, rh=50.0),
-...     geo=make_geo_config(sza=30.0, vza=0.0),
-...     bands=[S2Band.B03],
+...     bands=[S2Band.B03], aot=0.1, rh=50.0, sza=30.0, vza=0.0
 ... )
 >>> model = make_model(
 ...     Unif2Surface,
@@ -26,7 +28,7 @@ Typical usage
 ...     init_parameters={"sigma": 0.1, "gamma": 1.0},
 ... )
 >>> scene = run_forward_pipeline(rho_s_scene, **cfg)
->>> psf_dict = optimize_adam_lbfgs(model, train_images, Loss(Metric.RMSE_RAD))
+>>> psf_tree = fit(model, train_images, loss=Loss(Metric.RMSE_RAD))
 """
 
 from __future__ import annotations
@@ -58,22 +60,39 @@ from adjeff.modules.models.psf_conv_module import (
 )  # not in models.__init__
 from adjeff.modules.samplers import RadiativePipeline, RhoToaSymSampler
 from adjeff.optim import (
-    AdamConfig,
-    AdamStage,
-    LBFGSConfig,
-    LBFGSStage,
     Loss,
     Metric,
-    OptimizerPipeline,
+    OptimizerConfig,
     TrainingImages,
+    default_stages,
+    fit,
 )
-from adjeff.optim._combo_stage import _ComboStage  # private module
 from adjeff.reference import WuPsfSampler
 from adjeff.utils import CacheStore
 
 # ---------------------------------------------------------------------------
 # Internal helper
 # ---------------------------------------------------------------------------
+
+__all__ = [
+    "FullConfig",
+    # Loading
+    "load_scene",
+    "load_maja",
+    # Configuration
+    "make_full_config",
+    "load_config",
+    # Pipelines
+    "run_radiatives_from_scene",
+    "run_forward_pipeline",
+    # PSF
+    "make_model",
+    "fit_psf",
+    "apply_psf",
+    "sample_psf_atm",
+    "sample_psf_atm_from_scene",
+]
+
 
 _Scalar = float | list[float] | xr.DataArray
 
@@ -134,7 +153,7 @@ def _da(val: _Scalar, dim: str) -> xr.DataArray:
 # ---------------------------------------------------------------------------
 
 
-def make_atmo_config(
+def _make_atmo_config(
     aot: _Scalar = 0.1,
     rh: _Scalar = 50.0,
     h: _Scalar = 0.0,
@@ -174,7 +193,7 @@ def make_atmo_config(
     )
 
 
-def make_geo_config(
+def _make_geo_config(
     sza: _Scalar = 30.0,
     vza: _Scalar = 0.0,
     saa: _Scalar = 120.0,
@@ -223,75 +242,6 @@ class FullConfig(TypedDict):
     spectral_config: SpectralConfig
 
 
-def config_from_scene(
-    scene: ImageDict,
-    band: SensorBand,
-    n_bins: int | None = None,
-    species: dict[str, float] | None = None,
-) -> FullConfig:
-    """Build a :class:`FullConfig` from parameters stored in an ImageDict.
-
-    Reads atmospheric and geometric parameters directly from
-    ``scene[band]``, avoiding manual extraction and the coordinate-
-    alignment pitfalls that arise when building configs independently
-    from the scene.
-
-    Parameters
-    ----------
-    scene : ImageDict
-        Scene produced by a :class:`~adjeff.modules.loaders.ProductLoader`
-        (must contain ``aot``, ``h``, ``rh``, ``href``, ``vza``, ``vaa``,
-        ``sza``, ``saa`` in the Dataset for *band*).
-    band : SensorBand
-        Band from which to read the parameters.
-    n_bins : int or None, optional
-        If provided, ``aot`` and ``h`` are digitized to *n_bins* unique
-        values before building the config, reducing the number of unique
-        atmospheric configurations to simulate.
-    species : dict[str, float] or None, optional
-        Aerosol species mix summing to 1.0.  Defaults to
-        ``{"sulphate": 1.0}`` when ``None``.
-
-    Returns
-    -------
-    FullConfig
-        A plain dict with keys ``"atmo_config"``, ``"geo_config"``,
-        ``"spectral_config"``.
-
-    Raises
-    ------
-    MissingVariableError
-        If any of the required variables are absent from ``scene[band]``.
-    """
-    _REQUIRED = ["aot", "h", "rh", "href", "vza", "vaa", "sza", "saa"]
-    ds = scene[band]
-    missing = [v for v in _REQUIRED if v not in ds]
-    if missing:
-        raise MissingVariableError(
-            f"Variables {missing!r} are missing from band {band!r}. "
-            "Load the scene with a ProductLoader first."
-        )
-
-    aot: xr.DataArray = ds["aot"]
-    h: xr.DataArray = ds["h"]
-    if n_bins is not None:
-        aot = aot.adjeff.digitize(n_bins=n_bins)
-        h = h.adjeff.digitize(n_bins=n_bins)
-
-    return make_full_config(
-        bands=scene.bands,
-        aot=aot,
-        h=h,
-        rh=ds["rh"],
-        href=ds["href"],
-        vza=ds["vza"],
-        vaa=ds["vaa"],
-        sza=ds["sza"],
-        saa=ds["saa"],
-        species=species,
-    )
-
-
 def make_full_config(
     bands: list[SensorBand],
     aot: _Scalar = 0.1,
@@ -307,8 +257,8 @@ def make_full_config(
 ) -> FullConfig:
     """Build a complete config dict from raw parameters.
 
-    Single entry point that internally calls :func:`make_atmo_config`,
-    :func:`make_geo_config`, and :class:`~adjeff.atmosphere.SpectralConfig`.
+    Single entry point that internally calls :func:`_make_atmo_config`,
+    :func:`_make_geo_config`, and :class:`~adjeff.atmosphere.SpectralConfig`.
     The returned dict has keys ``"atmo_config"``, ``"geo_config"``,
     ``"spectral_config"`` and can be unpacked directly with ``**cfg`` into
     :class:`~adjeff.modules.samplers.RadiativePipeline` and
@@ -345,10 +295,10 @@ def make_full_config(
         A plain ``dict`` with three typed entries.
     """
     return FullConfig(
-        atmo_config=make_atmo_config(
+        atmo_config=_make_atmo_config(
             aot=aot, rh=rh, h=h, href=href, species=species
         ),
-        geo_config=make_geo_config(
+        geo_config=_make_geo_config(
             sza=sza, vza=vza, saa=saa, vaa=vaa, sat_height=sat_height
         ),
         spectral_config=SpectralConfig.from_bands(bands),
@@ -545,21 +495,6 @@ def run_forward_pipeline(
 _SPECIES_ATTR = "adjeff:species"
 _DEFAULT_SPECIES: dict[str, float] = {"sulphate": 1.0}
 _DEFAULT_LOSS = Loss(Metric.RMSE_RAD)
-_DEFAULT_STAGES: list[AdamConfig | LBFGSConfig] = [
-    AdamConfig(
-        min_steps=5,
-        max_steps=20,
-        loss_relative_tolerance=1e-4,
-        loss=_DEFAULT_LOSS,
-        lr=1e-2,
-    ),
-    LBFGSConfig(
-        min_steps=5,
-        max_steps=30,
-        loss_relative_tolerance=1e-6,
-        loss=_DEFAULT_LOSS,
-    ),
-]
 
 
 # ---------------------------------------------------------------------------
@@ -571,19 +506,6 @@ def _res_from_scene(scene: ImageDict, band: SensorBand) -> float:
     """Infer pixel size [km] from the y-coordinate spacing of *scene[band]*."""
     y: xr.DataArray = scene[band].coords["y"]
     return float(abs(float(y[1]) - float(y[0])))
-
-
-def _configs_to_stages(
-    stages: list[AdamConfig | LBFGSConfig],
-) -> list[_ComboStage]:
-    """Convert config objects to the corresponding Stage wrappers."""
-    out: list[_ComboStage] = []
-    for cfg in stages:
-        if isinstance(cfg, AdamConfig):
-            out.append(AdamStage(cfg))
-        else:
-            out.append(LBFGSStage(cfg))
-    return out
 
 
 def _to_scalar(v: xr.DataArray | float) -> float:
@@ -848,11 +770,8 @@ def run_radiatives_from_scene(
         s = s.shallow_copy()
         for band in s.bands:
             scene_band = ImageDict({band: s[band]})
-            config = config_from_scene(
-                scene=scene_band,
-                band=band,
-                n_bins=n_bins,
-                species=species,
+            config = load_config(
+                scene_band, band, n_bins=n_bins, species=species
             )
             radiative = RadiativePipeline(
                 atmo_config=config["atmo_config"],
@@ -946,77 +865,6 @@ def sample_psf_atm(
 
 
 # ---------------------------------------------------------------------------
-# Optimizer shortcut
-# ---------------------------------------------------------------------------
-
-
-def optimize_adam_lbfgs(
-    model: PSFConvModule,
-    train_images: TrainingImages,
-    loss: Loss,
-    adam_config: AdamConfig | None = None,
-    lbfgs_config: LBFGSConfig | None = None,
-    device: str = "cuda",
-    zarr_path: str | Path | None = None,
-) -> xr.DataTree:
-    """Optimize a model's PSF with an Adam warm-up followed by L-BFGS.
-
-    Parameters
-    ----------
-    model : PSFConvModule
-        Trainable model, holding live PSF modules.
-    train_images : TrainingImages
-        Collection of reference scenes.
-    loss : Loss
-        Loss function instance (e.g. ``Loss(Metric.RMSE_RAD)``).
-        Used as default loss in *adam_config* and *lbfgs_config* when those
-        are ``None``.
-    adam_config : AdamConfig or None, optional
-        Adam stage configuration.  When ``None``, defaults to
-        ``AdamConfig(min_steps=5, max_steps=20,
-        loss_relative_tolerance=1e-4, loss=loss, lr=1e-2)``.
-    lbfgs_config : LBFGSConfig or None, optional
-        L-BFGS stage configuration.  When ``None``, defaults to
-        ``LBFGSConfig(min_steps=5, max_steps=30,
-        loss_relative_tolerance=1e-6, loss=loss)``.
-    device : str
-        PyTorch device (default ``"cuda"``).
-    zarr_path : str or Path or None, optional
-        When provided, each band's stacked kernel is written to zarr as
-        it is reconstructed and immediately freed from RAM.  The returned
-        tree is backed by zarr on disk (lazy, minimal RAM footprint).
-        When ``None`` (default), kernels are kept in memory.
-
-    Returns
-    -------
-    xr.DataTree
-        Frozen PSF tree with optimised kernels stacked over all atmospheric
-        combos found in *train_images*.
-    """
-    if adam_config is None:
-        adam_config = AdamConfig(
-            min_steps=5,
-            max_steps=20,
-            loss_relative_tolerance=1e-4,
-            loss=loss,
-            lr=1e-2,
-        )
-    if lbfgs_config is None:
-        lbfgs_config = LBFGSConfig(
-            min_steps=5,
-            max_steps=30,
-            loss_relative_tolerance=1e-6,
-            loss=loss,
-        )
-    optimizer = OptimizerPipeline(
-        stages=[AdamStage(adam_config), LBFGSStage(lbfgs_config)],
-        train_images=train_images,
-        device=device,
-    )
-    return optimizer.run(model, zarr_path=zarr_path)
-
-
-# ---------------------------------------------------------------------------
 # load_config
 # ---------------------------------------------------------------------------
 
@@ -1031,15 +879,19 @@ def load_config(
     n_bins: int | None = None,
     species: dict[str, float] | None = None,
 ) -> FullConfig:
-    """Build a :class:`FullConfig` from a scene with optional aggregation.
+    """Build a :class:`FullConfig` from the fields stored in a scene.
 
-    Extends :func:`config_from_scene` with:
+    Reads the atmospheric and geometric parameters from ``scene[band]``,
+    which avoids the coordinate-alignment pitfalls of building a config
+    independently from the scene it describes.  On top of that:
 
     - **Species recovery** from ``scene[band].attrs["adjeff:species"]``
       (written by :func:`load_scene`) when *species* is ``None``.
     - **Spatial aggregation** (``aggregate=True``) to reduce all fields to
       scalars via ``.mean()``, useful when a single representative
       atmospheric state is needed.
+    - **Digitisation** (``n_bins``) of ``aot`` and ``h``, which cuts the
+      number of distinct atmospheric states to simulate.
 
     Parameters
     ----------
@@ -1118,7 +970,7 @@ def fit_psf(
     model_cls: type[PSFConvModule] = Unif2Surface,
     target_var: str | None = None,
     train_radii: list[float] | None = None,
-    stages: list[AdamConfig | LBFGSConfig] | None = None,
+    stages: list[OptimizerConfig] | None = None,
     res_km: float | None = None,
     n_train: int = 1999,
     cache: CacheStore | None = None,
@@ -1168,7 +1020,7 @@ def fit_psf(
     """
     _target_var: str = target_var or model_cls.output_vars[0]
     _res_km: float = res_km or _res_from_scene(scene, bands[0])
-    _stages = _DEFAULT_STAGES if stages is None else stages
+    _stages = default_stages() if stages is None else stages
     _radii = train_radii or [1.0, 5.0, 50.0]
 
     cfg = load_config(scene, bands[0], aggregate=True)
@@ -1197,12 +1049,7 @@ def fit_psf(
         cache=cache,
     )
 
-    optimizer = OptimizerPipeline(
-        stages=_configs_to_stages(_stages),
-        train_images=train_images,
-        device=device,
-    )
-    return optimizer.run(model)
+    return fit(model, train_images, stages=_stages, device=device)
 
 
 # ---------------------------------------------------------------------------
@@ -1212,7 +1059,7 @@ def fit_psf(
 
 def apply_psf(
     scene: ImageDict,
-    psf_dict: xr.DataTree,
+    tree: xr.DataTree,
     band: SensorBand,
     *,
     model_cls: type[PSFConvModule] = Unif2Surface,
@@ -1225,7 +1072,7 @@ def apply_psf(
 
     Two modes:
 
-    - **Direct** (``n=None``): wraps *psf_dict* in a model and applies it
+    - **Direct** (``n=None``): wraps *tree* in a model and applies it
       as-is.  The kernel size equals the one used during training.
     - **Rebuild** (``n`` provided): reconstructs the PSF on an *n*×*n* grid
       from the stored parameters, then applies it.  Requires *psf_type*.
@@ -1234,7 +1081,7 @@ def apply_psf(
     ----------
     scene : ImageDict
         Scene containing the variables required by *model_cls*.
-    psf_dict : xr.DataTree
+    tree : xr.DataTree
         Frozen PSF tree, typically returned by :func:`fit_psf`.
     band : SensorBand
         Band to apply.
@@ -1270,7 +1117,7 @@ def apply_psf(
     if n is not None and psf_type is not None:
         params: dict[str, float] = {
             name: _to_scalar(value)
-            for name, value in psf_params(psf_dict, band).items()
+            for name, value in psf_params(tree, band).items()
         }
         _res_km: float = res_km or _res_from_scene(scene, band)
         model = model_cls(
@@ -1278,7 +1125,7 @@ def apply_psf(
             device=device,
         )
     else:
-        model = model_cls(kernels=psf_dict, device=device)
+        model = model_cls(kernels=tree, device=device)
 
     model.eval()
     return model(scene)  # type: ignore[no-any-return]

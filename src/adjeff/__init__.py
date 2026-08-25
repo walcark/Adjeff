@@ -8,14 +8,12 @@ from .accessor import AdjeffDataArrayAccessor
 from .api import (
     FullConfig,
     apply_psf,
-    config_from_scene,
     fit_psf,
     load_config,
     load_maja,
     load_scene,
     make_full_config,
     make_model,
-    optimize_adam_lbfgs,
     run_forward_pipeline,
     run_radiatives_from_scene,
     sample_psf_atm,
@@ -29,6 +27,7 @@ from .exceptions import (
     MissingVariableError,
     OptimizationWarning,
 )
+from .optim import fit
 
 __all__ = [
     "AdjeffDataArrayAccessor",
@@ -43,17 +42,16 @@ __all__ = [
     "load_scene",
     "load_maja",
     # API — config
-    "config_from_scene",
     "load_config",
     "make_full_config",
     # API — model
     "make_model",
+    "fit",
     "fit_psf",
     "apply_psf",
     # API — pipelines
     "run_forward_pipeline",
     "run_radiatives_from_scene",
-    "optimize_adam_lbfgs",
     # API — PSF sampling
     "sample_psf_atm",
     "sample_psf_atm_from_scene",
