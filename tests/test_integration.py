@@ -263,3 +263,54 @@ def test_wu_sampler_writes_into_the_scene(config, surface):
     assert "rho_s" in scene[BAND], "the input variable was dropped"
     assert "psf_atm" in scene[BAND]
     _finite_in(scene[BAND]["psf_atm"], 0.0, 1.0)
+
+
+# --- Fitting ---
+
+
+def test_fit_learns_a_psf_and_records_its_parameters(config, surface):
+    """fit() returns one kernel and one parameter value per combo.
+
+    The whole optimisation path only runs on a GPU, so nothing in the
+    unit suite reaches it: this is the single test that proves the loop
+    still converges and still writes what it claims into the tree.
+    """
+    from adjeff.api import make_model, run_forward_pipeline
+    from adjeff.core import GaussPSF
+    from adjeff.modules.models import Unif2Surface
+    from adjeff.optim import (
+        AdamConfig,
+        Loss,
+        Metric,
+        TrainingImages,
+        fit,
+    )
+
+    train = run_forward_pipeline(surface, **config, n_ph=N_PH, nr=32)
+    images = TrainingImages(images=[train], weights=[1.0])
+    model = make_model(
+        Unif2Surface, GaussPSF, [BAND], RES_KM, N, {"sigma": 1.0}
+    )
+
+    tree = fit(
+        model,
+        images,
+        stages=[
+            AdamConfig(
+                min_steps=1,
+                max_steps=2,
+                loss_relative_tolerance=1e-4,
+                loss=Loss(Metric.RMSE),
+                lr=1e-2,
+            )
+        ],
+    )
+
+    kernel = psf_kernel(tree, BAND).squeeze(drop=True)
+    assert kernel.shape == (N, N)
+    assert float(kernel.sum()) == pytest.approx(1.0, rel=1e-3)
+
+    from adjeff.core import psf_params
+
+    assert "sigma" in psf_params(tree, BAND)
+    assert model.psf_params(BAND)["sigma"] > 0.0

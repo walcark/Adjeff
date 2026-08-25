@@ -29,7 +29,7 @@ class PSFConvModule(TrainableSceneModule):
 
     ``_compute`` (xarray inference, handles extra dims via broadcasting) and
     ``forward_band`` (2-D tensor training, autograd preserved) are both fully
-    derived from these two declarations — subclasses need not override either.
+    derived from these two declarations, subclasses need not override either.
 
     Training and inference are two different inputs, not two modes of one
     object.  Pass *psfs* to optimise live :class:`PSFModule` objects, or
@@ -91,6 +91,29 @@ class PSFConvModule(TrainableSceneModule):
         """Mapping of band IDs to PSF modules (training mode only)."""
         return {k: cast(PSFModule, v) for k, v in self._psfs.items()}
 
+    def psf_params(self, band: SensorBand) -> dict[str, float]:
+        """Return the current PSF parameters of *band*.
+
+        Empty when the PSF has no parameters, e.g. a kernel loaded from a
+        frozen tree or a purely numerical PSF.
+
+        Parameters
+        ----------
+        band : SensorBand
+            Band whose PSF module is read.
+
+        Returns
+        -------
+        dict[str, float]
+            Parameter name to value, as held by the module right now.
+        """
+        if self._kernels is not None:
+            return {}
+        if band.id not in self._psfs:
+            held = ", ".join(sorted(self._psfs)) or "none"
+            raise KeyError(f"No PSF for band {band.id!r}; holds: {held}.")
+        return cast(PSFModule, self._psfs[band.id]).param_dict()
+
     def to_psf_tree(self) -> xr.DataTree:
         """Export the current kernels to a frozen PSF tree.
 
@@ -136,7 +159,7 @@ class PSFConvModule(TrainableSceneModule):
         return self.psf_modules[band.id].to_dataarray()
 
     def _compute(self, scene: ImageDict) -> ImageDict:
-        """Xarray inference — extra dims handled by broadcasting."""
+        """Xarray inference, extra dims handled by broadcasting."""
         for band in scene.bands:
             ds = scene[band]
             rho_env = fft_convolve_2D(

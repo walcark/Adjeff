@@ -29,7 +29,7 @@
 8. [Pipeline — chaining modules](#8-pipeline--chaining-modules)
 9. [SceneModuleSweep — parameter sweeps and deduplication](#9-scenemodule-sweep--parameter-sweeps-and-deduplication)
 10. [Smart-G radiative samplers](#10-smart-g-radiative-samplers)
-11. [PSF models and PSFDict](#11-psf-models-and-psfdict)
+11. [PSF models and the PSF tree](#11-psf-models-and-the-psf-tree)
 12. [Atmospheric correction (5S model)](#12-atmospheric-correction-5s-model)
 13. [PSF optimization](#13-psf-optimization)
 14. [High-level API](#14-high-level-api)
@@ -391,7 +391,7 @@ export SMARTG_DIR_AUXDATA=/path/to/smartg/auxdata
 
 ---
 
-## 11. PSF models and PSFDict
+## 11. PSF models and the PSF tree
 
 ### Analytical PSF models
 
@@ -416,27 +416,31 @@ da     = psf.to_dataarray()  # xr.DataArray, dims (y_psf, x_psf)
 
 `NonAnalyticalPSF` wraps a fixed numpy kernel (non-trainable) for applying a pre-computed PSF directly.
 
-### PSFDict
+### The PSF tree
 
-`PSFDict` maps `SensorBand` → PSF kernel, in either trainable or frozen mode:
+Frozen PSFs live in an `xarray.DataTree`, one group per band. Bands keep
+their own grid, so a 101x101 kernel at 10 m and a 51x51 one at 20 m coexist
+in the same tree, and the whole tree round-trips through zarr:
 
 ```python
-from adjeff.core import GaussPSF, PSFDict, PSFGrid, S2Band, init_psf_dict
-
-# Trainable (for optimization)
-bands    = [S2Band.B02, S2Band.B03]
-psf_dict = init_psf_dict(
-    grids={b: PSFGrid(res=0.01, n=101) for b in bands},
-    model=GaussPSF,
-    init_parameters={"sigma": 0.3},
+from adjeff.core import (
+    GaussPSF, PSFGrid, S2Band, freeze, psf_kernel, psf_params,
 )
 
-# Frozen (export after training, or from pre-computed kernels)
-psf_dict_frozen = psf_dict.to_frozen()
-kernel_b02 = psf_dict_frozen[S2Band.B02]  # xr.DataArray
+modules = {
+    b: GaussPSF(PSFGrid(res=0.01, n=101), b, sigma=0.3)
+    for b in (S2Band.B02, S2Band.B03)
+}
+tree = freeze(modules)                  # xr.DataTree, one group per band
+
+kernel = psf_kernel(tree, S2Band.B02)   # xr.DataArray, dims (y_psf, x_psf)
+params = psf_params(tree, S2Band.B02)   # {"sigma": xr.DataArray}
+
+tree.to_zarr("psf.zarr", mode="w")
 ```
 
-A `PSFDict` can carry extra dimensions (e.g. `aot`, `rh`) to represent PSFs that vary with atmospheric state.
+A tree produced by `fit` carries the sweep dimensions of the training set
+(e.g. `aot`, `rh`) on both the kernel and each fitted parameter.
 
 ---
 
@@ -466,7 +470,7 @@ rho_unif = scene[S2Band.B02]["rho_unif"]
 ```python
 from adjeff.modules.models import Unif2Surface
 
-scene = Unif2Surface(psf_dict=psf_dict_frozen)(scene)
+scene = Unif2Surface(kernels=tree)(scene)
 rho_s_recovered = scene[S2Band.B02]["rho_s"]
 ```
 
@@ -474,27 +478,35 @@ rho_s_recovered = scene[S2Band.B02]["rho_s"]
 
 ## 13. PSF optimization
 
-The optimizer learns PSF parameters that best match a set of reference `(rho_s, rho_toa)` image pairs. It runs one independent L-BFGS optimization per atmospheric state combination and assembles the results into a multi-dimensional `PSFDict`.
+`fit` learns the PSF parameters that best match a set of reference `(rho_s, rho_toa)` image pairs. It runs one independent optimisation per `(atmospheric state, band)` pair and assembles the results into a frozen PSF tree.
 
 ```python
-from adjeff.optim import LBFGSOptimizer, LBFGSConfig, Loss, Metric, TrainingImages
+from adjeff.optim import Loss, Metric, TrainingImages, fit
 
 train_images = TrainingImages(
     images=[scene_1, scene_2, scene_3],
     weights=[1.0, 1.0, 1.0],
 )
 
-optimizer = LBFGSOptimizer(
-    train_images=train_images,
-    config=LBFGSConfig(
-        min_steps=5,
-        max_steps=50,
-        loss_relative_tolerance=1e-4,
-        loss=Loss(Metric.MSE_RAD),
-    ),
-)
+# Default stages: Adam warm-up, then L-BFGS refinement.
+tree = fit(model, train_images, loss=Loss(Metric.RMSE_RAD))
+```
 
-psf_dict = optimizer.run(model)
+Pass `stages=` to control the schedule, and `store=` to stream each band's
+kernels to zarr instead of keeping them in RAM:
+
+```python
+from adjeff.optim import AdamConfig, LBFGSConfig
+
+tree = fit(
+    model,
+    train_images,
+    stages=[
+        AdamConfig(min_steps=5, max_steps=20, loss=Loss(Metric.MSE_RAD)),
+        LBFGSConfig(min_steps=5, max_steps=50, loss=Loss(Metric.MSE_RAD)),
+    ],
+    store="psf.zarr",
+)
 ```
 
 <details>
@@ -529,14 +541,14 @@ scene = load_maja(product_path=Path("..."), bands=bands, res=0.12, mnt_path=Path
 cfg = load_config(scene, band=S2Band.B03, aggregate=True)
 
 # 3. Fit a PSF end-to-end (radiatives + training scenes + optimizer)
-psf_dict = fit_psf(
+tree = fit_psf(
     scene, bands=[S2Band.B03],
     psf_type=KingPSF,
     init_parameters={"sigma": 0.5, "gamma": 2.0},
 )
 
 # 4. Apply the frozen PSF to recover rho_s
-scene_corrected = apply_psf(scene, psf_dict, band=S2Band.B03)
+scene_corrected = apply_psf(scene, tree, band=S2Band.B03)
 ```
 
 | Function | Description |
@@ -547,8 +559,7 @@ scene_corrected = apply_psf(scene, psf_dict, band=S2Band.B03)
 | `make_full_config(bands, ...)` | `FullConfig` from raw scalars |
 | `run_forward_pipeline(scene, **cfg)` | Radiatives → rho_toa → rho_unif |
 | `fit_psf(scene, bands, psf_type, ...)` | End-to-end PSF fitting in one call |
-| `apply_psf(scene, psf_dict, band)` | Apply a frozen PSFDict to a scene |
-| `optimize_adam_lbfgs(model, ...)` | Adam warm-up + L-BFGS optimisation |
+| `apply_psf(scene, psf_tree, band)` | Apply a frozen PSF tree to a scene |
 | `sample_psf_atm(bands, ...)` | Atmospheric PSF from explicit config |
 | `sample_psf_atm_from_scene(scene, band)` | Atmospheric PSF inferred from a scene |
 
@@ -662,7 +673,7 @@ pixi run -e notebooks-gpu jupyter lab notebooks/
 | `03-compute-radiative-quantities` | Yes | `RadiativePipeline`, caching |
 | `04-simulate-rho-toa` | Yes | `RhoToaSymSampler` |
 | `05-compute-2d-radiative-from-maja-output` | Yes | `load_maja`, `run_radiatives_from_scene`, spatial maps |
-| `06-learn-psf` | Yes | `optimize_adam_lbfgs`, `sample_psf_atm`, PSF learning end-to-end |
+| `06-learn-psf` | Yes | `fit`, `sample_psf_atm`, PSF learning end-to-end |
 
 ---
 

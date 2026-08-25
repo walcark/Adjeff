@@ -124,21 +124,15 @@ class _ComboStage(abc.ABC):
     def _total_loss(
         self,
         model: TrainableSceneModule,
-        band_sets: list[tuple[SensorBand, TrainingSet]],
+        band: SensorBand,
+        data: TrainingSet,
     ) -> torch.Tensor:
-        """Sum of losses over all bands for a single atmospheric combo."""
-        losses = []
-        for band, ts in band_sets:
-            _band = band
+        """Loss of one band at one atmospheric combo."""
 
-            def _fwd(
-                inputs: dict[str, torch.Tensor],
-                _b: SensorBand = _band,
-            ) -> torch.Tensor:
-                return model.forward_band(_b, **inputs)
+        def forward(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+            return model.forward_band(band, **inputs)
 
-            losses.append(self.config.loss(_fwd, ts))
-        return torch.stack(losses).sum()
+        return self.config.loss(forward, data)
 
     # ------------------------------------------------------------------
     # Abstract
@@ -148,7 +142,8 @@ class _ComboStage(abc.ABC):
     def _run_combo(
         self,
         model: TrainableSceneModule,
-        band_sets: list[tuple[SensorBand, TrainingSet]],
+        band: SensorBand,
+        data: TrainingSet,
         combo_str: str,
     ) -> None:
         """Run optimization for a single atmospheric combo.
