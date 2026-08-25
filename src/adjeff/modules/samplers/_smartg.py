@@ -37,6 +37,43 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _pair_angles_with_points(res: xr.DataArray, *angles: str) -> xr.DataArray:
+    """Keep, for each point of a batched call, the angle it asked for.
+
+    Smart-G evaluates every requested direction for every atmosphere it
+    is handed, so a batched call comes back as the cross product of the
+    angle axis with the point axis.  Only the diagonal is meaningful:
+    point ``i`` asked for angle ``i``.  Without this the caller receives
+    an extra axis it never declared, and xsweep rejects the return as
+    the wrong shape for one point.
+
+    A call outside a batch has no point dim and is returned unchanged,
+    angle axes included, since those are then genuine sweep axes.
+
+    Parameters
+    ----------
+    res : xr.DataArray
+        Unstacked Smart-G output, carrying the angle axes and, when the
+        call was batched, the point axis.
+    *angles : str
+        Names of the angle dims to pair, e.g. ``"vza"``, ``"sza"``.
+
+    Returns
+    -------
+    xr.DataArray
+        Same array with each paired angle dim consumed.
+    """
+    if ParamBatch.GROUP_DIM not in res.dims:
+        return res
+    n = res.sizes[ParamBatch.GROUP_DIM]
+    picks = {
+        name: xr.DataArray(np.arange(n), dims=ParamBatch.GROUP_DIM)
+        for name in angles
+        if name in res.dims and res.sizes[name] == n
+    }
+    return res.isel(picks) if picks else res
+
+
 def _make_atmosphere(
     wl: xr.DataArray,
     aot: xr.DataArray,
@@ -168,7 +205,7 @@ def rho_atm(
             },
         )
     )
-    return res
+    return _pair_angles_with_points(res, "vza", "sza")
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +413,7 @@ def tdif_down(
             coords={"sza": sza.values, "index": batch.index_coord},
         )
     )
-    return res
+    return _pair_angles_with_points(res, "sza")
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +500,7 @@ def tdif_up(
             coords={"vza": vza.values, "index": batch.index_coord},
         )
     )
-    return res
+    return _pair_angles_with_points(res, "vza")
 
 
 # ---------------------------------------------------------------------------

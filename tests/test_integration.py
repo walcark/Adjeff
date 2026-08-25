@@ -314,3 +314,42 @@ def test_fit_learns_a_psf_and_records_its_parameters(config, surface):
 
     assert "sigma" in psf_params(tree, BAND)
     assert model.psf_params(BAND)["sigma"] > 0.0
+
+
+def test_batched_angles_match_one_call_per_angle():
+    """A batched sweep must give each point the angle it asked for.
+
+    Smart-G evaluates every requested direction for every atmosphere in
+    the batch, so the raw return is a cross product.  Two viewing angles
+    swept in one call must therefore reproduce, point by point, what two
+    separate calls give.  Getting this wrong does not raise: it returns
+    a value computed for another point's geometry.
+    """
+    from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
+    from adjeff.modules.samplers import TdifUpSampler
+
+    n_ph = int(1e5)
+
+    def tdif_up(vza):
+        sampler = TdifUpSampler(
+            atmo_config=AtmoConfig(
+                aot=0.3, rh=50.0, h=0.0, href=2.0,
+                species={"sulphate": 1.0},
+            ),
+            geo_config=GeoConfig(sza=30.0, vza=vza, saa=120.0, vaa=120.0),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            n_ph=n_ph,
+        )
+        out = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["tdif_up"]
+        return np.ravel(np.asarray(out.values, dtype=float))
+
+    batched = tdif_up(xr.DataArray([0.0, 60.0], dims=["vza"]))
+    alone = np.array([tdif_up(0.0)[0], tdif_up(60.0)[0]])
+
+    assert batched.shape == (2,)
+    # The two angles must stay distinct: identical values would mean one
+    # of them was overwritten by the other point's result.
+    assert abs(alone[1] - alone[0]) > 0.05
+    # Monte-Carlo noise at 1e5 photons is around one percent.
+    np.testing.assert_allclose(batched, alone, rtol=0.08)

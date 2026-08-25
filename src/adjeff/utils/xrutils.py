@@ -28,11 +28,15 @@ class ParamBatch:
     """
 
     _DEDUP_TMP: ClassVar[str] = "_index_tmp"
+    #: Dim a batched xsweep call stacks its points along.  Mirrors
+    #: ``xsweep.delivery.GROUP_DIM``, which is reserved rather than
+    #: configurable, so the two cannot drift apart silently.
+    GROUP_DIM: ClassVar[str] = "point"
     #: Dims whose entries are aligned rather than swept: several variables
     #: vary together along them, so they carry integer positions instead of
     #: their own values.  Using the values would build a duplicate index
     #: (``rh = [50, 50, 50]``) and break the broadcast.
-    _POSITIONAL: ClassVar[tuple[str, ...]] = (_DEDUP_TMP, "point")
+    _POSITIONAL: ClassVar[tuple[str, ...]] = (_DEDUP_TMP, GROUP_DIM)
     _flat: dict[str, xr.DataArray]
     _index_coord: xr.DataArray  # MultiIndex coord for unstack
 

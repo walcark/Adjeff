@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **One `fit()` replaces five optimiser entry points.** `_Optimizer`,
+  `SingleStageOptimizer`, `OptimizerPipeline`, `AdamOptimizer` and
+  `LBFGSOptimizer` were one algorithm behind five names: build an
+  object, call `.run(model)`. There is now a function,
+  `fit(model, train_images, loss=..., stages=..., store=...)`, and the
+  stages are named by their configuration (`AdamConfig`, `LBFGSConfig`)
+  rather than by a wrapper class the caller had to import.
+  `api.optimize_adam_lbfgs` is gone; `fit` is its replacement and is
+  exported from `adjeff`.
+
+  `fit` also stops replaying parameter snapshots. It captures each
+  kernel when its combo finishes, which is when the model already holds
+  it, instead of restoring the parameters afterwards to rebuild what was
+  there.
+
+- **`PSFConvModule.psf_params(band)`** returns the parameters a fitted
+  PSF currently holds. Reading them meant walking `model.modules()`
+  looking for anything answering `param_dict()`.
+
+- **A much smaller public surface.** `adjeff.api` publishes 12 names
+  instead of 52: it had no `__all__`, so `Path`, `np`, `xr`, `cast`,
+  `TypeVar` and 29 re-exported classes were part of it by accident.
+  `adjeff.utils` publishes 6 instead of 23, the ones a caller outside
+  the package needs (`CacheStore`, the two `fft_convolve_2D`, and the
+  three building blocks of a custom PSF). The rest is internal plumbing
+  and stays reachable through its own submodule, e.g.
+  `from adjeff.utils.radial import bin_radial`.
+
+  Breaking: `config_from_scene` is gone, `load_config` does everything
+  it did and more; `make_atmo_config` and `make_geo_config` are private,
+  `make_full_config` builds both; `apply_psf(psf_dict=)` becomes
+  `apply_psf(tree=)`; `TrainingSet` and `extend_analytical` leave the
+  public listing, the latter deleted since nothing called it.
+
+### Changed
+
 - **Every sampler runs on [xsweep](https://github.com/walcark/xsweep).**
   The three that loop over geometry — `RhoToaSampler`, `RhoToaSymSampler`
   and `WuPsfSampler` — declare `loop(sza, vza) vec(...)`: the sensor grid
@@ -49,6 +85,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   invalidated, since the module name enters the cache key.
 
 ### Fixed
+
+- **A batched Smart-G call mixed up the angles between its points.**
+  `tdif_down`, `tdif_up` and `rho_atm` ask Smart-G for one direction per
+  point, but the engine evaluates every direction for every atmosphere
+  it is handed, so the return is the cross product of the two. Only the
+  diagonal is meaningful: point `i` asked for angle `i`. Sweeping two or
+  more atmospheric states at once raised a shape error from xsweep, and
+  a case where it did not raise would have returned a value computed for
+  another point's geometry. Found by the article's `table_aot` figure,
+  which sweeps three AOT values in one call.
 
 - **`saa` and `vaa` were declared as arrays and used as scalars.** Every
   `_smartg` function read `float(saa.flat[0])` from what its signature
