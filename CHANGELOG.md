@@ -5,6 +5,59 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0]
+
+### Added
+
+- **A module chooses the slots it reads and writes.** A class declares
+  canonical *roles* (`_required_vars`, `_output_vars`, `_optional_vars`)
+  and an instance binds them to Dataset names through `rename=`:
+
+  ```python
+  king = Unif2Surface(kernels=tree, rename={"rho_s": "rho_s_king"})
+  gauss = Unif2Surface(kernels=other, rename={"rho_s": "rho_s_gauss"})
+  scene = gauss(king(scene))      # truth and both estimates, side by side
+  ```
+
+  It answers a collision the article kept working around: `Unif2Surface`
+  writes `rho_s`, which is also the name of the ground truth, so a scene
+  carrying both lost one of them.  Renaming the module's output alone
+  would only move the collision, since `RhoToaSampler` then asks for
+  `rho_s` in turn; binding roles to slots is what lets each estimate
+  travel under its own name and still be read by the next module.
+
+  The cache is keyed and filled by role, so two instances differing only
+  by their slots share one entry: where a result is written changes
+  nothing to what is computed.
+
+- **`SensorBand.from_wl(560.0)`** returns the band centred on a
+  wavelength, which every figure naming a band on its command line was
+  building a table for.  An approximate value is an error rather than a
+  silent neighbour.
+
+- **`adjeff.modules.samplers.RADIATIVE_VARS`** publishes the six
+  quantities of the 5S formula.  Each sampler declared its own; nothing
+  named the set.
+
+- **`ARTICLE_TRAIN_RADII_KM` and `ARTICLE_TRAIN_SIZE`** name the
+  manuscript's training choices, which `fit_psf` used to impose as
+  unnamed literals.  They remain its defaults, and a reader can now tell
+  a decision of the article from a decision of the library.
+
+### Changed
+
+- **`TrainingImages(weights=...)` is optional**, and defaults to uniform
+  weights.  Every caller wrote `[1.0] * len(images)` by hand.  A wrong
+  count now raises instead of failing later on a mismatched zip.
+
+  Breaking: `required_vars`, `output_vars` and `optional_vars` are
+  properties resolved per instance.  A subclass declaring them as class
+  attributes silently shadows the resolution, so the class-level
+  declarations were renamed with a leading underscore, and reading them
+  off a class (`SomeModule.output_vars`) now returns a property object.
+  Use `SomeModule._output_vars` for the roles, or an instance for the
+  slots.
+
 ## [0.9.0]
 
 ### Fixed
