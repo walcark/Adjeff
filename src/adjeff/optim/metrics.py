@@ -27,9 +27,9 @@ def mae(
     dists: torch.Tensor,
     mask_tensor: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """MAE on scale-normalised residuals, masked to 99% radial CDF."""
+    """MAE on scale-normalised residuals, over the given domain."""
     resid = _residual(tensor1, tensor2)
-    w = radial_mask(resid, dists, _MASK_THRESHOLD).float()
+    w = _flat_weights(dists, mask_tensor)
     return (w * resid.abs()).sum() / w.sum()
 
 
@@ -39,9 +39,9 @@ def mse(
     dists: torch.Tensor,
     mask_tensor: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """MSE on scale-normalised residuals, masked to 99% radial CDF."""
+    """MSE on scale-normalised residuals, over the given domain."""
     resid = _residual(tensor1, tensor2)
-    w = radial_mask(resid, dists, _MASK_THRESHOLD).float()
+    w = _flat_weights(dists, mask_tensor)
     return (w * resid.pow(2)).sum() / w.sum()
 
 
@@ -51,8 +51,8 @@ def rmse(
     dists: torch.Tensor,
     mask_tensor: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """RMSE on scale-normalised residuals, masked to 99% radial CDF."""
-    return torch.sqrt(mse(tensor1, tensor2, dists))
+    """RMSE on scale-normalised residuals, over the given domain."""
+    return torch.sqrt(mse(tensor1, tensor2, dists, mask_tensor))
 
 
 def mae_rad(
@@ -113,6 +113,39 @@ def _residual(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
     return (tensor1 - tensor2) / _get_scale(tensor2)
 
 
+def _domain(
+    dists: torch.Tensor, mask_tensor: torch.Tensor | None
+) -> torch.Tensor:
+    """Return the 0/1 domain *mask_tensor* stands for.
+
+    A float field is a *source*: the domain is the pixels within its 99%
+    radial energy, which is how ``rho_unif`` has always been used here.
+    A boolean tensor is the domain itself, already decided by the caller,
+    which is what a fixed radius amounts to.
+    """
+    if mask_tensor is None:
+        return torch.ones_like(dists)
+    if mask_tensor.dtype == torch.bool:
+        return mask_tensor.float()
+    return radial_mask(mask_tensor, dists, _MASK_THRESHOLD).float()
+
+
+def _flat_weights(
+    dists: torch.Tensor, mask_tensor: torch.Tensor | None
+) -> torch.Tensor:
+    """Return uniform weights over the domain.
+
+    These metrics used to derive their domain from the residual they
+    were measuring, which let the optimiser lower the loss by shrinking
+    its own mask rather than by fitting better.  Measured on the
+    manuscript's landscapes, that collapses the fit: the King core width
+    falls to a thirtieth of its value and the generalisation error grows
+    by a factor 2.6.  The domain now comes from the caller, like it does
+    for the radially weighted metrics.
+    """
+    return _domain(dists, mask_tensor)
+
+
 def _rad_weights(
     dists: torch.Tensor, mask_tensor: torch.Tensor | None
 ) -> torch.Tensor:
@@ -124,12 +157,7 @@ def _rad_weights(
     boolean tensor is the mask itself, already decided by the caller,
     which is what a fixed radius amounts to.
     """
-    w = radial_weights(dists)
-    if mask_tensor is None:
-        return w
-    if mask_tensor.dtype == torch.bool:
-        return w * mask_tensor.float()
-    return w * radial_mask(mask_tensor, dists, _MASK_THRESHOLD).float()
+    return radial_weights(dists) * _domain(dists, mask_tensor)
 
 
 # ---------------------------------------------------------------------------

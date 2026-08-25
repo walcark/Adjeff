@@ -145,3 +145,31 @@ def test_radial_metric_accepts_a_ready_made_mask():
     assert float(
         Metric.MSE_RAD(spoiled, sample.target, sample.dist, None)
     ) > 10.0 * everywhere
+
+
+@pytest.mark.parametrize(
+    "metric_name", ["MAE", "MSE", "RMSE", "MAE_RAD", "MSE_RAD", "RMSE_RAD"]
+)
+def test_every_metric_honours_the_domain_it_is_given(metric_name):
+    """A metric must be a function of its own domain, and of nothing else.
+
+    The plain metrics used to build their domain from the residual they
+    were measuring, so a change outside the mask still moved the result,
+    and the optimiser could lower the loss by shrinking its own mask.
+    """
+    from adjeff.optim import Metric
+
+    metric = getattr(Metric, metric_name)
+    sample = _sample(16)
+    pred = sample.target + 0.05
+    inside = sample.dist <= 3.0
+
+    reference = float(metric(pred, sample.target, sample.dist, inside))
+
+    elsewhere = pred.clone()
+    elsewhere[sample.dist > 5.0] += 0.5
+
+    assert bool(torch.equal(pred[inside], elsewhere[inside]))
+    assert float(
+        metric(elsewhere, sample.target, sample.dist, inside)
+    ) == pytest.approx(reference, rel=1e-5)
