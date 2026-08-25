@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.0]
 
 ### Fixed
 
@@ -67,6 +67,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   a sweep, so the log line is the one that counts them.
 - The 88 column limit of the project guidelines replaces 79, and the
   tests join the lint and format scope.
+
+## [0.8.1]
+
+### Fixed
+
+- **The plain metrics masked on the residual they were measuring.**
+  `mae`, `mse` and `rmse` ignored the domain the caller passed and built
+  their own from the 99% radial energy of `|eps|`.  That closes a
+  feedback loop: the optimiser can lower the loss by shrinking its own
+  mask rather than by fitting better.  Measured on the manuscript's
+  landscapes, it collapses the fit, the King core width falling from
+  0.19 km to 0.0065 km, its 50% energy radius to zero, and the
+  generalisation error growing by a factor 2.6.  The formula published
+  in the article, which masks on `eps` squared, is worse still at a
+  factor 4.4.  All six metrics now take their domain from the caller.
+
+- **The residual was scaled on the prediction.** It was divided by
+  `max(|pred|, |truth|)`, a normalisation the manuscript does not
+  mention, which made the metric depend on the very quantity being
+  optimised.  With a mask it became plainly wrong: a prediction going
+  astray far outside the mask raised the scale for every pixel, so the
+  error measured inside the mask, on pixels that had not moved, fell by
+  two orders of magnitude.  The reference alone now sets the scale.
+
+  On the three landscapes of the manuscript the fitted parameters do not
+  move, since all three peak at 1.0 and the scale is therefore 1.
+
+### Changed
+
+- **`KingPSF` confines its power-law index to `[1, 5]`.** On a plane the
+  radial integral of the profile converges only for `gamma > 1`; below
+  that the kernel has no scale of its own and the grid sets its
+  normalisation, with half of the energy sitting beyond 79 km on a
+  141 km grid at `gamma = 0.4`.  That region is also where the loss
+  surface turns concave, which is where L-BFGS stalled: one start out of
+  sixteen without the Adam warm-up, none with the bound in place, over
+  32 runs.  `VoigtPSF` and `MoffatGeneralizedPSF` document their own
+  integrability conditions, which a per-parameter bound cannot express.
+
+- **`Loss(mask_on=...)` accepts any variable name, or a radius in km.**
+  It was restricted to `"rho_unif"` or `None` by a hand-written check.
+  A radius keeps a disc, and unlike an energy mask it does not move when
+  the prediction changes, which is what a quasi-Newton step assumes.
+
+- **`loss_landscape` takes any model and any loss.** It hardcoded the
+  convolution of `Unif2Surface`, the variable names it reads, and
+  reached inside the loss object for its metric and its mask, so the
+  promise of its own docstring held for exactly one pair.  A new
+  `kernel=` argument on `forward_band` is what lets a candidate be
+  evaluated without installing it in the model.  Coverage of the module
+  goes from 19% to 100%.
 
 ## [0.8.0]
 
