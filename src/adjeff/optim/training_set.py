@@ -87,13 +87,28 @@ class TrainingImages:
     ----------
     images : list[ImageDict]
         Reference scenes used as training data.
-    weights : list[float]
-        Per-image loss weights (one per entry in *images*).  Used to
-        scale each image's contribution in :class:`Loss`.
+    weights : list[float] or None
+        Per-image loss weights, one per entry in *images*, scaling each
+        image's contribution in :class:`Loss`.  ``None`` weights them
+        equally, which is what every caller wrote by hand.
     """
 
     images: list[ImageDict]
-    weights: list[float]
+    weights: list[float] | None = None
+
+    def __post_init__(self) -> None:  # noqa: D105
+        if self.weights is not None and len(self.weights) != len(self.images):
+            raise ConfigurationError(
+                f"{len(self.weights)} weights for {len(self.images)} "
+                "images: there must be one per image."
+            )
+
+    @property
+    def per_image(self) -> list[float]:
+        """Return one weight per image, uniform when none were given."""
+        if self.weights is None:
+            return [1.0] * len(self.images)
+        return self.weights
 
 
 def iterate_broadcasted_dims(
@@ -229,7 +244,7 @@ def training_set(
         inputs=ipts,
         targets=tgts,
         dists=dists,
-        weights=train.weights,
+        weights=train.per_image,
         params=dict(params),
         device=device,
     )

@@ -320,6 +320,75 @@ class AdjeffDataArrayAccessor:
         """
         return torch.from_numpy(self._da.values.astype(np.float32))
 
+    def tidy(self) -> xr.DataArray:
+        """Turn every length-one dimension into a scalar coordinate.
+
+        A scalar in a configuration is coerced to an array of length one,
+        so an output carries an ``aot``, ``rh``, ``h`` and ``href``
+        dimension even when a single atmospheric state was simulated.
+        This peels them off while keeping the values, so the array still
+        says which state produced it.
+
+        Selecting one value of a swept parameter needs no such thing:
+        ``da.sel(aot=0.4)`` already removes the dimension and keeps the
+        coordinate.  This is for the parameters that were never swept.
+
+        Returns
+        -------
+        xr.DataArray
+            The same data, with fewer dimensions and the same coordinates.
+
+        Notes
+        -----
+        A tidied array is recombined with :func:`xarray.concat`, which
+        promotes the scalar coordinate back to a dimension.  It is not
+        recombined with :func:`xarray.merge` or
+        :func:`xarray.combine_by_coords`, which need a dimension to align
+        on: call :meth:`untidy` first.
+
+        Examples
+        --------
+        >>> rho_toa.dims
+        ('sza', 'vza', 'aot', 'rh', 'href', 'h', 'y', 'x')
+        >>> tidied = rho_toa.adjeff.tidy()
+        >>> tidied.dims
+        ('y', 'x')
+        >>> float(tidied.aot)
+        0.4
+        """
+        singleton = [
+            str(dim) for dim in self._da.dims if self._da.sizes[dim] == 1
+        ]
+        if not singleton:
+            return self._da
+        return self._da.squeeze(singleton, drop=False)
+
+    def untidy(self, *names: str) -> xr.DataArray:
+        """Turn scalar coordinates back into dimensions of length one.
+
+        The inverse of :meth:`tidy`, needed before an alignment that
+        works on dimensions rather than on values.
+
+        Parameters
+        ----------
+        *names : str
+            Coordinates to expand.  Defaults to every scalar coordinate
+            that is not already a dimension.
+
+        Returns
+        -------
+        xr.DataArray
+            The same data, with one dimension per named coordinate.
+        """
+        wanted = list(names) or [
+            str(name)
+            for name, coord in self._da.coords.items()
+            if coord.ndim == 0 and name not in self._da.dims
+        ]
+        if not wanted:
+            return self._da
+        return self._da.expand_dims(wanted)
+
     @property
     def dists(self) -> torch.Tensor:
         """Per-pixel radial distances as a float32 :class:`torch.Tensor`.

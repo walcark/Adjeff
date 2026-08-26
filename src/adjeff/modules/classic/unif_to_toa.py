@@ -28,7 +28,7 @@ class Unif2Toa(SceneModule):
     Produced variable: ``rho_toa``.
     """
 
-    required_vars: ClassVar[list[str]] = [
+    _required_vars: ClassVar[list[str]] = [
         "rho_unif",
         "tdir_up",
         "tdif_up",
@@ -37,14 +37,16 @@ class Unif2Toa(SceneModule):
         "rho_atm",
         "sph_alb",
     ]
-    output_vars: ClassVar[list[str]] = ["rho_toa"]
+    _output_vars: ClassVar[list[str]] = ["rho_toa"]
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Use the 5S model, assuming rho_s=rho_env=rho_unif."""
         for band in scene.bands:
             ds: xr.Dataset = scene[band]
-            t_up = ds["tdir_up"] + ds["tdif_up"]
-            t_down = ds["tdir_down"] + ds["tdif_down"]
-            frac = ds["rho_unif"] / (1 - ds["sph_alb"] * ds["rho_unif"])
-            ds["rho_toa"] = ds["rho_atm"] + t_up * t_down * frac
+            at = self._slot
+            t_up = ds[at("tdir_up")] + ds[at("tdif_up")]
+            t_down = ds[at("tdir_down")] + ds[at("tdif_down")]
+            rho_unif = ds[at("rho_unif")]
+            frac = rho_unif / (1 - ds[at("sph_alb")] * rho_unif)
+            ds[at("rho_toa")] = ds[at("rho_atm")] + t_up * t_down * frac
         return scene

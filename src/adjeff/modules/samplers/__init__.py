@@ -44,8 +44,21 @@ from .tdif_up import TdifUpSampler
 from .tdir_down import TdirDownSampler
 from .tdir_up import TdirUpSampler
 
+#: The six quantities the 5S formula needs.  Each sampler declares its
+#: own as an output; the list is published here because every caller
+#: that reasons about "the radiative quantities" was rebuilding it.
+RADIATIVE_VARS: tuple[str, ...] = (
+    "tdir_down",
+    "tdir_up",
+    "tdif_down",
+    "tdif_up",
+    "rho_atm",
+    "sph_alb",
+)
+
 __all__ = [
     "RadiativePipeline",
+    "RADIATIVE_VARS",
     "RhoAtmSampler",
     "RhoToaSampler",
     "RhoToaSymSampler",

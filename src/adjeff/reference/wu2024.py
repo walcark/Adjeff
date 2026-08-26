@@ -106,8 +106,8 @@ class WuPsfSampler(SweepSampler):
         Number of photons per sensor.
     """
 
-    required_vars: ClassVar[list[str]] = []
-    output_vars: ClassVar[list[str]] = ["psf_atm"]
+    _required_vars: ClassVar[list[str]] = []
+    _output_vars: ClassVar[list[str]] = ["psf_atm"]
     contract: ClassVar[str] = (
         # Dim order is the one adapt_smartg_output produces: x then y.
         "loop(vza, vaa, aot, rh, h, href) -> psf_atm(x, y)"
@@ -125,6 +125,7 @@ class WuPsfSampler(SweepSampler):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rename: dict[str, str] | None = None,
     ) -> None:
         self.atmo_config = atmo_config
         self.geo_config = geo_config
@@ -132,7 +133,9 @@ class WuPsfSampler(SweepSampler):
         self.afgl_type = afgl_type
         self.nr = nr
         self.n_ph = n_ph
-        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
+        super().__init__(
+            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
+        )
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
@@ -151,6 +154,8 @@ class WuPsfSampler(SweepSampler):
         # size its sampling grid, so the two travel together.
         for band in scene.bands:
             arr = self._sweep(rho_s=scene[band], band=band)
-            scene[band]["psf_atm"] = self._restore_coords(arr, scene[band])
+            scene[band][self._slot("psf_atm")] = self._restore_coords(
+                arr, scene[band]
+            )
             logger.info("Computed atmospheric PSF.", dims=arr.dims, band=band)
         return scene

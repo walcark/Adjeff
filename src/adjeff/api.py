@@ -89,6 +89,10 @@ __all__ = [
     "apply_psf",
     "sample_psf_atm",
     "sample_psf_atm_from_scene",
+    # The manuscript's own choices, named so that a caller can tell them
+    # apart from the library's defaults.
+    "ARTICLE_TRAIN_RADII_KM",
+    "ARTICLE_TRAIN_SIZE",
 ]
 
 
@@ -491,6 +495,13 @@ def run_forward_pipeline(
 _SPECIES_ATTR = "adjeff:species"
 _DEFAULT_SPECIES: dict[str, float] = {"sulphate": 1.0}
 _DEFAULT_LOSS = Loss(Metric.RMSE_RAD)
+
+#: Training landscapes of the manuscript: three disk radii in km, on a
+#: 1999 pixel grid.  They are the article's choice, not a property of the
+#: method, and `fit_psf` only defaults to them so that a first call has
+#: something to run on.
+ARTICLE_TRAIN_RADII_KM: tuple[float, ...] = (1.0, 5.0, 50.0)
+ARTICLE_TRAIN_SIZE: int = 1999
 
 
 # ---------------------------------------------------------------------------
@@ -964,7 +975,7 @@ def fit_psf(
     train_radii: list[float] | None = None,
     stages: list[OptimizerConfig] | None = None,
     res_km: float | None = None,
-    n_train: int = 1999,
+    n_train: int | None = None,
     cache: CacheStore | None = None,
     device: str = "cuda",
 ) -> xr.DataTree:
@@ -998,7 +1009,7 @@ def fit_psf(
         Optimiser stages.  ``None`` → Adam (20 steps) + L-BFGS (30 steps).
     res_km : float or None, optional
         PSF grid pixel size [km].  ``None`` → inferred from *scene[bands[0]]*.
-    n_train : int, optional
+    n_train : int or None, optional
         PSF grid side in pixels for training (default 1999, must be odd).
     cache : CacheStore or None, optional
         Shared cache forwarded to the forward pipeline.
@@ -1010,10 +1021,12 @@ def fit_psf(
     xr.DataTree
         Frozen PSF tree with one optimised kernel per band.
     """
-    _target_var: str = target_var or model_cls.output_vars[0]
+    # Read off the class, so the role rather than any instance's slot.
+    _target_var: str = target_var or model_cls._output_vars[0]
     _res_km: float = res_km or _res_from_scene(scene, bands[0])
     _stages = default_stages() if stages is None else stages
-    _radii = train_radii or [1.0, 5.0, 50.0]
+    _radii = train_radii or list(ARTICLE_TRAIN_RADII_KM)
+    _n_train = n_train or ARTICLE_TRAIN_SIZE
 
     cfg = load_config(scene, bands[0], aggregate=True)
 
@@ -1025,7 +1038,7 @@ def fit_psf(
             rho_max=0.5,
             bands=bands,
             var=_target_var,
-            n=n_train,
+            n=_n_train,
         )
         for r in _radii
     ]
@@ -1036,7 +1049,7 @@ def fit_psf(
     )
 
     model = model_cls(
-        psfs=_build_psfs(psf_type, bands, _res_km, n_train, init_parameters),
+        psfs=_build_psfs(psf_type, bands, _res_km, _n_train, init_parameters),
         device=device,
         cache=cache,
     )

@@ -61,11 +61,11 @@ class RhoToaSampler(SweepSampler):
         for details.  Default is ``"mean"``.
     """
 
-    required_vars: ClassVar[list[str]] = ["rho_s"]
-    output_vars: ClassVar[list[str]] = ["rho_toa"]
+    _required_vars: ClassVar[list[str]] = ["rho_s"]
+    _output_vars: ClassVar[list[str]] = ["rho_toa"]
     #: Reused when the scene carries it, computed otherwise.  Keyed so
     #: that two different path reflectances cannot share one entry.
-    optional_vars: ClassVar[list[str]] = ["rho_atm"]
+    _optional_vars: ClassVar[list[str]] = ["rho_atm"]
     # `sza` and `vza` stay `loop`: the sensor grid is built from them, so
     # a call carries one geometry.  The output dim order is the one
     # ParamBatch produces inside _smartg (wl, aot, rh, href, h).
@@ -89,6 +89,7 @@ class RhoToaSampler(SweepSampler):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rename: dict[str, str] | None = None,
     ) -> None:
         self.atmo_config = atmo_config
         self.geo_config = geo_config
@@ -100,7 +101,9 @@ class RhoToaSampler(SweepSampler):
         self.n_ph = n_ph
         self.n_alb = n_alb
         self.rho_background = rho_background
-        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup)
+        super().__init__(
+            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
+        )
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)

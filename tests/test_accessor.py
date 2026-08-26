@@ -272,3 +272,78 @@ def test_to_field_broadcasts_extra_dims(disk_da):
     assert result.sizes["aot"] == 2
     assert result.sizes["y"] == disk_da.sizes["y"]
     assert result.sizes["x"] == disk_da.sizes["x"]
+
+
+# ---------------------------------------------------------------------------
+# tidy / untidy
+# ---------------------------------------------------------------------------
+
+
+def _swept(n: int = 4):
+    """Return a field swept over aot, with rh and href never swept."""
+    return xr.DataArray(
+        np.arange(3 * 1 * 1 * n * n, dtype=float).reshape(3, 1, 1, n, n),
+        dims=["aot", "rh", "href", "y", "x"],
+        coords={"aot": [0.2, 0.4, 0.6], "rh": [50.0], "href": [2.0]},
+    )
+
+
+def test_tidy_keeps_the_value_it_removes_the_dimension_of():
+    """A scalar configuration must still say which state it stands for."""
+    tidied = _swept().adjeff.tidy()
+
+    assert tidied.dims == ("aot", "y", "x")
+    assert float(tidied.rh) == 50.0
+    assert float(tidied.href) == 2.0
+
+
+def test_tidy_leaves_a_swept_dimension_alone():
+    """Only the parameters that were never swept are peeled."""
+    assert "aot" in _swept().adjeff.tidy().dims
+
+
+def test_tidy_is_a_no_op_without_singletons():
+    """Nothing to peel, nothing copied."""
+    da = xr.DataArray(np.zeros((4, 4)), dims=["y", "x"])
+
+    assert da.adjeff.tidy().dims == ("y", "x")
+
+
+def test_untidy_restores_the_dimensions():
+    """The round trip returns the shape it started from."""
+    original = _swept()
+
+    restored = original.adjeff.tidy().adjeff.untidy("rh", "href")
+
+    assert set(restored.dims) == set(original.dims)
+    xr.testing.assert_allclose(
+        restored.transpose(*original.dims), original
+    )
+
+
+def test_untidy_defaults_to_every_scalar_coordinate():
+    """Called bare, it expands whatever tidy collapsed."""
+    restored = _swept().adjeff.tidy().adjeff.untidy()
+
+    assert set(restored.dims) == {"aot", "rh", "href", "y", "x"}
+
+
+def test_tidied_arrays_concatenate_back():
+    """Concat promotes the scalar coordinate to a dimension again.
+
+    This is the supported way to recombine tidied pieces; `merge` and
+    `combine_by_coords` need a dimension to align on and are documented
+    as requiring `untidy` first.
+    """
+    pieces = [
+        xr.DataArray(
+            np.full((1, 4, 4), aot), dims=["aot", "y", "x"],
+            coords={"aot": [aot]},
+        ).adjeff.tidy()
+        for aot in (0.2, 0.4, 0.6)
+    ]
+
+    stacked = xr.concat(pieces, dim="aot")
+
+    assert stacked.dims == ("aot", "y", "x")
+    np.testing.assert_allclose(stacked.aot.values, [0.2, 0.4, 0.6])

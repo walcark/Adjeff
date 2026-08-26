@@ -5,7 +5,7 @@ import pytest
 from _test_module import TestModule
 
 from adjeff.core import ImageDict, S2Band, random_image_dict
-from adjeff.exceptions import MissingVariableError
+from adjeff.exceptions import ConfigurationError, MissingVariableError
 from adjeff.utils import CacheStore
 
 
@@ -110,8 +110,8 @@ def test_pipeline_wrong_dependency_raises():
     # Module B requires rho_toa and produces rho_unif.
     # Declaring them in reverse order (B then A) is a configuration error.
     class ModuleB(TM):
-        required_vars = ["rho_toa"]
-        output_vars = ["rho_unif"]
+        _required_vars = ["rho_toa"]
+        _output_vars = ["rho_unif"]
 
         def _compute(self, scene):  # type: ignore[override]
             return scene
@@ -214,7 +214,7 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
     from _test_module import TestModule as TM
 
     class TwoOut(TM):
-        output_vars = ["rho_toa", "rho_unif"]
+        _output_vars = ["rho_toa", "rho_unif"]
 
         def _compute(self, scene):  # type: ignore[override]
             for band in scene.bands:
@@ -238,7 +238,9 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
     stored.to_zarr(path, mode="w")
 
     assert (
-        cache.load_vars(module._cache_key(scene), [S2Band.B02], TwoOut.output_vars)
+        cache.load_vars(
+            module._cache_key(scene), [S2Band.B02], TwoOut._output_vars
+        )
         is None
     )
     assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
@@ -269,7 +271,7 @@ def streamed_scene():
 class _Doubler(TestModule):
     """Write ``out = 2 * rho_s``, so streaming must not change the result."""
 
-    output_vars = ["out"]
+    _output_vars = ["out"]
 
     def _compute(self, scene):  # type: ignore[override]
         for band in scene.bands:
@@ -353,7 +355,7 @@ def test_optional_vars_enter_the_key_only_when_present(tmp_path, scene):
     import xarray as xr
 
     class OptionalModule(TestModule):
-        optional_vars = ["rho_atm"]
+        _optional_vars = ["rho_atm"]
 
     cache = CacheStore(tmp_path)
     module = OptionalModule(cache=cache)
@@ -369,3 +371,68 @@ def test_optional_vars_enter_the_key_only_when_present(tmp_path, scene):
     assert plain != keyed, "an optional input present must change the key"
     assert keyed != module._cache_key(other), "two values, two keys"
     assert plain == module._cache_key(scene.shallow_copy())
+
+
+# --- Port binding ---
+
+
+def test_rename_puts_an_output_in_its_own_slot(tmp_path, scene):
+    """An estimate must be able to sit beside the truth it estimates.
+
+    `Unif2Surface` writes `rho_s`, which is also the name of the ground
+    truth, so a scene carrying both used to lose one of them.  Naming
+    the slot separates them without touching the module's own roles.
+    """
+    from _test_module import TestModule as TM
+
+    truth = scene[S2Band.B02]["rho_s"].copy()
+
+    estimated = TM(cache=CacheStore(tmp_path), rename={"rho_toa": "rho_toa_king"})
+    out = estimated(scene)
+
+    assert "rho_toa_king" in out[S2Band.B02]
+    assert "rho_toa" not in out[S2Band.B02]
+    np.testing.assert_array_equal(out[S2Band.B02]["rho_s"].values, truth.values)
+
+
+def test_rename_does_not_split_the_cache(tmp_path, scene):
+    """Two slots, one computation, one entry.
+
+    Where the result is written changes nothing to what is computed, so
+    a rename must not send the two runs to different cache entries.
+    """
+    from _test_module import TestModule as TM
+
+    cache = CacheStore(tmp_path)
+    plain = TM(cache=cache)
+    renamed = TM(cache=cache, rename={"rho_toa": "elsewhere"})
+
+    assert plain._cache_key(scene) == renamed._cache_key(scene)
+
+    computed = plain(scene)[S2Band.B02]["rho_toa"]
+    reread = renamed(scene)[S2Band.B02]["elsewhere"]
+
+    np.testing.assert_array_equal(reread.values, computed.values)
+
+
+def test_rename_rejects_a_role_the_module_does_not_have(tmp_path):
+    """A typo in a role name must fail at construction, naming the roles."""
+    from _test_module import TestModule as TM
+
+    with pytest.raises(ConfigurationError, match="rho_s"):
+        TM(cache=CacheStore(tmp_path), rename={"rho_ss": "elsewhere"})
+
+
+def test_rename_also_redirects_an_input(tmp_path, scene):
+    """Reading is renamed the same way writing is."""
+    from _test_module import TestModule as TM
+
+    ds = scene[S2Band.B02]
+    ds["rho_s_king"] = ds["rho_s"] * 0.5
+    module = TM(cache=CacheStore(tmp_path), rename={"rho_s": "rho_s_king"})
+
+    out = module(scene)[S2Band.B02]
+
+    np.testing.assert_allclose(
+        out["rho_toa"].values, (ds["rho_s_king"] + 0.05).values
+    )
