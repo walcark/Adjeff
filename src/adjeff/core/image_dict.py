@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Hashable
 
 import numpy as np
-import structlog
 import xarray as xr
 
 from adjeff.exceptions import MissingVariableError
 
+from .._logging import get_logger
 from .bands import SensorBand
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class ImageDict:

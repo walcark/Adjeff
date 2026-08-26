@@ -7,13 +7,14 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import structlog
 import xarray as xr
+
+from .._logging import get_logger
 
 if TYPE_CHECKING:
     from adjeff.core import ImageDict, SensorBand
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class CacheStore:

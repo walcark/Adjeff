@@ -7,13 +7,13 @@ from typing import Any, Literal
 
 import numpy as np
 import rasterio
-import structlog
 import xarray as xr
 
 from adjeff.core import SensorBand
 from adjeff.exceptions import ConfigurationError, ImageIOError
 from adjeff.utils import CacheStore
 
+from ..._logging import get_logger
 from .product_loader import (
     AtmosphereMixin,
     ElevationMixin,
@@ -21,7 +21,7 @@ from .product_loader import (
     ProductLoader,
 )
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class MajaLoader(

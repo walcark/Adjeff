@@ -9,16 +9,16 @@ Dataset, is shared here rather than copied once per generator.
 from collections.abc import Callable
 
 import numpy as np
-import structlog
 import xarray as xr
 
 from adjeff.exceptions import ConfigurationError
 from adjeff.utils.xrutils import square_grid
 
+from .._logging import get_logger
 from .bands import S2Band, SensorBand
 from .image_dict import ImageDict
 
-logger = structlog.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _resolve_n(

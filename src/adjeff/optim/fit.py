@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import structlog
 import xarray as xr
 
 from adjeff.core.bands import SensorBand
 from adjeff.core.psf_tree import psf_tree, write_band
 from adjeff.modules.scene_module import TrainableSceneModule
 
+from .._logging import get_logger
 from ._combo_stage import _ComboStage, restore_all_params, save_all_params
 from ._config import OptimizerConfig
 from .adam_optimizer import AdamConfig, AdamStage
@@ -23,7 +23,7 @@ from .training_set import (
     training_set,
 )
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 __all__ = ["fit", "default_stages"]
 

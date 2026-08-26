@@ -26,7 +26,6 @@ stays reachable through its own submodule, e.g.
   :func:`grid`.
 - :mod:`.smartgutils`: :func:`make_sensors`,
   :func:`compute_optical_depth`, :func:`adapt_smartg_output`.
-- :mod:`.logger`: :class:`MultilineConsoleRenderer`.
 """
 
 from .cache_store import CacheStore

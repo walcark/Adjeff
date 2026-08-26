@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import joblib  # type: ignore[import-untyped]
 import numpy as np
-import structlog
 import torch
 import torch.nn as nn
 import xarray as xr
@@ -17,12 +16,14 @@ from adjeff.exceptions import ComputationError, ConfigurationError
 from adjeff.utils import CacheStore
 from adjeff.utils._config import _Config
 
+from .._logging import get_logger
+
 if TYPE_CHECKING:
     from adjeff.core import ImageDict
     from adjeff.core._psf import PSFModule
     from adjeff.core.bands import SensorBand
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class SceneModule:

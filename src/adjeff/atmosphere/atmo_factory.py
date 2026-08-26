@@ -1,13 +1,14 @@
 """Functions to instantiate a multi-profile atmosphere."""
 
 import numpy as np
-import structlog
 import xarray as xr
 from luts.luts import MLUT  # type: ignore[import-untyped]
 
 from adjeff.exceptions import ConfigurationError, MissingVariableError
 
-logger = structlog.get_logger(__name__)
+from .._logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def create_atmosphere(
