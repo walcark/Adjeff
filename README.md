@@ -750,6 +750,14 @@ pixi run -e notebooks-gpu jupyter lab notebooks/
 
 ## 17. Roadmap
 
-- **Output provenance** — a signing mechanism so every `DataArray` carries a record of the module and parameters that produced it; the `.adjeff` accessor would expose this lineage.
-- **Partial cache reuse** — when only a subset of bands or parameter combinations is missing from the cache, recompute only the missing entries rather than the full set.
-- **Extended notebook tutorials** — loading MAJA L2A products, building custom `SceneModule` subclasses, end-to-end correction workflow.
+- **Integrating the PSF over the central pixels, rather than sampling it there.** A tap of a discrete convolution is the integral of the profile over one pixel: writing the continuous convolution over an image that is constant per pixel gives `rho_env(x_i) = sum_j rho_unif(x_j) * integral over cell j of P(x_i - x')`. Sampling the profile at the pixel's centre stands in for that integral, and stands in well from the first neighbour outwards, within 0.4 % for a generalised Gaussian at `n = 0.2`. It does not at the centre pixel, where a kernel sharp against the grid varies by orders of magnitude across one cell: measured against the true cell average, the centre tap is 8 % too high for a Gaussian of `sigma = 0.33 km` on a 0.1 km grid and 550 % too high for a King profile of `sigma = 0.01 km` on the same one. The criterion is not the family of the kernel but how much of its energy falls inside one pixel.
+
+  Sub-sampling a 33x33 patch at 16x16 and the centre pixel alone at 256x256 puts every tap within 0.5 % of its cell average even in the sharpest regime, and measures at under 2 % of a training step. It is nonetheless **not** done, for a reason worth keeping in view: the fitted parameters absorb the bias, so a kernel truer to the continuous physics does not automatically fit this discrete problem better. What would settle it is a measurement rather than an argument — fit at two resolutions with and without, then compare the loss reached and how far `(sigma, n)` move between grids. The details and the numbers are in `PSFModule`'s docstring.
+
+  The gradient, which is a separate matter, is fixed: see `radial_power`.
+
+- **Provenance of the parameters, not only of the module.** Every output `DataArray` already carries `_adjeff_provenance` with the module that produced it and its cache key, which is what lets a downstream hash address it. What it does not carry is the parameters that module ran with, and the `.adjeff` accessor exposes none of it. Reading a cached result back therefore says where it came from but not under what atmosphere.
+
+- **Partial cache reuse.** A cache entry is addressed by one key covering the whole call, and `load_vars` returns nothing unless every band and every variable is present. Adding one band or one atmospheric combination changes the key and recomputes the rest along with it.
+
+- **A notebook on writing a `SceneModule`.** The six notebooks cover creating scenes, configuring an atmosphere, computing radiative quantities, simulating `rho_toa`, reading a MAJA L2A product and learning a PSF. Extending the package with a module of one's own is documented in section 6 but nowhere worked through end to end.
