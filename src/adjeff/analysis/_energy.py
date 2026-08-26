@@ -58,8 +58,10 @@ def encircled_energy(kernel: xr.DataArray) -> xr.DataArray:
     Returns
     -------
     xr.DataArray
-        Cumulated energy against radius, with dim ``"r"``, rising to one
-        at the edge of the grid.
+        Cumulated energy against radius, with dim ``"r"``, starting at
+        zero and rising to one at the edge of the grid.  The radii are
+        the bin edges: each value is the energy enclosed by that radius,
+        which is what makes the curve invertible.
 
     Notes
     -----
@@ -72,7 +74,7 @@ def encircled_energy(kernel: xr.DataArray) -> xr.DataArray:
     return xr.DataArray(
         grid.cdf(values).numpy(),
         dims=["r"],
-        coords={"r": grid.centres.numpy()},
+        coords={"r": grid.edges.numpy()},
     )
 
 

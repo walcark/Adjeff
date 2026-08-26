@@ -126,9 +126,19 @@ def test_radial_upsample(flat_da):
 
 
 def test_radial_cdf_normalized(flat_da):
-    """radial_cdf with normalize=True ends at 1.0."""
+    """radial_cdf reports the energy enclosed by each radius it names.
+
+    On a constant field that fraction is the area ratio, so the curve
+    must follow ``(r / r_max)**2``.  Its last sample sits at the centre
+    of the outermost annulus, short of the radius the normalisation is
+    taken at, so it lands below one rather than on it.
+    """
     cdf = flat_da.adjeff.radial("cdf")
-    assert cdf.values[-1] == pytest.approx(1.0, abs=1e-5)
+    r = cdf.coords["r"].values
+    r_max = r[-1] + 0.5 * (r[-1] - r[-2])
+    expected = (r / r_max) ** 2
+    assert cdf.values == pytest.approx(expected, abs=0.02)
+    assert cdf.values[-1] < 1.0
 
 
 def test_radial_cdf_monotone(flat_da):

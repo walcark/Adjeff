@@ -10,6 +10,8 @@ import xarray as xr
 from adjeff.utils.radial import (
     RadialBinning,
     annulus_areas,
+    cumulate,
+    edges_from_centres,
     natural_npix,
     radial_distances,
 )
@@ -181,18 +183,37 @@ def test_binning_cdf_of_a_flat_field_grows_as_the_area():
     """Integrating a constant must give the disc area, normalised."""
     binning = RadialBinning.on_square_grid(64, 1.0)
     cdf = binning.cdf(torch.ones(64 * 64))
+    assert cdf.shape == (binning.n_bins + 1,)
+    assert cdf[0].item() == 0.0
     assert cdf[-1].item() == pytest.approx(1.0)
     half = binning.radius_at(cdf, 0.5)
-    edge = float(binning.centres[-1])
-    assert half == pytest.approx(edge / np.sqrt(2), rel=0.05)
+    edge = float(binning.edges[-1])
+    assert half == pytest.approx(edge / np.sqrt(2), rel=0.02)
 
 
 def test_annulus_areas_tile_the_disc():
-    """The areas must telescope to the disc they span, without overlap."""
-    centres = torch.linspace(0.0, 10.0, 11)
-    area = annulus_areas(centres)
-    assert float(area.sum()) == pytest.approx(np.pi * (10.5**2 - 0.5**2), rel=1e-5)
-    # The innermost annulus is symmetric around zero, so it weighs
-    # nothing: the centre bin does not contribute to a cumulated energy.
-    assert float(area[0]) == pytest.approx(0.0, abs=1e-6)
-    assert (area[1:] > 0).all()
+    """The areas must telescope to the disc their edges span."""
+    edges = torch.linspace(0.0, 10.0, 11)
+    area = annulus_areas(edges)
+    assert float(area.sum()) == pytest.approx(np.pi * 10.0**2, rel=1e-5)
+    assert (area > 0).all()
+
+
+def test_edges_from_centres_never_goes_negative():
+    """A reconstructed inner edge is clamped at zero, radii being positive."""
+    edges = edges_from_centres(torch.linspace(0.0, 10.0, 11))
+    assert float(edges[0]) == 0.0
+    assert float(edges[-1]) == pytest.approx(10.5)
+    assert (edges[1:] > edges[:-1]).all()
+
+
+def test_cumulate_starts_at_zero_and_closes_at_one():
+    """The cumulated energy is read at the edges, one point more than bins."""
+    edges = torch.linspace(0.0, 10.0, 11)
+    cdf = cumulate(torch.ones(10), edges)
+    assert cdf.shape == (11,)
+    assert float(cdf[0]) == 0.0
+    assert float(cdf[-1]) == pytest.approx(1.0)
+    # A constant field cumulates as the area, hence as the radius squared.
+    expected = (edges / edges[-1]) ** 2
+    assert torch.allclose(cdf, expected, atol=1e-6)

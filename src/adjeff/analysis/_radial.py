@@ -18,8 +18,8 @@ from adjeff.utils.radial import (
     RadialBinning,
     _profile_to_field,
     _sample_radial_from_cdf,
-    annulus_areas,
     cumulate,
+    edges_from_centres,
     natural_npix,
     radial_distances,
 )
@@ -143,9 +143,13 @@ def _radial_profile(
             torch.from_numpy(mean_profile.values.astype(np.float32)),
             min=0.0,
         )
-        cdf = cumulate(f, annulus_areas(r), normalize=normalize)
+        # The cumulated energy belongs to the outer edge of each
+        # annulus, so it is built there and read back on the profile's
+        # own abscissa, which keeps the shape the other statistics have.
+        edges = edges_from_centres(r)
+        at_edges = cumulate(f, edges, normalize=normalize)
         return xr.DataArray(
-            cdf.numpy(),
+            np.interp(r.numpy(), edges.numpy(), at_edges.numpy()).astype(np.float32),
             dims=mean_profile.dims,
             coords=mean_profile.coords,
         )
