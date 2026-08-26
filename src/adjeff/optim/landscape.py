@@ -14,13 +14,13 @@ false for everything but that one pair.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 
 import numpy as np
 import torch
 from tqdm import tqdm  # type: ignore[import-untyped]
 
+from adjeff.analysis import encircled_radii
 from adjeff.core import SensorBand
 from adjeff.core._psf import PSFModule
 from adjeff.modules.models.unif2surface import _rho_s_from_rho_env
@@ -198,57 +198,11 @@ def energy_radius_landscape(
         Values are 1-D arrays of length ``len(psf_modules)``.
         The caller is responsible for reshaping to a parameter grid.
     """
-    if fractions is None:
-        fractions = [0.10, 0.50, 0.99]
-
-    keys = [f"EE{int(f * 100)}%" for f in fractions]
-
     if not psf_modules:
-        return {k: np.array([], dtype=np.float32) for k in keys}
-
-    # All PSFs in a landscape scan share the same grid.  Compute the radial
-    # binning structure (pixel→bin mapping, bin counts, area weights) once
-    # and reuse it for every kernel, avoiding O(N_psf) redundant meshgrid
-    # and xarray operations.
+        return encircled_radii([], n=0, res=1.0, fractions=fractions)
     grid = psf_modules[0].grid
-    n = grid.n
-    npix = max(int((n - 1) / math.sqrt(2)) - 1, 2)
-
-    half = (n // 2) * grid.res
-    coords_1d = np.linspace(-half, half, n, dtype=np.float32)
-    XX, YY = np.meshgrid(coords_1d, coords_1d)
-    rr = torch.from_numpy(np.sqrt(XX**2 + YY**2).ravel())
-
-    bins = torch.linspace(0.0, float(rr.max()), npix + 1)
-    inds = (torch.bucketize(rr, bins, right=False) - 1).clamp(0, npix - 1)
-    counts = torch.bincount(inds, minlength=npix).float()
-    bin_mask = counts > 0
-
-    r_centers = (0.5 * (bins[:-1] + bins[1:])).clone()
-    r_centers[0] = 0.0
-    dr = r_centers[1:] - r_centers[:-1]
-    edges = torch.empty(npix + 1, dtype=r_centers.dtype)
-    edges[1:-1] = 0.5 * (r_centers[:-1] + r_centers[1:])
-    edges[0] = r_centers[0] - 0.5 * dr[0]
-    edges[-1] = r_centers[-1] + 0.5 * dr[-1]
-    area = math.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
-
-    r_np = r_centers.numpy()
-    ee: dict[str, list[float]] = {k: [] for k in keys}
-
     with torch.no_grad():
-        for psf in tqdm(psf_modules, total=len(psf_modules)):
-            vv = psf.forward().detach().cpu().ravel().clamp(min=0.0)
-            sum_vals = torch.bincount(inds, weights=vv, minlength=npix)
-            mean_vals = torch.zeros(npix, dtype=torch.float32)
-            mean_vals[bin_mask] = sum_vals[bin_mask] / counts[bin_mask]
-            cdf = torch.cumsum(mean_vals * area, dim=0)
-            if cdf[-1] > 0:
-                cdf = cdf / cdf[-1]
-            cdf_np = cdf.numpy()
-
-            for frac, key in zip(fractions, keys):
-                idx = min(int(np.searchsorted(cdf_np, frac)), npix - 1)
-                ee[key].append(float(r_np[idx]))
-
-    return {k: np.array(v, dtype=np.float32) for k, v in ee.items()}
+        kernels = [psf.forward() for psf in tqdm(psf_modules)]
+    return encircled_radii(
+        kernels, n=grid.n, res=grid.res, fractions=fractions
+    )

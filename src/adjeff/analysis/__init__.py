@@ -13,9 +13,21 @@ A generic 1-D FFT, a power spectral density, a Wiener filter do not.
 ``scipy.signal`` exists.
 """
 
+from ._energy import (
+    encircled_energy,
+    encircled_radii,
+    encircled_radius,
+    fwhm,
+    mtf,
+)
 from ._radial import radial_profile, resolution, to_field, transect
 
 __all__ = [
+    "encircled_energy",
+    "encircled_radii",
+    "encircled_radius",
+    "fwhm",
+    "mtf",
     "radial_profile",
     "resolution",
     "to_field",
