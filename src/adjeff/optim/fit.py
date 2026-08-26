@@ -178,10 +178,10 @@ def fit(
                 stacked_params[band] = band_params
 
     logger.info(
-        "optimisation complete",
-        n_combos=len(combos),
-        n_bands=len(bands),
-        bands=[str(b) for b in bands],
+        "fit.done",
+        combos=len(combos),
+        bands=len(bands),
+        optimisations=total,
     )
     if zpath is not None:
         tree: xr.DataTree = xr.open_datatree(zpath, engine="zarr")

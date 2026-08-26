@@ -32,12 +32,16 @@ def project_all_params(model: TrainableSceneModule) -> None:
             project()
 
 
-def _loss_delta(previous: float, current: float, step: int) -> str:
-    """Return a formatted relative loss change string, or '' on first step."""
+def _loss_delta(previous: float, current: float, step: int) -> float | None:
+    """Return the relative loss change in percent, or ``None`` on the first step.
+
+    A number rather than the formatted string it used to be: a log line
+    that carries it as data can be filtered on, plotted, or written out
+    as JSON, which is the whole point of logging key-values.
+    """
     if step == 0 or previous >= float("inf"):
-        return ""
-    pct = 100.0 * (previous - current) / max(abs(previous), 1e-9)
-    return f"  Δ={pct:+.1f}%"
+        return None
+    return 100.0 * (previous - current) / max(abs(previous), 1e-9)
 
 
 # ---------------------------------------------------------------------------

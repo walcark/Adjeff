@@ -98,9 +98,9 @@ class CacheStore:
                 shutil.move(str(tmp_path), str(dest))
 
             logger.debug(
-                "Scene was saved to cache.",
+                "cache.write",
                 key=key[:8],
-                band=band,
+                band=str(band),
                 vars=variables,
                 path=str(dest),
             )
@@ -141,13 +141,13 @@ class CacheStore:
         for band in bands:
             path = self._cache_dir / key / f"{band}.zarr"
             if not path.exists():
-                logger.debug("cache miss", key=key[:8], band=band)
+                logger.debug("cache.miss", key=key[:8], band=str(band))
                 return None
             try:
                 ds = xr.open_zarr(path)
             except Exception:
                 logger.warning(
-                    "failed to load from cache",
+                    "cache.unreadable",
                     key=key[:8],
                     band=band,
                     path=str(path),
@@ -160,11 +160,16 @@ class CacheStore:
             # scene silently short of an output, flagged as a cache hit.
             absent = [var for var in variables if var not in ds]
             if absent:
-                logger.debug("cache miss", key=key[:8], band=band, missing=absent)
+                logger.debug("cache.miss", key=key[:8], band=str(band), missing=absent)
                 return None
             result[band] = {var: ds[var] for var in variables}
 
-        logger.debug("Cache was hit.", key=key[:8], bands=bands, vars=variables)
+        # Kept at debug although the plan called for info: `module.done`
+        # already carries `cached=`, at info, once per module.  This fires
+        # twice per module, the second time when the outputs are reloaded
+        # as lazy views, so promoting it would report the same fact three
+        # times.
+        logger.debug("cache.hit", key=key[:8], bands=len(bands), vars=variables)
         return result if result else None
 
     def clear(self) -> None:

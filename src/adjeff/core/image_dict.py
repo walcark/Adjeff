@@ -92,7 +92,7 @@ class ImageDict:
                     written.append(path)
 
             logger.debug(
-                "Saved DataArray to .npy file",
+                "scene.write_npy",
                 var=var,
                 band=band,
                 path=str(directory),

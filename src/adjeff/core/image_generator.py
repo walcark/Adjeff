@@ -124,7 +124,7 @@ def _analytical_image_dict(
     them; *model* and *params* describe it well enough to redraw it.
     The remaining arguments are the ones the public generators document.
     """
-    logger.debug("Creating analytical ImageDict.", model=model, bands=bands)
+    logger.debug("scene.generate", model=model, bands=len(bands))
 
     band_datasets: dict[SensorBand, xr.Dataset] = {}
     for band, coords in _band_grids(bands, res_km, n, extent_km).items():
@@ -136,8 +136,8 @@ def _analytical_image_dict(
         )
         band_datasets[band] = xr.Dataset({var: values})
         logger.debug(
-            "Created analytical image.",
-            band=band,
+            "scene.generate_band",
+            band=str(band),
             var=var,
             model=model,
             n=coords["x"].size,
@@ -333,8 +333,8 @@ def random_image_dict(
     """
     rng = np.random.default_rng(seed)
     logger.debug(
-        "Creating random ImageDict",
-        bands=bands,
+        "scene.generate_random",
+        bands=len(bands),
         variables=variables,
         seed=seed,
     )

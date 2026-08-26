@@ -319,3 +319,78 @@ def test_every_scene_module_brackets_its_work(caplog):
     assert done["bands"] == 1
     assert "duration_s" in done
     assert done["cached"] is False
+
+
+# --- the object.action convention, checked rather than trusted ---
+
+#: `object.action`, lowercase, dot-separated, no space and no full stop.
+EVENT_NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
+
+#: `_logging` builds `<event>.start` and `<event>.done` from its argument,
+#: so its f-strings are the mechanism rather than a violation of it.
+CONVENTION_EXEMPT = {"_logging.py"}
+
+LOG_METHODS = {"debug", "info", "warning", "error", "exception", "critical"}
+
+
+def log_calls():
+    """Yield every log call in the package as (file, line, first argument)."""
+    import ast
+    from pathlib import Path
+
+    import adjeff
+
+    root = Path(adjeff.__file__).parent
+    for path in sorted(root.rglob("*.py")):
+        if path.name in CONVENTION_EXEMPT:
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr not in LOG_METHODS:
+                continue
+            if not isinstance(func.value, ast.Name):
+                continue
+            if func.value.id not in {"logger", "log", "_log"}:
+                continue
+            first = node.args[0] if node.args else None
+            yield path.relative_to(root), node.lineno, first
+
+
+def test_the_package_actually_logs_something():
+    """A guard on the guards below: an empty walk would pass everything."""
+    assert len(list(log_calls())) >= 15
+
+
+def test_no_log_message_is_built_by_interpolation():
+    """A pre-formatted string cannot be filtered, plotted, or serialised.
+
+    It is the one thing that undoes structlog, and `optim/fit.py` and both
+    optimisers used to do it on the hottest path in the package.
+    """
+    import ast
+
+    offenders = [
+        f"{path}:{line}"
+        for path, line, arg in log_calls()
+        if isinstance(arg, (ast.JoinedStr, ast.BinOp))
+    ]
+
+    assert not offenders, f"f-string log messages at {offenders}"
+
+
+def test_every_log_message_follows_the_convention():
+    """`objet.action`: lowercase, dotted, no space, no full stop."""
+    import ast
+
+    offenders = [
+        f"{path}:{line} {arg.value!r}"
+        for path, line, arg in log_calls()
+        if isinstance(arg, ast.Constant)
+        and isinstance(arg.value, str)
+        and not EVENT_NAME.match(arg.value)
+    ]
+
+    assert not offenders, f"messages off convention: {offenders}"

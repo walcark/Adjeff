@@ -201,9 +201,10 @@ class MajaLoader(
         if rh_str is not None:
             rh_val: float = float(rh_str)
         else:
-            logger.info(
-                "Relative humidity not found, default to 50%.",
+            logger.warning(
+                "maja.rh_defaulted",
                 path=self.product_path.name,
+                rh=50.0,
             )
             rh_val = 50.0
         rh_arr = np.atleast_1d(rh_val)

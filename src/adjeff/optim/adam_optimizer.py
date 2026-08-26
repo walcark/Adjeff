@@ -74,8 +74,12 @@ class AdamStage(_ComboStage):
 
             delta = _loss_delta(self.previous_loss, loss, self.nloop)
             logger.info(
-                f"Adam  {self.nloop + 1}/{self.config.max_steps}"
-                f"  loss={loss:.4g}{delta}"
+                "fit.step",
+                optimizer="adam",
+                step=self.nloop + 1,
+                of=self.config.max_steps,
+                loss=loss,
+                delta_pct=delta,
             )
 
             if loss < self.best_loss:

@@ -154,5 +154,5 @@ class WuPsfSampler(SweepSampler):
         for band in scene.bands:
             arr = self._sweep(rho_s=scene[band], band=band)
             scene[band][self._slot("psf_atm")] = self._restore_coords(arr, scene[band])
-            logger.info("Computed atmospheric PSF.", dims=arr.dims, band=band)
+            logger.debug("wu_psf.done", dims=list(arr.dims), band=str(band))
         return scene

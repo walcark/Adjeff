@@ -107,7 +107,7 @@ class LBFGSStage(_ComboStage):
                 # thousands of fits.  The log line is the one that counts
                 # them, hence `warning` and not `info`.
                 msg = "L-BFGS line search degenerated, stopping early."
-                logger.warning(msg, step=self.nloop)
+                logger.warning("fit.linesearch_stalled", detail=msg, step=self.nloop)
                 warnings.warn(msg, OptimizationWarning, stacklevel=2)
                 break
             loss = float(loss_tensor.item())
@@ -116,8 +116,12 @@ class LBFGSStage(_ComboStage):
 
             delta = _loss_delta(self.previous_loss, loss, self.nloop)
             logger.info(
-                f"L-BFGS  {self.nloop + 1}/{self.config.max_steps}"
-                f"  loss={loss:.4g}{delta}"
+                "fit.step",
+                optimizer="lbfgs",
+                step=self.nloop + 1,
+                of=self.config.max_steps,
+                loss=loss,
+                delta_pct=delta,
             )
 
             if loss < self.best_loss:
