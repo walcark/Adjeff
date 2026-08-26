@@ -180,8 +180,18 @@ class PSFConvModule(TrainableSceneModule):
         """Xarray inference, extra dims handled by broadcasting."""
         for band in scene.bands:
             ds = scene[band]
+            source = ds[self._slot(self._conv_input)]
+            # The FFT convolution is the expensive half of an inference
+            # pass and had no line of its own: on a large scene the module
+            # was silent for as long as the convolution took.
+            self._log.debug(
+                "psf.convolve",
+                band=str(band),
+                shape=tuple(source.sizes.values()),
+                device=self._device,
+            )
             rho_env = fft_convolve_2D(
-                ds[self._slot(self._conv_input)].compute(),
+                source.compute(),
                 self._kernel_for(band),
                 padding="reflect",
                 conv_type="same",
