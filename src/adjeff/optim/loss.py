@@ -44,13 +44,8 @@ class Loss:
         losses = []
         for sample in train_set:
             pred = forward_fn(sample.inputs)
-            mask = (
-                sample.inputs.get("rho_unif")
-                if self.mask_on == "rho_unif"
-                else None
-            )
+            mask = sample.inputs.get("rho_unif") if self.mask_on == "rho_unif" else None
             losses.append(
-                self.metric(pred, sample.target, sample.dist, mask)
-                * sample.weight
+                self.metric(pred, sample.target, sample.dist, mask) * sample.weight
             )
         return torch.stack(losses).sum()

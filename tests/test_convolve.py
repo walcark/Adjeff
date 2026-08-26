@@ -1,6 +1,7 @@
-import pytest
+"""Tests for the FFT convolution helpers."""
 
 import numpy as np
+import pytest
 import scipy
 import torch
 import xarray as xr

@@ -104,9 +104,7 @@ def _residual(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
     return (tensor1 - tensor2) / _get_scale(tensor1, tensor2)
 
 
-def _rad_weights(
-    dists: torch.Tensor, mask_tensor: torch.Tensor | None
-) -> torch.Tensor:
+def _rad_weights(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:
     w = radial_weights(dists)
     if mask_tensor is not None:
         w = w * radial_mask(mask_tensor, dists, _MASK_THRESHOLD).float()

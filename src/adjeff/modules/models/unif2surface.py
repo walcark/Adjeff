@@ -18,14 +18,10 @@ def _rho_s_from_rho_env(
     the effective environment reflectance seen by the sensor::
 
         frac = (1 - rho_env * sph_alb) / (1 - rho_unif * sph_alb)
-        rho_s = (
-            rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up
-        ) / tdir_up
+        rho_s = (rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up) / tdir_up
     """
     frac = (1 - rho_env * sph_alb) / (1 - rho_unif * sph_alb)
-    return (
-        rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up
-    ) / tdir_up
+    return (rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up) / tdir_up
 
 
 class Unif2Surface(PSFConvModule):
@@ -40,9 +36,7 @@ class Unif2Surface(PSFConvModule):
        ``rho_env``::
 
            frac = (1 - rho_env * sph_alb) / (1 - rho_unif * sph_alb)
-           rho_s = (
-               rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up
-           ) / tdir_up
+           rho_s = (rho_unif * (tdir_up + tdif_up) * frac - rho_env * tdif_up) / tdir_up
 
     Required variables (per band): ``rho_unif``, ``tdir_up``,
     ``tdif_up``, ``sph_alb``.

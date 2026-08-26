@@ -53,13 +53,9 @@ def _resolve_n(
         raise ConfigurationError("`n` and `extent_km` are mutually exclusive.")
 
     if extent_km is not None:
-        _res = (
-            res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-        )
+        _res = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
         if isinstance(extent_km, dict):
-            return {
-                band: round(extent_km[band] / _res[band]) for band in bands
-            }
+            return {band: round(extent_km[band] / _res[band]) for band in bands}
         return {band: round(extent_km / _res[band]) for band in bands}
 
     assert n is not None
@@ -140,9 +136,7 @@ def gaussian_image_dict(
     """
     logger.debug("Creating Gaussian ImageDict.", bands=bands)
 
-    _res_km = (
-        res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-    )
+    _res_km = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
     band_n = _resolve_n(bands, res_km, n, extent_km)
     band_datasets: dict[SensorBand, xr.Dataset] = {}
 
@@ -240,9 +234,7 @@ def disk_image_dict(
     """
     logger.debug("Creating Disk ImageDict.", bands=bands)
 
-    _res_km = (
-        res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-    )
+    _res_km = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
     band_n = _resolve_n(bands, res_km, n, extent_km)
     band_datasets: dict[SensorBand, xr.Dataset] = {}
 
@@ -327,9 +319,7 @@ def random_image_dict(
         filled with uniform random float32 values in ``[0, 1)``.
 
     """
-    _res_km = (
-        res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-    )
+    _res_km = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
     band_n = _resolve_n(bands, res_km, n, extent_km)
     rng = np.random.default_rng(seed)
     logger.debug(

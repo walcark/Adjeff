@@ -96,8 +96,7 @@ class AdjeffDataArrayAccessor:
             if name in self._da.coords:
                 return name
         raise AdjeffAccessorError(
-            "No spatial x-coordinate found. "
-            "Expected 'x' or 'x_psf' in coordinates."
+            "No spatial x-coordinate found. Expected 'x' or 'x_psf' in coordinates."
         )
 
     @property
@@ -186,9 +185,7 @@ class AdjeffDataArrayAccessor:
 
         if stat == "cdf":
             mean_profile = self.radial("mean", center, n_bins)
-            r = torch.from_numpy(
-                mean_profile.coords["r"].values.astype(np.float32)
-            )
+            r = torch.from_numpy(mean_profile.coords["r"].values.astype(np.float32))
             f = torch.clamp(
                 torch.from_numpy(mean_profile.values.astype(np.float32)),
                 min=0.0,
@@ -235,14 +232,11 @@ class AdjeffDataArrayAccessor:
             else:
                 profile = self.radial("mean", center=center, n_bins=n_bins)
             r_vals = _sample_radial_from_cdf(profile, n, max_gap=max_gap)
-            values = np.interp(
-                r_vals, profile.coords["r"].values, profile.values
-            )
+            values = np.interp(r_vals, profile.coords["r"].values, profile.values)
             return xr.DataArray(values, dims=["r"], coords={"r": r_vals})
 
         raise AdjeffAccessorError(
-            f"Unknown stat={stat!r}. "
-            "Valid options: 'mean', 'cdf', 'std', 'adaptive'."
+            f"Unknown stat={stat!r}. Valid options: 'mean', 'cdf', 'std', 'adaptive'."
         )
 
     def transect(

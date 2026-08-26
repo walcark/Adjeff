@@ -56,9 +56,7 @@ class TdirDownSampler(SweepSampler):
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["tdir_down"]
-    contract: ClassVar[str] = (
-        "batch(aot, rh, h, href, sza) vec(wl) -> tdir_down(wl)"
-    )
+    contract: ClassVar[str] = "batch(aot, rh, h, href, sza) vec(wl) -> tdir_down(wl)"
     point_fn: ClassVar[Callable[..., Any]] = staticmethod(tdir_down)
 
     def __init__(

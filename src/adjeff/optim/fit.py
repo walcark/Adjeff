@@ -101,17 +101,13 @@ def fit(
         One group per band, holding the kernel stacked over every combo
         plus the fitted parameters.
     """
-    runs = _stages_from_configs(
-        stages if stages is not None else default_stages(loss)
-    )
+    runs = _stages_from_configs(stages if stages is not None else default_stages(loss))
     zpath = Path(store) if store is not None else None
     inputs = model.required_vars
     target = model.output_vars[0]
     bands: list[SensorBand] = [psf.band for psf in model.psf_modules.values()]
 
-    combos = list(
-        iterate_broadcasted_dims(train_images, inputs, target, bands[0])
-    )
+    combos = list(iterate_broadcasted_dims(train_images, inputs, target, bands[0]))
     initial = save_all_params(model)
 
     # Kernels are captured as each combo finishes rather than replayed
@@ -120,9 +116,9 @@ def fit(
     kernels: dict[SensorBand, list[tuple[dict[str, float], xr.DataArray]]] = {
         band: [] for band in bands
     }
-    params: dict[
-        SensorBand, dict[str, list[tuple[dict[str, float], float]]]
-    ] = {band: {} for band in bands}
+    params: dict[SensorBand, dict[str, list[tuple[dict[str, float], float]]]] = {
+        band: {} for band in bands
+    }
 
     total = len(combos) * len(bands)
     done = 0
@@ -130,9 +126,7 @@ def fit(
         for band in bands:
             done += 1
             label = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
-            logger.info(
-                f"combo {done}/{total}", params=label or "-", band=str(band)
-            )
+            logger.info(f"combo {done}/{total}", params=label or "-", band=str(band))
 
             data = training_set(
                 train_images, inputs, target, band, device=device, **combo
@@ -165,13 +159,10 @@ def fit(
     for band in bands:
         kernel = _stack(kernels[band], name="kernel")
         band_params = {
-            name: _stack_scalars(values)
-            for name, values in params[band].items()
+            name: _stack_scalars(values) for name, values in params[band].items()
         }
         if zpath is not None:
-            write_band(
-                zpath / band.id, xr.Dataset({"kernel": kernel, **band_params})
-            )
+            write_band(zpath / band.id, xr.Dataset({"kernel": kernel, **band_params}))
             del kernel
         else:
             stacked[band] = kernel
@@ -217,9 +208,7 @@ def _stack(
         for dim, value in combo.items():
             array = array.expand_dims({dim: [value]})
         datasets.append(array.to_dataset(name=name))
-    combined: xr.DataArray = xr.combine_by_coords(
-        datasets, combine_attrs="drop"
-    )[name]
+    combined: xr.DataArray = xr.combine_by_coords(datasets, combine_attrs="drop")[name]
     return combined
 
 
@@ -227,6 +216,4 @@ def _stack_scalars(
     values: list[tuple[dict[str, float], float]],
 ) -> xr.DataArray:
     """Stack per-combo scalar parameter values into one array."""
-    return _stack(
-        [(combo, xr.DataArray(value)) for combo, value in values], name="p"
-    )
+    return _stack([(combo, xr.DataArray(value)) for combo, value in values], name="p")

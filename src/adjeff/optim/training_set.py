@@ -148,9 +148,7 @@ def iterate_broadcasted_dims(
 
         current_coords = [broadcasted.coords[dim] for dim in dims]
         coords = current_coords if not coords else coords
-        diff = [
-            bool((c1 != c2).any()) for c1, c2 in zip(coords, current_coords)
-        ]
+        diff = [bool((c1 != c2).any()) for c1, c2 in zip(coords, current_coords)]
         if any(diff):
             raise ConfigurationError(
                 "Mismatching coordinates between trained ImageDicts."
@@ -213,17 +211,13 @@ def training_set(
     """
     ipts: list[dict[str, torch.Tensor]] = [
         {
-            name: _safe_sel(im[band][name], params)
-            .adjeff.to_tensor()
-            .to(device=device)
+            name: _safe_sel(im[band][name], params).adjeff.to_tensor().to(device=device)
             for name in input_names
         }
         for im in train.images
     ]
     tgts: list[torch.Tensor] = [
-        _safe_sel(im[band][target_name], params)
-        .adjeff.to_tensor()
-        .to(device=device)
+        _safe_sel(im[band][target_name], params).adjeff.to_tensor().to(device=device)
         for im in train.images
     ]
     dists: list[torch.Tensor] = [

@@ -129,9 +129,7 @@ def adapt_smartg_output(
             res = res.rename(present)
 
     if coords:
-        res = res.assign_coords(
-            {k: v for k, v in coords.items() if k in res.dims}
-        )
+        res = res.assign_coords({k: v for k, v in coords.items() if k in res.dims})
 
     for dim, values in (expand or {}).items():
         if dim not in res.dims:

@@ -75,9 +75,7 @@ class GeneralizedGaussianPSF(PSFModule):
 
     _model_name: ClassVar[str] = "GeneralizedGaussian"
 
-    def __init__(
-        self, grid: PSFGrid, band: SensorBand, sigma: float, n: float
-    ) -> None:
+    def __init__(self, grid: PSFGrid, band: SensorBand, sigma: float, n: float) -> None:
         super().__init__(grid, band)
         self.sigma = ConstrainedParameter(
             init_value=torch.tensor(sigma, dtype=torch.float32),

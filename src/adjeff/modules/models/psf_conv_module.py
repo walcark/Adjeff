@@ -128,9 +128,7 @@ class PSFConvModule(TrainableSceneModule):
         modules = [cast(PSFModule, m) for m in self._psfs.values()]
         return freeze({m.band: m for m in modules})
 
-    def forward_band(
-        self, band: SensorBand, **inputs: torch.Tensor
-    ) -> torch.Tensor:
+    def forward_band(self, band: SensorBand, **inputs: torch.Tensor) -> torch.Tensor:
         """Differentiable per-band forward pass (2-D tensors, autograd).
 
         Only available in training mode.

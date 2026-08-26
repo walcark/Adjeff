@@ -22,9 +22,7 @@ def modules():
     """Return live PSF modules on two bands with different grids."""
     return {
         S2Band.B02: GaussPSF(PSFGrid(0.01, 11), S2Band.B02, sigma=0.3),
-        S2Band.B8A: KingPSF(
-            PSFGrid(0.02, 5), S2Band.B8A, sigma=0.1, gamma=1.0
-        ),
+        S2Band.B8A: KingPSF(PSFGrid(0.02, 5), S2Band.B8A, sigma=0.1, gamma=1.0),
     }
 
 

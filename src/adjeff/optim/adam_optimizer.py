@@ -58,9 +58,7 @@ class AdamStage(_ComboStage):
     ) -> None:
         """Adam optimisation loop for one combo."""
         best_params = save_all_params(model)
-        params_to_opt = list(
-            cast(nn.Module, model.psf_modules[band.id]).parameters()
-        )
+        params_to_opt = list(cast(nn.Module, model.psf_modules[band.id]).parameters())
         adam = torch.optim.Adam(params_to_opt, lr=self.config.lr)
 
         while self.nloop < self.config.max_steps:

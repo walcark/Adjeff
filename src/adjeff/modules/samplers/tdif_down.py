@@ -51,9 +51,7 @@ class TdifDownSampler(SweepSampler):
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = ["tdif_down"]
-    contract: ClassVar[str] = (
-        "batch(aot, rh, h, href, sza) vec(wl) -> tdif_down(wl)"
-    )
+    contract: ClassVar[str] = "batch(aot, rh, h, href, sza) vec(wl) -> tdif_down(wl)"
     point_fn: ClassVar[Callable[..., Any]] = staticmethod(tdif_down)
 
     def __init__(

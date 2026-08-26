@@ -75,22 +75,16 @@ def to_arr(
         else:
             arr = np.asarray(v)
             if arr.ndim == 1:
-                da = xr.DataArray(
-                    arr, dims=[field_name], coords={field_name: arr}
-                )
+                da = xr.DataArray(arr, dims=[field_name], coords={field_name: arr})
             else:
                 raise ValueError(
                     f"'{field_name}': {arr.ndim}D array without explicit "
                     "`dims`, use an xr.DataArray instead."
                 )
         if ge is not None and float(da.min()) < ge:
-            raise ValueError(
-                f"'{field_name}': minimal value {float(da.min())} < {ge}."
-            )
+            raise ValueError(f"'{field_name}': minimal value {float(da.min())} < {ge}.")
         if le is not None and float(da.max()) > le:
-            raise ValueError(
-                f"'{field_name}': maximal value {float(da.max())} > {le}."
-            )
+            raise ValueError(f"'{field_name}': maximal value {float(da.max())} > {le}.")
         return da
 
     return _validate
@@ -119,11 +113,7 @@ class _Config(BaseModel):
     def _non_arrays(self) -> dict[str, Any]:
         """Return non-DataArray fields of this config."""
         arrays = self._arrays
-        return {
-            k: getattr(self, k)
-            for k in type(self).model_fields
-            if k not in arrays
-        }
+        return {k: getattr(self, k) for k in type(self).model_fields if k not in arrays}
 
     @property
     def _stable_hash_repr(self) -> dict[str, object]:

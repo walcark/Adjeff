@@ -8,9 +8,7 @@ Currently contains one model:
 
 Typical workflow::
 
-    model = make_model(
-        Unif2Surface, GaussPSF, bands, res_km, n, {"sigma": 0.1}
-    )
+    model = make_model(Unif2Surface, GaussPSF, bands, res_km, n, {"sigma": 0.1})
     tree = fit(model, train_images)  # returns a frozen PSF tree
 """
 

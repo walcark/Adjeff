@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated
 
-import numpy as np
 import xarray as xr
 from pydantic import Field
 from pydantic.functional_validators import BeforeValidator as Before
-
-if TYPE_CHECKING:
-    from smartg.smartg import Sensor
 
 from adjeff.utils._config import _Config, to_arr
 
@@ -37,82 +33,3 @@ class GeoConfig(_Config):
     saa: Annotated[xr.DataArray, Before(to_arr("saa", ge=0.0, le=360.0))]
     vaa: Annotated[xr.DataArray, Before(to_arr("vaa", ge=0.0, le=360.0))]
     sat_height: float = Field(default=700.0, ge=0.0)
-
-    @property
-    def sun_le(self) -> dict[str, Any]:
-        """Return the Sun local-estimate dict for Smart-G.
-
-        Returns
-        -------
-        dict[str, Any]
-            Mapping with keys ``"th_deg"`` (zenith), ``"phi_deg"``
-            (azimuth) and ``"zip"`` flag, ready to be unpacked into a
-            Smart-G local-estimate call.
-        """
-        return {
-            "th_deg": self.sza.data,
-            "phi_deg": self.saa.data,
-            "zip": True,
-        }
-
-    @property
-    def sat_le(self) -> dict[str, Any]:
-        """Return the Satellite local-estimate dict for Smart-G.
-
-        Returns
-        -------
-        dict[str, Any]
-            Mapping with keys ``"th_deg"`` (zenith), ``"phi_deg"``
-            (azimuth) and ``"zip"`` flag, ready to be unpacked into a
-            Smart-G local-estimate call.
-        """
-        return {
-            "th_deg": self.vza.data,
-            "phi_deg": self.saa.data,
-            "zip": True,
-        }
-
-    @property
-    def sun_sensor(self) -> Sensor:
-        """Return the Sun Smart-G Sensor object."""
-        from smartg.smartg import Sensor
-
-        return Sensor(
-            POSZ=self.sat_height,
-            THDEG=180.0 - self.sza.data,
-            PHDEG=self.saa.data,
-            LOC="ATMOS",
-        )
-
-    @property
-    def sat_sensor(self) -> Sensor:
-        """Return the Satellite Smart-G Sensor object."""
-        from smartg.smartg import Sensor
-
-        return Sensor(
-            POSZ=self.sat_height,
-            THDEG=180.0 - self.vza.data,
-            PHDEG=self.vaa.data,
-            LOC="ATMOS",
-        )
-
-    @property
-    def satellite_relative_position(self) -> tuple[float, float]:
-        """Return satellite position relative to the observation point.
-
-        Returns
-        -------
-        tuple[float, float]
-            ``(x, y)`` offset [km] of the satellite ground projection
-            relative to the nadir point, derived from ``vza``, ``vaa``
-            and ``sat_height``.
-        """
-        # Compute the observation angles cosines
-        tan_vza: float = np.tan(np.radians(self.vza.data))
-        cos_vaa: float = np.cos(np.radians(180 - self.vaa.data))
-        sin_vaa: float = np.sin(np.radians(180 - self.vaa.data))
-        # Compute relative positions
-        x: float = (self.sat_height * tan_vza) * cos_vaa
-        y: float = (self.sat_height * tan_vza) * sin_vaa
-
-        return (np.round(x, 4), np.round(y, 4))

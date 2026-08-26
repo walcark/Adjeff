@@ -76,16 +76,26 @@ class SceneModule:
        :meth:`_compute`.
     5. Stamp provenance metadata and persist ``output_vars`` to cache.
     6. Replace in-memory arrays with lazy Zarr-backed views to limit
-       peak RAM usage.
+       peak RAM usage.  **Only when a cache is configured**: with
+       ``cache=None`` every output stays in RAM, which a large sweep will
+       exhaust without warning.
 
     Parameters
     ----------
     cache : CacheStore or None
-        Disk cache for computed outputs.  ``None`` disables caching.
+        Disk cache for computed outputs.  ``None`` disables caching, and
+        with it the lazy Zarr views of step 6: outputs are then held in
+        memory for as long as the caller keeps the scene.
     """
 
     required_vars: ClassVar[list[str]] = []
     output_vars: ClassVar[list[str]] = []
+    #: Variables the module consumes when the scene carries them and
+    #: computes itself when it does not.  They enter the cache key only
+    #: when present: declaring them in ``required_vars`` would forbid the
+    #: standalone call that produces them, while leaving them out
+    #: entirely would let two different inputs share one entry.
+    optional_vars: ClassVar[list[str]] = []
 
     def __init__(self, cache: CacheStore | None = None) -> None:
         super().__init__()
@@ -165,9 +175,7 @@ class SceneModule:
 
     # Parameters excluded from auto-detection: they're infrastructure, not
     # computation config (don't affect the output value for given inputs).
-    _INFRA_PARAMS: ClassVar[frozenset[str]] = frozenset(
-        ("self", "cache", "chunks")
-    )
+    _INFRA_PARAMS: ClassVar[frozenset[str]] = frozenset(("self", "cache", "chunks"))
 
     def _config_dict(self) -> dict[str, object]:
         """Return frozen configuration for cache keying.
@@ -192,9 +200,7 @@ class SceneModule:
             than a wrong result read back from disk months later.
         """
         sig = inspect.signature(type(self).__init__)
-        wanted = [
-            name for name in sig.parameters if name not in self._INFRA_PARAMS
-        ]
+        wanted = [name for name in sig.parameters if name not in self._INFRA_PARAMS]
         missing = [name for name in wanted if not hasattr(self, name)]
         if missing:
             raise ConfigurationError(
@@ -212,25 +218,26 @@ class SceneModule:
     def _input_hashes(self, scene: "ImageDict") -> dict[str, str]:
         """Return a stable hash per ``(band, variable)`` pair in *scene*.
 
-        Uses the DataArray's provenance key when available to avoid
-        re-hashing large arrays; falls back to ``joblib.hash`` of the
-        raw values.
+        Covers ``required_vars`` plus whichever ``optional_vars`` the
+        scene happens to carry.  Uses the DataArray's provenance key when
+        available to avoid re-hashing large arrays; falls back to
+        ``joblib.hash`` of the raw values.
         """
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
-            for var in self.required_vars:
-                da: xr.DataArray = ds[var]
-                provenance_key: str | None = da.attrs.get(
-                    "_adjeff_provenance", {}
-                ).get("key")
-                hash_val: str = str(
-                    provenance_key
-                    if provenance_key is not None
-                    else joblib.hash(da.values)
-                )
-                hashes[f"{band}.{var}"] = hash_val
+            present = [var for var in self.optional_vars if var in ds]
+            for var in [*self.required_vars, *present]:
+                hashes[f"{band}.{var}"] = self._var_hash(ds[var])
         return hashes
+
+    @staticmethod
+    def _var_hash(da: xr.DataArray) -> str:
+        """Return the provenance key of *da*, or a hash of its values."""
+        provenance_key: str | None = da.attrs.get("_adjeff_provenance", {}).get("key")
+        return str(
+            provenance_key if provenance_key is not None else joblib.hash(da.values)
+        )
 
     def _stamp_provenance(self, scene: "ImageDict", key: str) -> None:
         """Tag each output DataArray with module name and cache key."""

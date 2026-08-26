@@ -69,6 +69,10 @@ scipy = ">=1.14.0,<2"
 [tool.pixi.feature.gpu]
 # CUDA >= 12.8 is required: nvcc only learns `sm_120` (Blackwell, RTX 50xx)
 # there, and Smart-G compiles its kernels for the local compute capability.
+# pixi 0.77 deprecates this table in favour of a constraint on the
+# `platforms` entries, but that form is only accepted at workspace level,
+# where it would force CUDA on the `cpu` environment as well.  Kept until
+# pixi accepts a per-feature platform constraint.
 system-requirements = { cuda = "12.9" }
 dependencies = { cuda-version = "12.9.*", pytorch-gpu = "*", cuda-cudart-dev = "12.9.*", cuda-nvcc = "12.9.*" }
 
@@ -138,9 +142,9 @@ ignore_missing_imports = true
 
 [tool.ruff]
 fix = true
-line-length = 79
+line-length = 88
 indent-width = 4
-exclude = ["tests/*", "docs/*", "scripts/*", "test.py", "notebooks/*"]
+exclude = ["docs/*", "scripts/*", "test.py", "notebooks/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D"]

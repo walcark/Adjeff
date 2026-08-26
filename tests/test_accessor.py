@@ -1,3 +1,5 @@
+"""Tests for the `.adjeff` DataArray accessor."""
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -89,12 +91,12 @@ def test_params_missing(flat_da):
 
 
 def test_res(flat_da):
-    """res returns the pixel spacing derived from x coordinates."""
+    """Res returns the pixel spacing derived from x coordinates."""
     assert flat_da.adjeff.res == pytest.approx(1.0, rel=1e-5)
 
 
 def test_n(flat_da):
-    """n returns the number of pixels on the x dimension."""
+    """N returns the number of pixels on the x dimension."""
     assert flat_da.adjeff.n == 10
 
 
@@ -221,7 +223,7 @@ def test_to_field_center_value(disk_da):
 
 
 def test_x_coord_missing_raises():
-    """res and n raise AdjeffAccessorError when no x or x_psf coordinate."""
+    """Res and n raise AdjeffAccessorError when no x or x_psf coordinate."""
     da = xr.DataArray(
         np.ones((5, 5), dtype=np.float32),
         dims=["y", "z"],
@@ -244,7 +246,7 @@ def test_radial_adaptive_missing_n_raises(flat_da):
 
 
 def test_transect_non_2d_raises():
-    """transect raises AdjeffAccessorError when DataArray is not 2-D."""
+    """Transect raises AdjeffAccessorError when DataArray is not 2-D."""
     da_3d = xr.DataArray(
         np.ones((3, 5, 5), dtype=np.float32),
         dims=["aot", "y", "x"],

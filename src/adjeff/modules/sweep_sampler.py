@@ -98,9 +98,7 @@ class SweepSampler(SceneModule):
         for config in self._get_configs():
             for name, array in config._arrays.items():
                 if name in wanted and name not in arrays:
-                    arrays[name] = array.drop_vars(
-                        list(array.coords), errors="ignore"
-                    )
+                    arrays[name] = array.drop_vars(list(array.coords), errors="ignore")
         return xr.Dataset(arrays)
 
     @property

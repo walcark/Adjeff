@@ -5,6 +5,69 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1]
+
+### Fixed
+
+- **The forward pipeline gave a different scene on a warm cache.**
+  `rho_atm` is a single Monte-Carlo number, and `RhoToaSym` drew its own
+  instead of reusing the one `RadiativePipeline` had already put in the
+  scene.  On a cold run that second draw overwrote the first and fed
+  `Toa2Unif`; on a warm run the sampler came from the cache, its
+  `_compute` never ran, and `Toa2Unif` saw the first draw instead.
+  `rho_toa` was then built with one draw and inverted with another,
+  leaving a constant bias of around `6e-5` on the whole `rho_unif` field.
+  Both `RhoToaSym` and `RhoToa` now reuse the scene's `rho_atm` when it
+  is there, and declare it in the new `optional_vars` so that two
+  different path reflectances cannot share one cache entry.
+
+  The bias was small in absolute terms but decided the outcome of any
+  radial energy mask: a 99% mask on `rho_unif` kept 4% of the grid
+  without it and 95% with it.
+
+  Breaking: `RhoToaSym` and `RhoToa` cache entries are invalidated, since
+  `rho_atm` now takes part in their key.
+
+- **`SceneModule.optional_vars`** declares inputs a module consumes when
+  the scene carries them and computes itself otherwise.  They enter the
+  cache key only when present, which `required_vars` could not express:
+  declaring them there would forbid the standalone call that produces
+  them.
+
+### Added
+
+- **`SceneModule.optional_vars`** declares inputs a module consumes when
+  the scene carries them and computes itself otherwise.  They enter the
+  cache key only when present, which `required_vars` could not express:
+  declaring them there would forbid the standalone call that produces
+  them.
+
+### Removed
+
+- `GeoConfig.sun_le`, `sat_le`, `sun_sensor` and `sat_sensor`, plus
+  `satellite_relative_position`.  None had a caller outside the tests;
+  `_smartg.py` builds those dictionaries and sensors locally.  They were
+  not merely redundant: `satellite_relative_position` computes its
+  `x` offset from `180 - vaa` where the production path uses `vaa`, so
+  the two disagree on the sign. Deleting is safer than unifying, since
+  only the used path is validated by the article's figures.
+
+### Changed
+
+- **`import adjeff` no longer needs `SMARTG_DIR_AUXDATA`.** Two
+  module-level Smart-G imports remained in `atmosphere/atmo_factory.py`
+  and `atmosphere/surface.py`, where 23 others are already deferred into
+  function bodies.  Anyone who only wants the CPU half of the library,
+  the accessor, the image generators, the PSF models, the radial
+  analysis, can now import it.  Covered by `test_import_without_smartg`,
+  which runs in a subprocess with the variable removed.
+- A degenerated L-BFGS line search is logged at `warning` instead of
+  `info`.  The public `OptimizationWarning` is unchanged: Python shows a
+  warning once per call site, which hides how often the case occurs over
+  a sweep, so the log line is the one that counts them.
+- The 88 column limit of the project guidelines replaces 79, and the
+  tests join the lint and format scope.
+
 ## [0.8.0]
 
 ### Changed

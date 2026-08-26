@@ -87,9 +87,7 @@ class CacheStore:
             # selecting a single atmospheric combo (aot, rh, …) reads only
             # the required slice rather than the full array.
             spatial = {"x", "y"}
-            chunks = {
-                str(d): 1 if str(d) not in spatial else -1 for d in subset.dims
-            }
+            chunks = {str(d): 1 if str(d) not in spatial else -1 for d in subset.dims}
 
             with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
                 tmp_path = Path(tmp) / "data.zarr"
@@ -161,15 +159,11 @@ class CacheStore:
             # scene silently short of an output, flagged as a cache hit.
             absent = [var for var in variables if var not in ds]
             if absent:
-                logger.debug(
-                    "cache miss", key=key[:8], band=band, missing=absent
-                )
+                logger.debug("cache miss", key=key[:8], band=band, missing=absent)
                 return None
             result[band] = {var: ds[var] for var in variables}
 
-        logger.debug(
-            "Cache was hit.", key=key[:8], bands=bands, vars=variables
-        )
+        logger.debug("Cache was hit.", key=key[:8], bands=bands, vars=variables)
         return result if result else None
 
     def clear(self) -> None:

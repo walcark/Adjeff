@@ -8,7 +8,10 @@ from adjeff.modules.classic.toa_to_unif import Toa2Unif
 from adjeff.modules.classic.unif_to_toa import Unif2Toa
 
 _SHAPE = (4, 4)
-_COORDS = {"y": np.arange(_SHAPE[0], dtype=np.float32), "x": np.arange(_SHAPE[1], dtype=np.float32)}
+_COORDS = {
+    "y": np.arange(_SHAPE[0], dtype=np.float32),
+    "x": np.arange(_SHAPE[1], dtype=np.float32),
+}
 
 # 5S model parameter constants used across tests.
 _T_DIR_UP = 0.6
@@ -28,29 +31,33 @@ def _const(val: float) -> xr.DataArray:
 
 def _make_unif2toa_scene(rho_unif: float = 0.1) -> ImageDict:
     """Build a scene with the variables required by Unif2Toa."""
-    ds = xr.Dataset({
-        "rho_unif": _const(rho_unif),
-        "tdir_up": _const(_T_DIR_UP),
-        "tdif_up": _const(_T_DIF_UP),
-        "tdir_down": _const(_T_DIR_DOWN),
-        "tdif_down": _const(_T_DIF_DOWN),
-        "rho_atm": _const(_RHO_ATM),
-        "sph_alb": _const(_SPH_ALB),
-    })
+    ds = xr.Dataset(
+        {
+            "rho_unif": _const(rho_unif),
+            "tdir_up": _const(_T_DIR_UP),
+            "tdif_up": _const(_T_DIF_UP),
+            "tdir_down": _const(_T_DIR_DOWN),
+            "tdif_down": _const(_T_DIF_DOWN),
+            "rho_atm": _const(_RHO_ATM),
+            "sph_alb": _const(_SPH_ALB),
+        }
+    )
     return ImageDict({S2Band.B02: ds})
 
 
 def _make_toa2unif_scene(rho_toa: float) -> ImageDict:
     """Build a scene with the variables required by Toa2Unif."""
-    ds = xr.Dataset({
-        "rho_toa": _const(rho_toa),
-        "tdir_up": _const(_T_DIR_UP),
-        "tdif_up": _const(_T_DIF_UP),
-        "tdir_down": _const(_T_DIR_DOWN),
-        "tdif_down": _const(_T_DIF_DOWN),
-        "rho_atm": _const(_RHO_ATM),
-        "sph_alb": _const(_SPH_ALB),
-    })
+    ds = xr.Dataset(
+        {
+            "rho_toa": _const(rho_toa),
+            "tdir_up": _const(_T_DIR_UP),
+            "tdif_up": _const(_T_DIF_UP),
+            "tdir_down": _const(_T_DIR_DOWN),
+            "tdif_down": _const(_T_DIF_DOWN),
+            "rho_atm": _const(_RHO_ATM),
+            "sph_alb": _const(_SPH_ALB),
+        }
+    )
     return ImageDict({S2Band.B02: ds})
 
 
@@ -64,7 +71,10 @@ def test_unif2toa_produces_rho_toa():
 
 
 def test_unif2toa_formula():
-    """Unif2Toa applies the 5S forward model: rho_toa = rho_atm + t_up * t_down * rho_unif / (1 - S * rho_unif)."""
+    """Unif2Toa applies the 5S forward model.
+
+    ``rho_toa = rho_atm + t_up * t_down * rho_unif / (1 - S * rho_unif)``
+    """
     rho_unif = 0.1
     result = Unif2Toa()(_make_unif2toa_scene(rho_unif=rho_unif))
     t_up = _T_DIR_UP + _T_DIF_UP
@@ -89,7 +99,11 @@ def test_toa2unif_produces_rho_unif():
 
 
 def test_toa2unif_formula():
-    """Toa2Unif inverts the 5S model: rho_unif = (rho_toa - rho_atm) / (S * (rho_toa - rho_atm) + t_up * t_down)."""
+    """Toa2Unif inverts the 5S model.
+
+    ``rho_unif = (rho_toa - rho_atm)
+    / (S * (rho_toa - rho_atm) + t_up * t_down)``
+    """
     t_up = _T_DIR_UP + _T_DIF_UP
     t_down = _T_DIR_DOWN + _T_DIF_DOWN
     rho_unif_orig = 0.15
