@@ -68,7 +68,7 @@ class AdamStage(_ComboStage):
             loss_t.backward()  # type: ignore[no-untyped-call]
             adam.step()
             project_all_params(model)
-            loss = float(loss_t)
+            loss = float(loss_t.detach())
             params = save_all_params(model)
             self.record(loss, params)
 

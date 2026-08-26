@@ -52,7 +52,7 @@ class GaussPSF(PSFModule):
 
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>}``."""
-        return {"sigma": float(self.sigma.value)}
+        return {"sigma": self.sigma.scalar}
 
 
 class GeneralizedGaussianPSF(PSFModule):
@@ -101,7 +101,7 @@ class GeneralizedGaussianPSF(PSFModule):
 
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "n": <value>}``."""
-        return {"sigma": float(self.sigma.value), "n": float(self.n.value)}
+        return {"sigma": self.sigma.scalar, "n": self.n.scalar}
 
 
 class VoigtPSF(PSFModule):
@@ -182,8 +182,8 @@ class VoigtPSF(PSFModule):
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "gamma": <value>}``."""
         return {
-            "sigma": float(self.sigma.value),
-            "gamma": float(self.gamma.value),
+            "sigma": self.sigma.scalar,
+            "gamma": self.gamma.scalar,
         }
 
 
@@ -259,8 +259,8 @@ class KingPSF(PSFModule):
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "gamma": <value>}``."""
         return {
-            "sigma": float(self.sigma.value),
-            "gamma": float(self.gamma.value),
+            "sigma": self.sigma.scalar,
+            "gamma": self.gamma.scalar,
         }
 
 
@@ -334,7 +334,7 @@ class MoffatGeneralizedPSF(PSFModule):
     def param_dict(self) -> dict[str, float]:
         """Return ``{"alpha": <value>, "beta": <value>, "gamma": <value>}``."""
         return {
-            "alpha": float(self.alpha.value),
-            "beta": float(self.beta.value),
-            "gamma": float(self.gamma.value),
+            "alpha": self.alpha.scalar,
+            "beta": self.beta.scalar,
+            "gamma": self.gamma.scalar,
         }

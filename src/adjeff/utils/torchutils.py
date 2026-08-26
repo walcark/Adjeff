@@ -179,8 +179,20 @@ class ConstrainedParameter(nn.Module):
 
     @property
     def value(self) -> torch.Tensor:
-        """Return the current constrained value (theta)."""
+        """Return the current constrained value (theta), grad and all."""
         return self.forward()
+
+    @property
+    def scalar(self) -> float:
+        """Return the current constrained value as a plain number.
+
+        Reading :attr:`value` into a `float` detaches implicitly and
+        torch warns about it, rightly: it is the point where a value
+        leaves the graph, and doing it by accident inside a training loop
+        is a real mistake.  Anything that only wants the number says so
+        here.
+        """
+        return float(self.value.detach())
 
     @torch.no_grad()
     def set(self, theta: torch.Tensor) -> None:

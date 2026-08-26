@@ -188,8 +188,9 @@ class SceneModule:
     def _reject_non_finite(self, scene: "ImageDict") -> None:
         """Raise when an output holds NaN or infinity, before it is cached.
 
-        A Smart-G call that cannot allocate on the GPU returns NaN rather
-        than raising.  Cached, that result becomes permanent: every later
+        Smart-G returns NaN rather than raising when it cannot run,
+        whether the GPU is busy or its auxiliary data is not where
+        ``SMARTG_DIR_AUXDATA`` says.  Cached, that result becomes permanent: every later
         run reads it back and fails somewhere far away, on an
         interpolation or a solver, with nothing pointing at a simulation
         that ran minutes or days earlier.  Checking here costs one pass
@@ -217,10 +218,10 @@ class SceneModule:
                 raise ComputationError(
                     f"{type(self).__name__} produced {bad} non-finite "
                     f"value(s) out of {values.size} in {slot!r} for band "
-                    f"{band}.  Nothing was cached.  A Smart-G call that "
-                    "cannot allocate on the GPU returns NaN instead of "
-                    "raising, so check that no other process is holding "
-                    "the device."
+                    f"{band}.  Nothing was cached.  Smart-G returns NaN "
+                    "instead of raising when it cannot run, so check "
+                    "that SMARTG_DIR_AUXDATA points at the auxiliary "
+                    "data and that no other process is holding the GPU."
                 )
 
     def _role_view(self, scene: "ImageDict") -> "ImageDict":
