@@ -53,8 +53,7 @@ class SensorBand(Enum):
                 return member
         known = ", ".join(f"{m.wl_nm:.0f}" for m in cls)
         raise KeyError(
-            f"No {cls.__name__} within {tol_nm} nm of {wl_nm} nm. "
-            f"Centres are: {known}."
+            f"No {cls.__name__} within {tol_nm} nm of {wl_nm} nm. Centres are: {known}."
         )
 
     def __cache_token__(self) -> str:

@@ -14,7 +14,7 @@ import torch
 
 from adjeff.utils import ConstrainedParameter, ExpTransform, SigmoidTransform
 
-from ._psf import PSFGrid, PSFModule
+from ._psf import PSFGrid, PSFModule, radial_power
 from .bands import SensorBand
 
 
@@ -52,7 +52,7 @@ class GaussPSF(PSFModule):
 
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>}``."""
-        return {"sigma": float(self.sigma.value)}
+        return {"sigma": self.sigma.scalar}
 
 
 class GeneralizedGaussianPSF(PSFModule):
@@ -96,12 +96,12 @@ class GeneralizedGaussianPSF(PSFModule):
         """Return normalised Generalised Gaussian kernel on the grid."""
         X, Y = self.grid.meshgrid()
         r = torch.sqrt(X**2 + Y**2)
-        kernel = torch.exp(-((r / self.sigma.value) ** self.n.value))
+        kernel = torch.exp(-radial_power(r, self.sigma.value, self.n.value))
         return kernel / kernel.sum()
 
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "n": <value>}``."""
-        return {"sigma": float(self.sigma.value), "n": float(self.n.value)}
+        return {"sigma": self.sigma.scalar, "n": self.n.scalar}
 
 
 class VoigtPSF(PSFModule):
@@ -182,8 +182,8 @@ class VoigtPSF(PSFModule):
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "gamma": <value>}``."""
         return {
-            "sigma": float(self.sigma.value),
-            "gamma": float(self.gamma.value),
+            "sigma": self.sigma.scalar,
+            "gamma": self.gamma.scalar,
         }
 
 
@@ -259,8 +259,8 @@ class KingPSF(PSFModule):
     def param_dict(self) -> dict[str, float]:
         """Return ``{"sigma": <value>, "gamma": <value>}``."""
         return {
-            "sigma": float(self.sigma.value),
-            "gamma": float(self.gamma.value),
+            "sigma": self.sigma.scalar,
+            "gamma": self.gamma.scalar,
         }
 
 
@@ -326,7 +326,7 @@ class MoffatGeneralizedPSF(PSFModule):
         """Return normalised Generalised Moffat kernel on the grid."""
         X, Y = self.grid.meshgrid()
         r = torch.sqrt(X**2 + Y**2)
-        k = (1.0 + (r / self.alpha.value).pow(2 * self.beta.value)).pow(
+        k = (1.0 + radial_power(r, self.alpha.value, 2 * self.beta.value)).pow(
             -self.gamma.value
         )
         return k / k.sum()
@@ -334,7 +334,7 @@ class MoffatGeneralizedPSF(PSFModule):
     def param_dict(self) -> dict[str, float]:
         """Return ``{"alpha": <value>, "beta": <value>, "gamma": <value>}``."""
         return {
-            "alpha": float(self.alpha.value),
-            "beta": float(self.beta.value),
-            "gamma": float(self.gamma.value),
+            "alpha": self.alpha.scalar,
+            "beta": self.beta.scalar,
+            "gamma": self.gamma.scalar,
         }

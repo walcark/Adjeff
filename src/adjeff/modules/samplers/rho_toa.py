@@ -101,9 +101,7 @@ class RhoToaSampler(SweepSampler):
         self.n_ph = n_ph
         self.n_alb = n_alb
         self.rho_background = rho_background
-        super().__init__(
-            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
-        )
+        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup, rename=rename)
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)

@@ -5,7 +5,7 @@ import pytest
 import torch
 import xarray as xr
 
-from adjeff.core._psf import PSFGrid
+from adjeff.core._psf import PSFGrid, radial_power
 from adjeff.core.analytical_psf import (
     GaussPSF,
     GeneralizedGaussianPSF,
@@ -288,12 +288,8 @@ def test_king_gamma_is_confined_to_the_integrable_range(grid, band):
     """
     low, high = KingPSF.GAMMA_BOUNDS
 
-    assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()[
-        "gamma"
-    ] >= low
-    assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()[
-        "gamma"
-    ] <= high
+    assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()["gamma"] >= low
+    assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()["gamma"] <= high
 
 
 def test_king_gamma_stays_bounded_under_gradient_steps(grid, band):
@@ -332,3 +328,245 @@ def test_band_from_wavelength_rejects_an_unknown_centre():
 
     with pytest.raises(KeyError, match="560"):
         S2Band.from_wl(600.0)
+
+
+# ---------------------------------------------------------------------------
+# ConstrainedParameter — a bound must not kill the gradient
+# ---------------------------------------------------------------------------
+
+
+def test_a_step_past_the_bound_does_not_kill_the_parameter():
+    """A parameter pushed past its bound must still be able to come back.
+
+    `forward` clamps the *value*, not the raw parameter.  A step large
+    enough to send the raw parameter far behind a bound leaves it there
+    for good, since the derivative of `clamp` is zero outside the
+    interval: the gradient dies and no later step can move it.  The
+    constrained value looks plausible throughout, which is what makes it
+    worth guarding.
+    """
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    param = ConstrainedParameter(
+        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+    )
+    optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
+
+    for _ in range(3):
+        optimiser.zero_grad()
+        ((param.forward() - 0.5) ** 2).backward()
+        optimiser.step()
+        param.project()
+
+    optimiser.zero_grad()
+    ((param.forward() - 0.5) ** 2).backward()
+
+    assert float(param.p) >= float(param.p_min)
+    assert float(param.p) <= float(param.p_max)
+    assert float(param.p.grad) != 0.0, "the parameter can no longer move"
+
+
+def test_without_projection_the_gradient_dies():
+    """The behaviour the projection exists to prevent."""
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    param = ConstrainedParameter(
+        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+    )
+    optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
+
+    for _ in range(3):
+        optimiser.zero_grad()
+        ((param.forward() - 0.5) ** 2).backward()
+        optimiser.step()  # no projection
+
+    optimiser.zero_grad()
+    ((param.forward() - 0.5) ** 2).backward()
+
+    assert float(param.p) > float(param.p_max), "the raw parameter ran away"
+    assert float(param.p.grad) == 0.0
+
+
+def test_projection_leaves_a_healthy_parameter_alone():
+    """Inside the domain, projecting is a no-op."""
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    param = ConstrainedParameter(
+        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+    )
+    before = float(param.p)
+
+    param.project()
+
+    assert float(param.p) == before
+
+
+# --- Transform: the bound must stay somewhere a gradient survives ---
+
+
+def test_the_sigmoid_bound_is_kept_away_from_the_dead_zone():
+    """Torch would invert at the machine epsilon, where the slope is 1e-38.
+
+    ``project`` puts a runaway parameter *on* its bound, so the bound has
+    to be a place the optimiser can still move away from.
+    """
+    from torch.distributions import transforms as tt
+
+    from adjeff.utils import SigmoidTransform
+
+    ours = SigmoidTransform(1.0, 5.0)
+    theirs = tt.ComposeTransform([tt.SigmoidTransform(), tt.AffineTransform(1.0, 4.0)])
+
+    def slope(p: torch.Tensor) -> float:
+        x = p.detach().clone().requires_grad_(True)
+        torch.sigmoid(x).backward()
+        return float(x.grad)
+
+    p_low_ours = ours.inverse(torch.tensor(1.0))
+    p_low_torch = theirs.inv(torch.tensor(1.0))
+
+    assert slope(p_low_ours) > 1e-8
+    assert slope(p_low_torch) < 1e-30
+    assert float(p_low_ours) > float(p_low_torch)
+
+
+def test_the_sigmoid_bounds_are_symmetric():
+    """Both ends of an interval must be equally reachable."""
+    from adjeff.utils import SigmoidTransform
+
+    transform = SigmoidTransform(1.0, 5.0)
+
+    low = float(transform.inverse(torch.tensor(1.0)))
+    high = float(transform.inverse(torch.tensor(5.0)))
+    assert low == pytest.approx(-high, rel=1e-6)
+
+
+def test_a_transform_that_does_not_bound_the_parameter_is_refused():
+    """p_min and p_max only mean something for an increasing bijection."""
+    from adjeff.utils import ConstrainedParameter
+
+    class Decreasing:
+        def forward(self, p: torch.Tensor) -> torch.Tensor:
+            return -p
+
+        def inverse(self, theta: torch.Tensor) -> torch.Tensor:
+            return -theta
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        ConstrainedParameter(torch.tensor(2.0), Decreasing(), min_val=1.0, max_val=5.0)
+
+
+def test_a_custom_increasing_transform_is_accepted():
+    """The check is on the property, not on a list of blessed classes."""
+    from adjeff.utils import ConstrainedParameter
+
+    class Cubic:
+        def forward(self, p: torch.Tensor) -> torch.Tensor:
+            return p**3
+
+        def inverse(self, theta: torch.Tensor) -> torch.Tensor:
+            return theta ** (1 / 3)
+
+    param = ConstrainedParameter(torch.tensor(8.0), Cubic(), min_val=1.0, max_val=27.0)
+
+    assert float(param.value) == pytest.approx(8.0, rel=1e-5)
+    assert float(param.p_min) < float(param.p_max)
+
+
+# --- radial_power: a grid that lands on r = 0 must not kill the gradient ---
+
+#: 401 pixels at 0.5 km: `linspace` lands exactly on zero here, where a
+#: 1999-pixel grid at 0.1 km misses it by 5e-08.  Both are real grids;
+#: which one a run gets is decided by floating-point rounding.
+ZERO_GRID = (0.5, 401)
+
+
+def _grad_of(psf) -> dict[str, float]:
+    """Return the gradient of a weighted sum of *psf*'s kernel."""
+    torch.manual_seed(0)
+    kernel = psf()
+    (kernel * torch.rand_like(kernel)).sum().backward()
+    return {name: float(p.grad) for name, p in psf.named_parameters()}
+
+
+def test_the_centre_pixel_of_a_grid_can_land_exactly_on_zero():
+    """The premise of the tests below, stated so it cannot drift."""
+    res, n = ZERO_GRID
+    x, y = PSFGrid(res, n).meshgrid()
+    radius = torch.sqrt(x**2 + y**2)
+
+    assert float(radius.min()) == 0.0
+    assert int((radius == 0).sum()) == 1
+
+
+@pytest.mark.parametrize(
+    ("cls", "kwargs"),
+    [
+        (GeneralizedGaussianPSF, {"sigma": 1e-3, "n": 0.20}),
+        (GeneralizedGaussianPSF, {"sigma": 1e-1, "n": 0.40}),
+        (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.2, "gamma": 2.0}),
+        (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.4, "gamma": 2.0}),
+    ],
+    ids=["gg-n0.2", "gg-n0.4", "moffat-b0.2", "moffat-b0.4"],
+)
+def test_a_fractional_power_of_the_radius_stays_differentiable(cls, kwargs):
+    """An exponent below one used to make every parameter NaN at once.
+
+    One pixel out of a hundred and sixty thousand is enough: the NaN
+    enters the sum of the gradient, the optimiser writes it into the raw
+    parameter, and every later step is lost.
+    """
+    res, n = ZERO_GRID
+    psf = cls(PSFGrid(res, n), S2Band.B03, **kwargs)
+
+    grads = _grad_of(psf)
+
+    assert all(np.isfinite(v) for v in grads.values()), grads
+    assert any(v != 0.0 for v in grads.values()), "a dead gradient is not a fix"
+
+
+def test_radial_power_leaves_the_kernel_untouched():
+    """The fix is about the gradient; not one value may move."""
+    res, n = ZERO_GRID
+    x, y = PSFGrid(res, n).meshgrid()
+    radius = torch.sqrt(x**2 + y**2)
+    scale, power = torch.tensor(1e-3), torch.tensor(0.20)
+
+    guarded = radial_power(radius, scale, power)
+    plain = (radius / scale) ** power
+
+    assert torch.equal(guarded, plain)
+
+
+def test_radial_power_gives_the_origin_the_limit_of_its_gradient():
+    """``(r/s)**p`` tends to zero at the origin, and so does its slope."""
+    scale = torch.tensor(1e-3, requires_grad=True)
+    radius = torch.zeros(1)
+
+    radial_power(radius, scale, torch.tensor(0.20)).sum().backward()
+
+    assert float(scale.grad) == 0.0
+
+
+def test_discarding_the_result_would_not_have_been_enough():
+    """Why the origin is never evaluated rather than evaluated and dropped.
+
+    Overwriting a value after the fact leaves its gradient path in the
+    graph, weighted by zero, and zero times NaN is NaN.  This pins the
+    trap that the first attempt at this fix fell into.
+    """
+    scale = torch.tensor(1e-3, requires_grad=True)
+    radius = torch.zeros(1)
+
+    naive = (radius / scale) ** torch.tensor(0.20)
+    overwritten = naive.clone()
+    overwritten[0] = 0.0
+    overwritten.sum().backward()
+
+    assert np.isnan(float(scale.grad))

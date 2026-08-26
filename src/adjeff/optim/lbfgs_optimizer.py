@@ -17,6 +17,7 @@ from adjeff.modules.scene_module import TrainableSceneModule
 from ._combo_stage import (
     _ComboStage,
     _loss_delta,
+    project_all_params,
     restore_all_params,
     save_all_params,
 )
@@ -95,6 +96,7 @@ class LBFGSStage(_ComboStage):
         while self.nloop < self.config.max_steps:
             try:
                 loss_tensor = opt.step(closure)  # type: ignore[no-untyped-call]
+                project_all_params(model)
             except IndexError:
                 # PyTorch strong-Wolfe line search can raise IndexError when
                 # the bracket collapses on a numerically flat loss surface.

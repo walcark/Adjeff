@@ -47,9 +47,7 @@ def _score(
         mask_tensor = None
     elif isinstance(mask, xr.DataArray):
         if mask.shape != truth.shape:
-            raise ValueError(
-                f"shape mismatch: mask {mask.shape}, truth {truth.shape}."
-            )
+            raise ValueError(f"shape mismatch: mask {mask.shape}, truth {truth.shape}.")
         mask_tensor = mask.adjeff.to_tensor().to(device)
     else:
         mask_tensor = dists <= float(mask)

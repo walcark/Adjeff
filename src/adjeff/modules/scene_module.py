@@ -7,12 +7,13 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import joblib  # type: ignore[import-untyped]
+import numpy as np
 import structlog
 import torch
 import torch.nn as nn
 import xarray as xr
 
-from adjeff.exceptions import ConfigurationError
+from adjeff.exceptions import ComputationError, ConfigurationError
 from adjeff.utils import CacheStore
 from adjeff.utils._config import _Config
 
@@ -172,6 +173,7 @@ class SceneModule:
             return scene
 
         scene = self._compute(scene)
+        self._reject_non_finite(scene)
         self._stamp_provenance(scene, key)
         self._cache.save_vars(key, self._role_view(scene), self._output_vars)
         # Replace in-memory arrays with lazy Zarr-backed views so large
@@ -182,6 +184,45 @@ class SceneModule:
             self._write_roles(scene, lazy)
         log.info("done", bands=[str(b) for b in scene.bands], cached=False)
         return scene
+
+    def _reject_non_finite(self, scene: "ImageDict") -> None:
+        """Raise when an output holds NaN or infinity, before it is cached.
+
+        Smart-G returns NaN rather than raising when it cannot run,
+        whether the GPU is busy or its auxiliary data is not where
+        ``SMARTG_DIR_AUXDATA`` says.  Cached, that result becomes permanent: every later
+        run reads it back and fails somewhere far away, on an
+        interpolation or a solver, with nothing pointing at a simulation
+        that ran minutes or days earlier.  Checking here costs one pass
+        over each output and turns a silent poisoning into an error at
+        the place that caused it.
+
+        Raises
+        ------
+        ComputationError
+            If any output variable of any band holds a non-finite value.
+        """
+        for band in scene.bands:
+            ds = scene[band]
+            for role in self._output_vars:
+                slot = self._slot(role)
+                if slot not in ds:
+                    continue
+                values = np.asarray(ds[slot].values)
+                if values.dtype.kind not in "fc":
+                    continue
+                finite = np.isfinite(values)
+                if bool(finite.all()):
+                    continue
+                bad = int(values.size - finite.sum())
+                raise ComputationError(
+                    f"{type(self).__name__} produced {bad} non-finite "
+                    f"value(s) out of {values.size} in {slot!r} for band "
+                    f"{band}.  Nothing was cached.  Smart-G returns NaN "
+                    "instead of raising when it cannot run, so check "
+                    "that SMARTG_DIR_AUXDATA points at the auxiliary "
+                    "data and that no other process is holding the GPU."
+                )
 
     def _role_view(self, scene: "ImageDict") -> "ImageDict":
         """Return *scene*'s outputs under their role names.
@@ -285,9 +326,7 @@ class SceneModule:
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
-            present = [
-                role for role in self._optional_vars if self._slot(role) in ds
-            ]
+            present = [role for role in self._optional_vars if self._slot(role) in ds]
             for role in [*self._required_vars, *present]:
                 # Keyed by role, read by slot: two runs that differ only
                 # by where they put their result compute the same thing

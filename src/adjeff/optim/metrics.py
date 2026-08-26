@@ -113,9 +113,7 @@ def _residual(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
     return (tensor1 - tensor2) / _get_scale(tensor2)
 
 
-def _domain(
-    dists: torch.Tensor, mask_tensor: torch.Tensor | None
-) -> torch.Tensor:
+def _domain(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:
     """Return the 0/1 domain *mask_tensor* stands for.
 
     A float field is a *source*: the domain is the pixels within its 99%
@@ -146,9 +144,7 @@ def _flat_weights(
     return _domain(dists, mask_tensor)
 
 
-def _rad_weights(
-    dists: torch.Tensor, mask_tensor: torch.Tensor | None
-) -> torch.Tensor:
+def _rad_weights(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:
     """Return the radial weights, restricted to *mask_tensor*.
 
     Two kinds of mask are accepted, told apart by their dtype.  A float

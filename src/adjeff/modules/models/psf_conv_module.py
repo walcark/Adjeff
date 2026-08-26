@@ -191,8 +191,7 @@ class PSFConvModule(TrainableSceneModule):
             # on the way in and on the way out, never inside it.
             ds[self.output_vars[0]] = self._formula(
                 **{
-                    role: ds[self._slot(role)].compute()
-                    for role in self._required_vars
+                    role: ds[self._slot(role)].compute() for role in self._required_vars
                 },
                 rho_env=rho_env,
             )

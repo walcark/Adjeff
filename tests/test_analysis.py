@@ -55,9 +55,7 @@ def test_encircled_radius_matches_the_closed_form_for_a_gaussian():
 
     for fraction in (0.5, 0.9):
         expected = sigma * math.sqrt(-2.0 * math.log(1.0 - fraction))
-        assert encircled_radius(kernel, fraction) == pytest.approx(
-            expected, rel=0.05
-        )
+        assert encircled_radius(kernel, fraction) == pytest.approx(expected, rel=0.05)
 
 
 def test_encircled_radius_grows_with_the_fraction():
@@ -84,8 +82,7 @@ def test_encircled_radii_batches_over_one_grid():
     import torch
 
     kernels = [
-        torch.from_numpy(gaussian(s).values.astype(np.float32))
-        for s in (0.2, 0.4, 0.8)
+        torch.from_numpy(gaussian(s).values.astype(np.float32)) for s in (0.2, 0.4, 0.8)
     ]
 
     radii = encircled_radii(kernels, n=N, res=RES_KM, fractions=[0.5])
@@ -159,6 +156,52 @@ def test_king_tail_shows_up_in_the_outer_radius():
     steep = KingPSF(grid, BAND, sigma=0.3, gamma=4.0).to_dataarray()
 
     assert encircled_radius(shallow, 0.9) > encircled_radius(steep, 0.9)
+
+
+def _king_radius(sigma: float, gamma: float, fraction: float) -> float:
+    """Return the radius enclosing *fraction* of a King profile, in closed form.
+
+    Integrating ``(1 + r**2 / a)**-gamma`` over the disc, with
+    ``a = 2 * gamma * sigma**2``, gives ``E(r) = pi * a * (1 - (1 +
+    r**2 / a)**(1 - gamma)) / (gamma - 1)``.  The kernel is measured on a
+    finite grid, so the fraction is taken of the energy inside its
+    half-diagonal, not of the whole plane.
+    """
+    a = 2.0 * gamma * sigma**2
+
+    def energy(r: float) -> float:
+        return float(1.0 - (1.0 + r**2 / a) ** (1.0 - gamma))
+
+    r_max = (N // 2) * RES_KM * math.sqrt(2.0)
+    target = fraction * energy(r_max)
+    return float(math.sqrt(a * ((1.0 - target) ** (1.0 / (1.0 - gamma)) - 1.0)))
+
+
+@pytest.mark.parametrize("gamma", [1.2, 2.0, 4.0])
+@pytest.mark.parametrize("fraction", [0.10, 0.50, 0.90, 0.99])
+def test_encircled_radius_matches_the_closed_form_for_a_king(gamma, fraction):
+    """The measured radius must land on the one the King integral gives.
+
+    Reading the cumulated energy at the bin centre rather than at the
+    outer edge it belongs to, and snapping to that centre instead of
+    interpolating, used to cost up to seven percent here.
+    """
+    sigma = 0.3
+    kernel = KingPSF(PSFGrid(RES_KM, N), BAND, sigma=sigma, gamma=gamma)
+    measured = encircled_radius(kernel.to_dataarray(), fraction)
+
+    expected = _king_radius(sigma, gamma, fraction)
+    assert measured == pytest.approx(expected, rel=0.01)
+
+
+def test_encircled_energy_starts_at_zero_and_is_read_at_the_edges():
+    """No energy is enclosed by a radius of zero, and the curve closes."""
+    curve = encircled_energy(gaussian(0.3))
+
+    assert float(curve.coords["r"][0]) == 0.0
+    assert float(curve[0]) == 0.0
+    assert float(curve[-1]) == pytest.approx(1.0)
+    assert curve.sizes["r"] == curve.coords["r"].size
 
 
 # --- error metrics on DataArrays ---

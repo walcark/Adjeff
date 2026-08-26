@@ -1,4 +1,12 @@
-"""Functions to generate instances of ImageDict."""
+"""Functions to generate instances of ImageDict.
+
+The three generators below differ only in the field they evaluate and in
+the provenance they stamp on it.  Everything around that, resolving a
+pixel count per band, laying a square grid, wrapping the values into a
+Dataset, is shared here rather than copied once per generator.
+"""
+
+from collections.abc import Callable
 
 import numpy as np
 import structlog
@@ -62,6 +70,80 @@ def _resolve_n(
     if isinstance(n, dict):
         return {band: n[band] for band in bands}
     return {band: n for band in bands}
+
+
+def _band_grids(
+    bands: list[SensorBand],
+    res_km: float | dict[SensorBand, float],
+    n: int | dict[SensorBand, int] | None,
+    extent_km: float | dict[SensorBand, float] | None,
+) -> dict[SensorBand, xr.Coordinates]:
+    """Return the square grid each band is sampled on, centred on (0, 0).
+
+    Takes the same *res_km*, *n* and *extent_km* the public generators
+    document; *n* and *extent_km* stay mutually exclusive.
+    """
+    per_band = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
+    counts = _resolve_n(bands, res_km, n, extent_km)
+    return {band: square_grid(counts[band], per_band[band]) for band in bands}
+
+
+def _field_attrs(
+    model: str, params: dict[str, float], analytical: bool
+) -> dict[str, object]:
+    """Return the provenance a generated field carries.
+
+    An analytical field records the *model* that drew it and the
+    *params* it was drawn with, so that a sampler can redraw it at
+    another resolution.  Anything else is opaque and says so.
+    """
+    if not analytical:
+        return {"adjeff:kind": "arbitrary"}
+    return {
+        "adjeff:kind": "analytical",
+        "adjeff:model": model,
+        "adjeff:params": dict(params),
+    }
+
+
+def _analytical_image_dict(
+    data_fn: Callable[[xr.Coordinates], np.ndarray],
+    model: str,
+    params: dict[str, float],
+    *,
+    bands: list[SensorBand],
+    res_km: float | dict[SensorBand, float],
+    var: str,
+    n: int | dict[SensorBand, int] | None,
+    extent_km: float | dict[SensorBand, float] | None,
+    analytical: bool,
+) -> ImageDict:
+    """Evaluate *data_fn* on every band's grid and stamp its provenance.
+
+    *data_fn* takes one band's coordinates and returns the field on
+    them; *model* and *params* describe it well enough to redraw it.
+    The remaining arguments are the ones the public generators document.
+    """
+    logger.debug("Creating analytical ImageDict.", model=model, bands=bands)
+
+    band_datasets: dict[SensorBand, xr.Dataset] = {}
+    for band, coords in _band_grids(bands, res_km, n, extent_km).items():
+        values = xr.DataArray(
+            np.asarray(data_fn(coords), dtype=np.float32),
+            dims=["y", "x"],
+            coords=coords,
+            attrs=_field_attrs(model, params, analytical),
+        )
+        band_datasets[band] = xr.Dataset({var: values})
+        logger.debug(
+            "Created analytical image.",
+            band=band,
+            var=var,
+            model=model,
+            n=coords["x"].size,
+            **params,
+        )
+    return ImageDict(band_datasets)
 
 
 def _gaussian_data(
@@ -134,52 +216,17 @@ def gaussian_image_dict(
         The Gaussian is centered at (0, 0) and radially symmetric.
 
     """
-    logger.debug("Creating Gaussian ImageDict.", bands=bands)
-
-    _res_km = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-    band_n = _resolve_n(bands, res_km, n, extent_km)
-    band_datasets: dict[SensorBand, xr.Dataset] = {}
-
-    for band in bands:
-        coords: xr.Coordinates = square_grid(band_n[band], _res_km[band])
-
-        data: np.ndarray = _gaussian_data(coords, sigma, rho_min, rho_max)
-
-        if analytical:
-            attrs = {
-                "adjeff:kind": "analytical",
-                "adjeff:model": "gauss",
-                "adjeff:params": {
-                    "sigma": sigma,
-                    "rho_min": rho_min,
-                    "rho_max": rho_max,
-                },
-            }
-        else:
-            attrs = {"adjeff:kind": "arbitrary"}
-
-        data_vars = {
-            var: xr.DataArray(
-                np.asarray(data, dtype=np.float32),
-                dims=["y", "x"],
-                coords=coords,
-                attrs=attrs,
-            )
-        }
-
-        band_datasets[band] = xr.Dataset(data_vars)
-
-        logger.debug(
-            "Created Gaussian Image.",
-            band=band,
-            var=var,
-            sigma=sigma,
-            rho_min=rho_min,
-            rho_max=rho_max,
-            n=band_n[band],
-        )
-
-    return ImageDict(band_datasets)
+    return _analytical_image_dict(
+        lambda coords: _gaussian_data(coords, sigma, rho_min, rho_max),
+        "gauss",
+        {"sigma": sigma, "rho_min": rho_min, "rho_max": rho_max},
+        bands=bands,
+        res_km=res_km,
+        var=var,
+        n=n,
+        extent_km=extent_km,
+        analytical=analytical,
+    )
 
 
 def disk_image_dict(
@@ -232,52 +279,17 @@ def disk_image_dict(
         The disk is centered at (0, 0) and has a sharp boundary.
 
     """
-    logger.debug("Creating Disk ImageDict.", bands=bands)
-
-    _res_km = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-    band_n = _resolve_n(bands, res_km, n, extent_km)
-    band_datasets: dict[SensorBand, xr.Dataset] = {}
-
-    for band in bands:
-        coords: xr.Coordinates = square_grid(band_n[band], _res_km[band])
-
-        data: np.ndarray = _disk_data(coords, radius, rho_min, rho_max)
-
-        if analytical:
-            attrs = {
-                "adjeff:kind": "analytical",
-                "adjeff:model": "disk",
-                "adjeff:params": {
-                    "radius": radius,
-                    "rho_min": rho_min,
-                    "rho_max": rho_max,
-                },
-            }
-        else:
-            attrs = {"adjeff:kind": "arbitrary"}
-
-        data_vars = {
-            var: xr.DataArray(
-                np.asarray(data, dtype=np.float32),
-                dims=["y", "x"],
-                coords=coords,
-                attrs=attrs,
-            )
-        }
-
-        band_datasets[band] = xr.Dataset(data_vars)
-
-        logger.debug(
-            "Created Disk Image.",
-            band=band,
-            var=var,
-            radius=radius,
-            rho_min=rho_min,
-            rho_max=rho_max,
-            n=band_n[band],
-        )
-
-    return ImageDict(band_datasets)
+    return _analytical_image_dict(
+        lambda coords: _disk_data(coords, radius, rho_min, rho_max),
+        "disk",
+        {"radius": radius, "rho_min": rho_min, "rho_max": rho_max},
+        bands=bands,
+        res_km=res_km,
+        var=var,
+        n=n,
+        extent_km=extent_km,
+        analytical=analytical,
+    )
 
 
 def random_image_dict(
@@ -319,8 +331,6 @@ def random_image_dict(
         filled with uniform random float32 values in ``[0, 1)``.
 
     """
-    _res_km = res_km if isinstance(res_km, dict) else {b: res_km for b in bands}
-    band_n = _resolve_n(bands, res_km, n, extent_km)
     rng = np.random.default_rng(seed)
     logger.debug(
         "Creating random ImageDict",
@@ -329,18 +339,17 @@ def random_image_dict(
         seed=seed,
     )
     band_datasets: dict[SensorBand, xr.Dataset] = {}
-    for band in bands:
-        bn = band_n[band]
-        coords: xr.Coordinates = square_grid(bn, _res_km[band])
-
-        data_vars = {
-            v: xr.DataArray(
-                rng.random((bn, bn), dtype=np.float32),
-                dims=["y", "x"],
-                coords=coords,
-                attrs={"adjeff:kind": "arbitrary"},
-            )
-            for v in variables
-        }
-        band_datasets[band] = xr.Dataset(data_vars)
+    for band, coords in _band_grids(bands, res_km, n, extent_km).items():
+        side = int(coords["x"].size)
+        band_datasets[band] = xr.Dataset(
+            {
+                v: xr.DataArray(
+                    rng.random((side, side), dtype=np.float32),
+                    dims=["y", "x"],
+                    coords=coords,
+                    attrs={"adjeff:kind": "arbitrary"},
+                )
+                for v in variables
+            }
+        )
     return ImageDict(band_datasets)

@@ -1,10 +1,12 @@
 """Radial-analysis helper functions for 2D image arrays.
 
-Provides three low-level building blocks used by the adjeff accessor:
+Provides the low-level building blocks the radial analysis rests on:
 
 1) radial_distances : compute flat (r, v) arrays from a Dataset variable.
 2) natural_npix     : maximum bin count that guarantees no empty radial bins.
-3) bin_radial       : bin (r, v) torch tensors into radial histograms.
+3) RadialBinning    : group pixels by radius once, reduce values many times.
+4) annulus_areas    : the area each bin stands for, and cumulate over them,
+                      always read at the bin edges rather than at its centre.
 """
 
 from __future__ import annotations
@@ -182,49 +184,257 @@ def natural_npix(
         da = source[var_name]
     else:
         da = source
-    side = min(da.shape[-2], da.shape[-1])
+    return _natural_bins(min(da.shape[-2], da.shape[-1]))
+
+
+def _natural_bins(side: int) -> int:
+    """Return the bin count that keeps every bin at least one pixel wide."""
     return max(int((side - 1) / math.sqrt(2)) - 1, 2)
 
 
-def bin_radial(
-    rr: "torch.Tensor",
-    vv: "torch.Tensor",
-    npix: int,
-) -> tuple[torch.Tensor, ...]:
-    """Bin *rr*/*vv* into *npix* radial bins.
+def edges_from_centres(centres: "torch.Tensor") -> "torch.Tensor":
+    """Return the bin edges a set of bin *centres* implies.
+
+    Edges sit halfway between consecutive centres; the outer two are
+    extrapolated by half a step and the innermost is clamped at zero,
+    since a radius cannot be negative.
 
     Parameters
     ----------
-    rr : torch.Tensor
-        Flat float32 radial-distance array, shape ``(n_pixels,)``.
-    vv : torch.Tensor
-        Flat float32 value array, shape ``(n_pixels,)``.
-    npix : int
-        Number of radial bins.
+    centres : torch.Tensor
+        Bin centre radii, shape ``(n_bins,)``, increasing.
 
     Returns
     -------
-    bins : torch.Tensor
-        Bin edges, shape ``(npix + 1,)``.
-    inds : torch.Tensor
-        Per-pixel bin index, shape ``(n_pixels,)``.
-    counts : torch.Tensor
-        Number of pixels per bin, shape ``(npix,)``.
-    sum_vals : torch.Tensor
-        Sum of values per bin, shape ``(npix,)``.
-    r_centers : torch.Tensor
-        Bin centre radii, shape ``(npix,)``, with ``r_centers[0] == 0``.
+    torch.Tensor
+        Edges, shape ``(n_bins + 1,)``.
     """
     import torch
 
-    bins = torch.linspace(0.0, rr.max(), npix + 1)
-    inds = torch.bucketize(rr, bins, right=False) - 1
-    inds = inds.clamp(0, npix - 1)
+    step = centres[1:] - centres[:-1]
+    edges = torch.empty(centres.numel() + 1, dtype=centres.dtype)
+    edges[1:-1] = 0.5 * (centres[:-1] + centres[1:])
+    edges[0] = (centres[0] - 0.5 * step[0]).clamp(min=0.0)
+    edges[-1] = centres[-1] + 0.5 * step[-1]
+    return edges
 
-    counts = torch.bincount(inds, minlength=npix).float()
-    sum_vals = torch.bincount(inds, weights=vv, minlength=npix)
 
-    r_centers = (0.5 * (bins[:-1] + bins[1:])).clone()
-    r_centers[0] = 0.0
+def annulus_areas(edges: "torch.Tensor") -> "torch.Tensor":
+    """Return the area of the annulus each bin covers.
 
-    return bins, inds, counts, sum_vals, r_centers
+    Parameters
+    ----------
+    edges : torch.Tensor
+        Bin edges, shape ``(n_bins + 1,)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Annulus areas, shape ``(n_bins,)``.
+    """
+    return math.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
+
+
+class RadialBinning:
+    """Pixels grouped by their distance to a centre, computed once.
+
+    The pixel to bin mapping and the bin counts depend on the geometry
+    alone, not on the values, so a caller that reduces many fields on one
+    grid (a landscape scan, a profile and its standard deviation) builds
+    this once and calls the reductions repeatedly.
+
+    Parameters
+    ----------
+    radius : torch.Tensor
+        Flat distances, shape ``(n_pixels,)``.  Any unit; the radii that
+        come back out are in that same unit.
+    n_bins : int
+        Number of bins.
+    r_max : float or None, optional
+        Distance the outermost edge sits at.  Defaults to the largest
+        distance in *radius*.  Pixels beyond it fall into the last bin,
+        so pass only distances inside *r_max* when that would skew it.
+
+    Attributes
+    ----------
+    edges : torch.Tensor
+        Bin edges, shape ``(n_bins + 1,)``.
+    midpoints : torch.Tensor
+        True bin midpoints, shape ``(n_bins,)``.
+    centres : torch.Tensor
+        Midpoints with the first one pulled to zero, shape ``(n_bins,)``.
+        A radial profile starts at the centre pixel, so this is the
+        abscissa to plot and interpolate against.
+    counts : torch.Tensor
+        Number of pixels per bin, shape ``(n_bins,)``.
+    filled : torch.Tensor
+        Boolean mask of the bins that got at least one pixel.
+    """
+
+    def __init__(
+        self,
+        radius: "torch.Tensor",
+        n_bins: int,
+        *,
+        r_max: float | None = None,
+    ) -> None:
+        import torch
+
+        self.n_bins = n_bins
+        top = float(radius.max()) if r_max is None else float(r_max)
+        self.edges = torch.linspace(0.0, top, n_bins + 1)
+        self.index = (torch.bucketize(radius, self.edges, right=False) - 1).clamp(
+            0, n_bins - 1
+        )
+        self.counts = torch.bincount(self.index, minlength=n_bins).float()
+        self.filled = self.counts > 0
+
+        self.midpoints = 0.5 * (self.edges[:-1] + self.edges[1:])
+        centres = self.midpoints.clone()
+        centres[0] = 0.0
+        self.centres = centres
+        self.area = annulus_areas(self.edges)
+
+    @classmethod
+    def on_square_grid(cls, n: int, res: float) -> "RadialBinning":
+        """Return the binning of a square grid centred on itself.
+
+        Parameters
+        ----------
+        n : int
+            Grid side in pixels.
+        res : float
+            Pixel size, in the unit the radii come out in.
+
+        Returns
+        -------
+        RadialBinning
+            Binning with the natural bin count for that side.
+        """
+        import torch
+
+        half = (n // 2) * res
+        coords = np.linspace(-half, half, n, dtype=np.float32)
+        xx, yy = np.meshgrid(coords, coords)
+        radius = torch.from_numpy(np.hypot(xx, yy).ravel())
+        return cls(radius, _natural_bins(n))
+
+    def sum(self, values: "torch.Tensor") -> "torch.Tensor":
+        """Return the sum of *values* per bin, shape ``(n_bins,)``."""
+        import torch
+
+        return torch.bincount(self.index, weights=values.ravel(), minlength=self.n_bins)
+
+    def mean(
+        self, values: "torch.Tensor", fill: float = float("nan")
+    ) -> "torch.Tensor":
+        """Return the azimuthal mean of *values* per bin.
+
+        Parameters
+        ----------
+        values : torch.Tensor
+            Values to average, one per pixel.
+        fill : float, optional
+            Value written where a bin caught no pixel.  Defaults to
+            ``nan``; pass ``0.0`` when the result feeds an integral.
+
+        Returns
+        -------
+        torch.Tensor
+            Shape ``(n_bins,)``.
+        """
+        import torch
+
+        total = self.sum(values)
+        out = torch.full((self.n_bins,), fill, dtype=torch.float32)
+        out[self.filled] = total[self.filled] / self.counts[self.filled]
+        return out
+
+    def std(self, values: "torch.Tensor", fill: float = float("nan")) -> "torch.Tensor":
+        """Return the azimuthal standard deviation of *values* per bin."""
+        import torch
+
+        mean = self.sum(values)[self.filled] / self.counts[self.filled]
+        mean_sq = self.sum(values**2)[self.filled] / self.counts[self.filled]
+        out = torch.full((self.n_bins,), fill, dtype=torch.float32)
+        out[self.filled] = torch.sqrt((mean_sq - mean**2).clamp(min=0.0))
+        return out
+
+    def cdf(self, values: "torch.Tensor", *, normalize: bool = True) -> "torch.Tensor":
+        """Return the energy cumulated over radius, read at the edges.
+
+        The abscissa is :attr:`edges`, not :attr:`centres`: what an
+        annulus contributes is enclosed by its outer edge, so that is the
+        radius the running total belongs to.  The curve therefore starts
+        at zero, at radius zero, and carries one more point than there
+        are bins.
+
+        Parameters
+        ----------
+        values : torch.Tensor
+            Values to integrate, one per pixel.
+        normalize : bool, optional
+            Divide by the total, so that the curve reaches one at the
+            edge of the grid (default ``True``).
+
+        Returns
+        -------
+        torch.Tensor
+            Shape ``(n_bins + 1,)``, aligned on :attr:`edges`.
+        """
+        profile = self.mean(values, fill=0.0).clamp(min=0.0)
+        return cumulate(profile, self.edges, normalize=normalize)
+
+    def radius_at(self, cdf: "torch.Tensor", fraction: float) -> float:
+        """Return the radius enclosing *fraction* of the energy.
+
+        Interpolates inside the bin the fraction falls in, rather than
+        snapping to an edge: against a King profile of known encircled
+        energy that is the difference between seven percent of error and
+        two tenths of one.
+
+        Parameters
+        ----------
+        cdf : torch.Tensor
+            Cumulated energy from :meth:`cdf`, shape ``(n_bins + 1,)``.
+        fraction : float
+            Energy fraction, between zero and one.
+
+        Returns
+        -------
+        float
+            Radius, in the unit the distances came in.
+        """
+        return float(np.interp(fraction, cdf.numpy(), self.edges.numpy()))
+
+
+def cumulate(
+    profile: "torch.Tensor",
+    edges: "torch.Tensor",
+    *,
+    normalize: bool = True,
+) -> "torch.Tensor":
+    """Integrate a radial *profile* over the disc, annulus by annulus.
+
+    Parameters
+    ----------
+    profile : torch.Tensor
+        Azimuthal mean per bin, shape ``(n_bins,)``.
+    edges : torch.Tensor
+        Bin edges, shape ``(n_bins + 1,)``.
+    normalize : bool, optional
+        Divide by the total (default ``True``).
+
+    Returns
+    -------
+    torch.Tensor
+        Cumulated energy, shape ``(n_bins + 1,)``, starting at zero: the
+        value at index ``i`` is the energy enclosed by ``edges[i]``.
+    """
+    import torch
+
+    cdf = torch.zeros(profile.numel() + 1, dtype=profile.dtype)
+    cdf[1:] = torch.cumsum(profile * annulus_areas(edges), dim=0)
+    if normalize and cdf[-1] > 0:
+        cdf = cdf / cdf[-1]
+    return cdf

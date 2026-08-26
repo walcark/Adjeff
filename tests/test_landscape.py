@@ -53,9 +53,7 @@ def train_images(scene):
 
 def _grid(sigmas):
     """Return one Gaussian PSF per sigma."""
-    return [
-        GaussPSF(PSFGrid(RES_KM, N), BAND, sigma=float(s)) for s in sigmas
-    ]
+    return [GaussPSF(PSFGrid(RES_KM, N), BAND, sigma=float(s)) for s in sigmas]
 
 
 # --- loss_landscape ---
@@ -81,10 +79,7 @@ def test_loss_landscape_accepts_any_callable_loss(train_images):
     def flat_mae(forward_fn, samples):
         """Unweighted, unmasked mean absolute error."""
         return torch.stack(
-            [
-                (forward_fn(s.inputs) - s.target).abs().mean() * s.weight
-                for s in samples
-            ]
+            [(forward_fn(s.inputs) - s.target).abs().mean() * s.weight for s in samples]
         ).sum()
 
     losses = loss_landscape(train_images, BAND, _grid([0.5, 2.0]), flat_mae)
@@ -99,7 +94,12 @@ def test_loss_landscape_runs_through_a_model(train_images):
     from adjeff.modules.models import Unif2Surface
 
     model = make_model(
-        Unif2Surface, GaussPSF, [BAND], RES_KM, N, {"sigma": 1.0},
+        Unif2Surface,
+        GaussPSF,
+        [BAND],
+        RES_KM,
+        N,
+        {"sigma": 1.0},
         device="cpu",
     )
 
@@ -121,9 +121,7 @@ def test_loss_landscape_runs_through_a_model(train_images):
 
 def test_loss_landscape_is_empty_for_no_candidate(train_images):
     """An empty parameter grid is a valid, if useless, request."""
-    assert loss_landscape(
-        train_images, BAND, [], Loss(Metric.RMSE_RAD)
-    ).shape == (0,)
+    assert loss_landscape(train_images, BAND, [], Loss(Metric.RMSE_RAD)).shape == (0,)
 
 
 # --- energy_radius_landscape ---
@@ -151,10 +149,7 @@ def test_energy_radii_follow_the_king_tail():
     The 99% radius is the one that reads the tail, so it must separate
     two profiles that share a core width.
     """
-    kings = [
-        KingPSF(PSFGrid(RES_KM, N), BAND, sigma=1.0, gamma=g)
-        for g in (1.1, 3.0)
-    ]
+    kings = [KingPSF(PSFGrid(RES_KM, N), BAND, sigma=1.0, gamma=g) for g in (1.1, 3.0)]
 
     radii = energy_radius_landscape(kings, fractions=[0.99])
 

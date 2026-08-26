@@ -5,6 +5,129 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.12.0]
+
+### Fixed
+
+- **The encircled energy was read at the wrong radius.** `radius_at`
+  cumulated the energy through a bin, which is the energy inside that
+  bin's *outer edge*, then returned the bin's *centre*, and snapped to
+  it rather than interpolating. Against the closed form of the King
+  profile the published radii were off by up to 7 % on EE10 % of a
+  65-pixel grid and around 1 % on EE50 % and EE90 %; every case is now
+  under 0.2 %. `encircled_energy` therefore returns one point per bin
+  edge, starting at zero. The `cdf` statistic of the radial profile
+  keeps its abscissa and no longer ends at exactly one: on a constant
+  field the energy enclosed by the last bin centre is the area ratio,
+  and claiming one there was the defect. On the article's 1999-pixel
+  grid the curve ends within 1e-4 of one.
+
+- **A non-finite result is no longer cached.** Smart-G returns NaN
+  rather than raising when it cannot allocate on the GPU, and the six
+  radiative samplers of a run then wrote six NaN entries.  Cached, that
+  is permanent: every later run read them back and failed two hundred
+  lines away, inside a Pchip interpolation, with nothing pointing at a
+  simulation that had run minutes earlier.  A module now checks its
+  outputs before writing and raises `ComputationError`, naming the
+  module, the variable and the band, and leaving no entry behind.
+
+- **A parameter that overshot its bound stayed dead.**
+  `ConstrainedParameter.forward` clamped the raw parameter, which bounds
+  the physical value but leaves the raw one outside, where the
+  derivative of `clamp` is zero. The gradient died and no later step
+  could bring it back, while the value on display stayed perfectly
+  plausible. `project()` now puts the raw parameter *on* the boundary
+  after every optimiser step, where the transform is still
+  differentiable, and both optimisers call it.
+
+- **`api.py`'s docstrings disagreed with its signatures.** Forty-four
+  parameters carried a default their type line did not call `optional`.
+  `cache` was described eight ways across eight functions and `n_bins`
+  four ways across four.
+
+- **A PSF whose profile raises the radius to a power below one made
+  every parameter NaN.** Differentiating `(r/sigma)**p` with respect to
+  `sigma` brings out `(r/sigma)**(p-1)`, which is `inf` at the origin for
+  `p < 1`, times `r/sigma**2`, which is zero: IEEE 754 answers NaN. One
+  pixel is enough, the NaN reaching every parameter through the sum of
+  the gradient on the next optimiser step. `GeneralizedGaussianPSF` is
+  always exposed, its shape exponent being constrained to `[0.1, 0.4]`,
+  and `MoffatGeneralizedPSF` whenever `beta < 0.5`.
+
+  Whether it fired was decided by floating-point rounding: `linspace`
+  lands exactly on zero for a 401-pixel grid at 0.5 km and misses it by
+  5e-08 for a 1999-pixel grid at 0.1 km. The article's figures were
+  spared; the smoke run's grid was not, and had been fitting a NaN model
+  and drawing it since long before the guard above made it visible.
+
+  `radial_power` evaluates the origin on a stand-in radius and discards
+  it, giving the gradient there the value of its limit, zero. Discarding
+  the *result* would not have been enough: the gradient of an overwritten
+  value is zero, and zero times NaN is still NaN. Every kernel is
+  unchanged, bit for bit, on twenty-one cases across three grids.
+
+- Reading a trained parameter into a `float` no longer warns. Ten sites
+  did it, and torch is right to complain: that is where a value leaves
+  the autograd graph, and doing it by accident inside a training loop is
+  a real mistake. `ConstrainedParameter.scalar` says so on purpose.
+
+- The message raised on a non-finite result named a busy GPU as the only
+  cause. Auxiliary data Smart-G cannot find produces the same NaN, which
+  is what an integration run without `SMARTG_DIR_AUXDATA` actually hits.
+
+### Added
+
+- `ComputationError`, for a result that cannot be used.  It is raised
+  before anything reaches the cache, so a bad result fails where it was
+  produced rather than becoming a value later runs keep reading.
+
+- **`py.typed`.** The package had no PEP 561 marker, so every consumer
+  saw `Any` for every import and none of the `--strict` clean annotations
+  reached anyone, including the article repository.
+
+- `ConstrainedParameter.scalar`, the current value as a plain number,
+  detached on purpose.
+
+- `PSFModule` documents what its sampling assumes. A discrete convolution
+  needs each tap to carry the integral of the profile over one pixel;
+  sampling the profile at the pixel's centre stands in for that, within
+  0.4 % from the first neighbour outwards and 550 % out at the centre for
+  a kernel sharp against the grid. Integrating the central pixels instead
+  is measured at under 2 % of a training step, and is deliberately not
+  done: the fitted parameters absorb the bias, so a kernel truer to the
+  continuous physics is not automatically a better fit to this discrete
+  problem. Settling it needs a measurement, and the note says which.
+
+- `RadialBinning`, in `adjeff.utils.radial`: pixels grouped by radius
+  once, values reduced many times through `sum`, `mean`, `std`, `cdf`
+  and `radius_at`. With `annulus_areas` and `cumulate` beside it, this
+  is the single radial binning the package has; `_RadialGrid` and
+  `bin_radial` were two, and `mtf` had a third written in numpy.
+
+### Changed
+
+- `ConstrainedParameter` accepts any transform that is finite and
+  strictly increasing over the parameter's bounds, which is the property
+  its bounds need, instead of a fixed list of two blessed classes. The
+  transforms themselves now compose `torch.distributions.transforms`;
+  `Transform` is a Protocol and `IdentityTransform`, never constructed
+  anywhere, is gone.
+
+- The six radiative samplers share `AtmoSampler`, declaring their photon
+  budget and the geometry arguments Smart-G takes as constants instead
+  of repeating twenty lines of construction each. Contracts, photon
+  counts, static arguments and config tuples are unchanged, object by
+  object.
+
+- `run_forward_pipeline` and `run_radiatives_from_scene` state the
+  relation between what they take and what they return with one
+  constrained `TypeVar` instead of two `@overload` stubs each.
+
+- The image generators share one body. `gaussian_image_dict` and
+  `disk_image_dict` were identical for forty-six lines apiece.
+
 ## [0.11.0]
 
 ### Added
