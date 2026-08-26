@@ -123,15 +123,18 @@ def fit(
 
     total = len(combos) * len(bands)
     done = 0
-    with run_context(run_id=uuid.uuid4().hex[:8]):
-        logger.info(
-            "fit.start",
+    with (
+        run_context(run_id=uuid.uuid4().hex[:8]),
+        timed(
+            logger,
+            "fit",
             combos=len(combos),
             bands=len(bands),
             optimisations=total,
             stages=" ".join(type(stage).__name__ for stage in runs),
             device=device,
-        )
+        ),
+    ):
         for combo in combos:
             for band in bands:
                 done += 1
@@ -162,27 +165,23 @@ def fit(
                     outcome["best_loss"] = round(best, 6)
                     outcome["steps"] = steps
 
-    stacked: dict[SensorBand, xr.DataArray] = {}
-    stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
-    for band in bands:
-        kernel = _stack(kernels[band], name="kernel")
-        band_params = {
-            name: _stack_scalars(values) for name, values in params[band].items()
-        }
-        if zpath is not None:
-            write_band(zpath / band.id, xr.Dataset({"kernel": kernel, **band_params}))
-            del kernel
-        else:
-            stacked[band] = kernel
-            if band_params:
-                stacked_params[band] = band_params
+        stacked: dict[SensorBand, xr.DataArray] = {}
+        stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
+        for band in bands:
+            kernel = _stack(kernels[band], name="kernel")
+            band_params = {
+                name: _stack_scalars(values) for name, values in params[band].items()
+            }
+            if zpath is not None:
+                write_band(
+                    zpath / band.id, xr.Dataset({"kernel": kernel, **band_params})
+                )
+                del kernel
+            else:
+                stacked[band] = kernel
+                if band_params:
+                    stacked_params[band] = band_params
 
-    logger.info(
-        "fit.done",
-        combos=len(combos),
-        bands=len(bands),
-        optimisations=total,
-    )
     if zpath is not None:
         tree: xr.DataTree = xr.open_datatree(zpath, engine="zarr")
         return tree
