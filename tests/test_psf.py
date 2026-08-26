@@ -272,3 +272,42 @@ def test_non_analytical_no_grad(non_analytical_psf):
 def test_non_analytical_param_dict_empty(non_analytical_psf):
     """NonAnalyticalPSF.param_dict must return an empty dict."""
     assert non_analytical_psf.param_dict() == {}
+
+
+# ---------------------------------------------------------------------------
+# KingPSF — the power-law index stays in the integrable range
+# ---------------------------------------------------------------------------
+
+
+def test_king_gamma_is_confined_to_the_integrable_range(grid, band):
+    """A King kernel with gamma below one has no scale of its own.
+
+    Its radial integral diverges as ``R^(2-2g)``, so the grid rather than
+    the profile sets the normalisation, and the loss surface turns
+    concave there, which stalls a quasi-Newton step.
+    """
+    low, high = KingPSF.GAMMA_BOUNDS
+
+    assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()[
+        "gamma"
+    ] >= low
+    assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()[
+        "gamma"
+    ] <= high
+
+
+def test_king_gamma_stays_bounded_under_gradient_steps(grid, band):
+    """The bound must survive optimisation, not only construction."""
+    import torch
+
+    psf = KingPSF(grid, band, sigma=0.3, gamma=1.2)
+    optimiser = torch.optim.SGD(psf.parameters(), lr=1e3)
+
+    for _ in range(20):
+        optimiser.zero_grad()
+        # Push hard towards a flat kernel, which wants a small gamma.
+        psf.forward().max().backward()
+        optimiser.step()
+
+    low, high = KingPSF.GAMMA_BOUNDS
+    assert low <= psf.param_dict()["gamma"] <= high
