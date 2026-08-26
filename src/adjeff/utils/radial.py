@@ -18,6 +18,10 @@ import torch
 import xarray as xr
 from scipy.interpolate import PchipInterpolator  # type: ignore[import-untyped]
 
+from .._logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def _sample_radial_from_cdf(
     profile: xr.DataArray,
@@ -104,6 +108,23 @@ def _profile_to_field(
     _, unique_idx = np.unique(r, return_index=True)
     r_u = r[unique_idx]
     v_u = values[unique_idx]
+
+    # Extrapolation stays on, because the corners of a square target grid
+    # sit at the half-diagonal while a profile usually stops at the
+    # half-width, so refusing it would refuse the ordinary case.  But a
+    # Pchip continued past its last knot follows the slope it ended on,
+    # which for a decaying profile heads for zero and then through it, so
+    # the caller should know how much of the field is guessed rather than
+    # interpolated.
+    outside = rr > r_u[-1]
+    if outside.any():
+        logger.warning(
+            "profile.extrapolated",
+            pixels=int(outside.sum()),
+            fraction=round(float(outside.mean()), 4),
+            profile_max=round(float(r_u[-1]), 4),
+            grid_max=round(float(rr.max()), 4),
+        )
 
     result: np.ndarray = PchipInterpolator(r_u, v_u, extrapolate=True)(rr).astype(
         np.float32

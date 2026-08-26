@@ -12,6 +12,7 @@ import logging
 import re
 from contextlib import redirect_stderr, redirect_stdout
 
+import numpy as np
 import pytest
 
 from adjeff._logging import ROOT, get_logger
@@ -394,3 +395,95 @@ def test_every_log_message_follows_the_convention():
     ]
 
     assert not offenders, f"messages off convention: {offenders}"
+
+
+# --- the warning level: a valid result that is not the one you asked for ---
+
+
+def test_a_defaulted_humidity_is_a_warning(caplog):
+    """MAJA products carry no RH; substituting 50 % is exactly this level.
+
+    The result is usable and the run continues, but it is not built from
+    the atmosphere the caller believed they had.
+    """
+    import inspect
+
+    from adjeff.modules.loaders import maja_loader
+
+    source = inspect.getsource(maja_loader)
+    assert 'logger.warning(\n                "maja.rh_defaulted"' in source
+
+
+def test_extrapolating_a_profile_past_its_last_radius_warns(caplog):
+    """A Pchip continued past its last knot follows the slope it ended on.
+
+    For a decaying profile that heads for zero and then through it, so the
+    caller has to know how much of the field is guessed.
+    """
+    from adjeff.utils.radial import _profile_to_field
+
+    r = np.linspace(0.0, 1.0, 20)
+    values = np.exp(-r)
+    coord = np.linspace(-3.0, 3.0, 9)
+    xx, yy = np.meshgrid(coord, coord)
+
+    with caplog.at_level(logging.WARNING, logger=ROOT):
+        _profile_to_field(r, values, xx, yy)
+
+    (record,) = caplog.records
+    assert record.msg["event"] == "profile.extrapolated"
+    assert record.msg["profile_max"] == 1.0
+    assert record.msg["pixels"] > 0
+    assert 0.0 < record.msg["fraction"] <= 1.0
+
+
+def test_a_profile_that_covers_its_target_says_nothing(caplog):
+    """The ordinary case must stay quiet, or the warning means nothing."""
+    from adjeff.utils.radial import _profile_to_field
+
+    r = np.linspace(0.0, 10.0, 20)
+    values = np.exp(-r)
+    coord = np.linspace(-1.0, 1.0, 9)
+    xx, yy = np.meshgrid(coord, coord)
+
+    with caplog.at_level(logging.WARNING, logger=ROOT):
+        _profile_to_field(r, values, xx, yy)
+
+    assert caplog.records == []
+
+
+def test_an_initial_parameter_outside_its_bounds_warns(caplog):
+    """Silently clamping an initial value hands back a model nobody asked for."""
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    with caplog.at_level(logging.WARNING, logger=ROOT):
+        param = ConstrainedParameter(
+            torch.tensor(500.0),
+            ExpTransform(),
+            min_val=1e-3,
+            max_val=50.0,
+            name="sigma",
+        )
+
+    (record,) = caplog.records
+    assert record.msg["event"] == "parameter.clamped"
+    assert record.msg["parameter"] == "sigma"
+    assert record.msg["requested"] == 500.0
+    assert record.msg["used"] == pytest.approx(50.0, rel=1e-5)
+    assert float(param.value) == pytest.approx(50.0, rel=1e-5)
+
+
+def test_a_parameter_inside_its_bounds_says_nothing(caplog):
+    """Again: a warning that fires on the ordinary case is noise."""
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    with caplog.at_level(logging.WARNING, logger=ROOT):
+        ConstrainedParameter(
+            torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+        )
+
+    assert caplog.records == []

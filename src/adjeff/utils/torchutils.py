@@ -6,6 +6,10 @@ import torch
 import torch.nn as nn
 from torch.distributions import transforms as _transforms
 
+from .._logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class Transform(Protocol):
     """Map an unconstrained parameter to a physical one, and back.
@@ -149,8 +153,16 @@ class ConstrainedParameter(nn.Module):
                 "the parameter's bounds."
             )
         with torch.no_grad():
-            p0 = transform.inverse(init_value)
-            p0 = torch.clamp(p0, self.p_min, self.p_max)
+            raw = transform.inverse(init_value)
+            p0 = torch.clamp(raw, self.p_min, self.p_max)
+            if not torch.equal(p0, raw):
+                logger.warning(
+                    "parameter.clamped",
+                    parameter=self.name,
+                    requested=float(init_value),
+                    used=float(transform.forward(p0)),
+                    bounds=(min_val, max_val),
+                )
 
         self.p = nn.Parameter(p0, requires_grad=requires_grad)
 
