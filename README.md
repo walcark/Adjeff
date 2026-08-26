@@ -27,7 +27,7 @@
 6. [SceneModule — transforming scenes](#6-scenemodule--transforming-scenes)
 7. [SceneSource — creating scenes from scratch](#7-scenesource--creating-scenes-from-scratch)
 8. [Pipeline — chaining modules](#8-pipeline--chaining-modules)
-9. [SceneModuleSweep — parameter sweeps and deduplication](#9-scenemodule-sweep--parameter-sweeps-and-deduplication)
+9. [SweepSampler, parameter sweeps and deduplication](#9-sweepsampler--parameter-sweeps-and-deduplication)
 10. [Smart-G radiative samplers](#10-smart-g-radiative-samplers)
 11. [PSF models and the PSF tree](#11-psf-models-and-the-psf-tree)
 12. [Atmospheric correction (5S model)](#12-atmospheric-correction-5s-model)
@@ -226,7 +226,7 @@ ImageDict(B02: [rho_s])  →  MyModule  →  ImageDict(B02: [rho_s, rho_toa])
 | `TdifUpSampler` | — | `tdif_up` | Diffuse transmittance ↑ |
 | `RhoAtmSampler` | — | `rho_atm` | Path reflectance |
 | `SphAlbSampler` | — | `sph_alb` | Spherical albedo |
-| `PsfAtmSampler` | — | `psf_atm` | Atmospheric PSF kernel |
+| `WuPsfSampler` | — | `psf_atm` | Sampled atmospheric PSF, Wu et al. 2024, in `adjeff.reference` |
 | `RhoToaSampler` | `rho_s` | `rho_toa` | TOA simulation (GPU) |
 | `RhoToaSymSampler` | `rho_s` | `rho_toa` | TOA simulation, azimuthal symmetry (GPU) |
 | `RadiativePipeline` | — | all radiative quantities | Convenience chain |
@@ -294,19 +294,35 @@ If a dependency is missing, a `ConfigurationError` is raised at construction tim
 
 ---
 
-## 9. SceneModuleSweep — parameter sweeps and deduplication
+## 9. SweepSampler — parameter sweeps and deduplication
 
-`SceneModuleSweep` extends `SceneModule` for computationally intensive modules that must be invoked once per scalar parameter combination. Subclasses declare:
+A sampler that must call Smart-G once per parameter combination declares a
+[xsweep](https://github.com/walcark/xsweep) contract instead of writing the
+loop:
 
-- `scalar_dims` — attributes iterated one value at a time (e.g. `sza`)
-- `vector_dims` — attributes passed as a full array in a single call (e.g. `wl`)
+```python
+class TdirDownSampler(SweepSampler):
+    contract = "batch(aot, rh, h, href, sza) vec(wl) -> tdir_down(wl)"
+    point_fn = staticmethod(tdir_down)
+```
 
-The sweep and assembly logic is handled by `SweepBundle`, which builds the outer product of all scalar dimensions, calls the core function for each combination, and stacks the results into a single xarray output.
+The contract names three roles. `loop` variables are handed one value per
+call, `batch` variables are grouped so that one call carries several
+states, and `vec` variables arrive whole. Smart-G amortises the
+atmospheric profile over a batch, which is why the six radiative samplers
+declare `batch` rather than `loop`: calling once per state costs three
+times more.
+
+The three samplers that rebuild the sensor grid per geometry cannot batch
+those axes and declare `loop(sza, vza)` instead.
 
 <details>
 <summary>Spatial deduplication</summary>
 
-When atmospheric parameters vary spatially (e.g. `aot(x, y)` from a MAJA product), a large image may contain only a small number of unique parameter values. The `deduplicate_dims` argument collapses them before the GPU call and reconstructs the full spatial map after:
+When atmospheric parameters vary spatially, for instance `aot(x, y)` read
+from a MAJA product, a large image usually holds few distinct values.
+`dedup=True` collapses them before the GPU call and restores the full map
+afterwards:
 
 ```python
 sampler = TdirDownSampler(
@@ -314,28 +330,43 @@ sampler = TdirDownSampler(
     geo_config=geo_spatial,
     spectral_config=spectral,
     remove_rayleigh=False,
-    deduplicate_dims=["x", "y"],   # 1000×1000 image → N unique pairs
+    dedup=True,                    # 1000x1000 image -> N distinct states
 )
 scene = sampler(scene)
-# tdir_down has dims (wl, x, y) — full spatial map, computed on N points
+# tdir_down has dims (wl, x, y): the full map, computed on N points
+```
+
+It is a flag rather than a list of dimensions: xsweep collapses repeated
+states wherever they occur, and guarantees the result is unchanged.
+
+</details>
+
+<details>
+<summary>Bounding the GPU memory of one call</summary>
+
+`batch_size` caps how many states travel in a single Smart-G call:
+
+```python
+sampler = TdirDownSampler(..., batch_size=32)
 ```
 
 </details>
 
 <details>
-<summary>Chunking large vector dimensions</summary>
+<summary>Choosing where a result is written</summary>
 
-The `chunks` argument limits how many values are sent to Smart-G in a single call, bounding GPU memory usage:
+A module declares the *roles* it reads and writes; an instance binds them
+to names in the Dataset. This is what lets two estimates of the same
+quantity sit beside the truth they estimate:
 
 ```python
-sampler = TdirDownSampler(
-    atmo_config=atmo,
-    geo_config=geo,
-    spectral_config=spectral,
-    remove_rayleigh=False,
-    sweep_chunks={"wl": 20},
-)
+king = Unif2Surface(kernels=tree_king, rename={"rho_s": "rho_s_king"})
+gauss = Unif2Surface(kernels=tree_gauss, rename={"rho_s": "rho_s_gauss"})
+scene = gauss(king(scene))
 ```
+
+The cache is keyed by role, so both instances share one entry: where a
+result is written changes nothing to what is computed.
 
 </details>
 
@@ -343,7 +374,7 @@ sampler = TdirDownSampler(
 
 ## 10. Smart-G radiative samplers
 
-All radiative samplers are `SceneModuleSweep` subclasses. They delegate to [Smart-G](https://github.com/hygeos/smartg), a GPU Monte Carlo radiative transfer code, and require CUDA 12.6.
+All radiative samplers are `SweepSampler` subclasses. They delegate to [Smart-G](https://github.com/hygeos/smartg), a GPU Monte Carlo radiative transfer code, and require CUDA 12.6.
 
 ```python
 from adjeff.modules.samplers import RadiativePipeline
@@ -576,10 +607,48 @@ All `DataArray` objects produced by `adjeff` can be analysed via the `.adjeff` a
 ```python
 rho_s = scene[S2Band.B02]["rho_s"]
 
-profile = rho_s.adjeff.radial()           # azimuthal mean vs radius
-cdf     = rho_s.adjeff.radial("cdf")     # area-weighted CDF
-field   = profile.adjeff.to_field(ds)    # reconstruct 2D from radial profile
+profile = rho_s.adjeff.radial()               # azimuthal mean vs radius
+cdf     = rho_s.adjeff.radial("cdf")          # area-weighted CDF
+both    = rho_s.adjeff.radial(symmetric=True) # mirrored, for a full transect
+field   = profile.adjeff.to_field(ds)         # reconstruct 2D from a profile
 ```
+
+A scalar in a configuration is stored as an array of length one, so an
+output carries an `aot`, `rh`, `h` and `href` dimension even when a single
+atmospheric state was simulated. `tidy` turns those into scalar
+coordinates: the dimensions go, the values stay.
+
+```python
+rho_toa.dims                       # ('sza', 'vza', 'aot', 'rh', 'href', 'h', 'y', 'x')
+tidied = rho_toa.adjeff.tidy()
+tidied.dims                        # ('y', 'x')
+float(tidied.aot)                  # 0.4, the state that produced it
+
+tidied.adjeff.untidy()             # back to dimensions, before a merge
+```
+
+A tidied array recombines with `xr.concat`, which promotes the coordinate
+back to a dimension. It does not recombine with `xr.merge` or
+`xr.combine_by_coords`, which align on dimensions: call `untidy` first.
+
+### Analysing a PSF
+
+The accessor spells what `adjeff.analysis` implements, and that package
+holds what quantifies a kernel:
+
+```python
+from adjeff.analysis import encircled_radius, fwhm, mtf, rmse
+
+encircled_radius(kernel, 0.5)      # radius holding half the energy [km]
+fwhm(kernel)                       # full width at half maximum [km]
+mtf(kernel)                        # contrast against spatial frequency
+
+rmse(estimated, truth, mask=15.0, radial=True)   # over a 15 km disc
+```
+
+One rule decides what belongs there: does it quantify a PSF, or a 2-D
+field of adjacency effect? A generic 1-D FFT, a power spectral density, a
+Wiener filter do not.
 
 ### Caching
 
