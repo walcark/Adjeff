@@ -7,8 +7,8 @@ API Reference
    core
    atmosphere
    modules
-   sweep
    optim
+   analysis
    utils
    exceptions
    accessor

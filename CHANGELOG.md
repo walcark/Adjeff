@@ -5,6 +5,40 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0]
+
+### Added
+
+- **`adjeff.analysis`**, for what quantifies a PSF or a two-dimensional
+  field of adjacency effect.  Nothing here is new behaviour: the radial
+  profile lived in the `.adjeff` accessor, the encircled energy was
+  written a second time inside `optim/landscape.py` for speed, and the
+  error metrics on DataArrays lived in the article's own repository
+  because the package had none.
+
+  - `radial_profile`, `transect`, `to_field`, moved out of the accessor,
+    which now spells them rather than implementing them.
+  - `radial_profile(symmetric=True)` mirrors the profile around `r = 0`,
+    so that a transect can be drawn across its full width.  The values
+    are unchanged: a radial profile is symmetric by construction, this
+    only writes the other half down.
+  - `encircled_energy`, `encircled_radius` and the batched
+    `encircled_radii`, which `energy_radius_landscape` now delegates to,
+    dropping 55 lines of duplicated binning to 8.  Checked against the
+    closed form of a Gaussian, which neither previous implementation
+    was.
+  - `fwhm` and `mtf`.  The modulation transfer function is how the
+    instrument literature reports a PSF, and the package had no way to
+    produce one.
+  - `rmse`, `mae` and `bias` on DataArrays, with a mask given as a field
+    or as a radius in km, and an optional radial weighting.  A shape
+    mismatch raises instead of broadcasting into a number that means
+    nothing.
+
+  One rule decides what belongs there: does it quantify a PSF, or a 2-D
+  field of adjacency effect?  A generic 1-D FFT, a power spectral
+  density, a Wiener filter do not.  `scipy.signal` exists.
+
 ## [0.10.0]
 
 ### Added
