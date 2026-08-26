@@ -16,7 +16,7 @@ from adjeff.exceptions import ComputationError, ConfigurationError
 from adjeff.utils import CacheStore
 from adjeff.utils._config import _Config
 
-from .._logging import get_logger, timed
+from .._logging import get_logger, run_context, timed
 
 if TYPE_CHECKING:
     from adjeff.core import ImageDict
@@ -167,7 +167,13 @@ class SceneModule:
         key = self._cache_key(scene)
         log = self._log.bind(key=key[:8])
 
-        with timed(log, "module", bands=len(scene.bands)) as outcome:
+        # The module name goes into the context, not only onto `log`:
+        # a warning raised by a helper three frames down carries it too,
+        # and those are the lines whose origin is hardest to guess.
+        with (
+            run_context(module=type(self).__name__),
+            timed(log, "module", bands=len(scene.bands)) as outcome,
+        ):
             cached = self._cache.load_vars(key, scene.bands, self._output_vars)
             if cached is not None:
                 self._write_roles(scene, cached)

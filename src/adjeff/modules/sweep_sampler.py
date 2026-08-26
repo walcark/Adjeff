@@ -154,16 +154,19 @@ class SweepSampler(SceneModule):
         # only for that sweep; nothing said, before a fit of five hundred
         # combos, that it was about to make thousands of Smart-G calls.
         # Not every sampler carries a spectral config: the ones that
-        # write into a scene's own bands read them from the scene.
+        # write into a scene's own bands read them from the scene.  The
+        # key is left out rather than reported as None, a key whose value
+        # is None being one more thing for the reader to interpret.
         spectral = getattr(self, "spectral_config", None)
-        self._log.info(
-            "sweep.plan",
-            states=int(np.prod([space.sizes[d] for d in space.dims]) or 1),
-            bands=len(spectral.bands) if spectral is not None else None,
-            n_ph=statics.get("n_ph"),
-            batch_size=self.batch_size,
-            dedup=self.dedup,
-        )
+        plan: dict[str, Any] = {
+            "states": int(np.prod([space.sizes[d] for d in space.dims]) or 1),
+            "n_ph": statics.get("n_ph"),
+            "batch_size": self.batch_size,
+            "dedup": self.dedup,
+        }
+        if spectral is not None:
+            plan["bands"] = len(spectral.bands)
+        self._log.info("sweep.plan", **plan)
         result = sweeper(
             space,
             policy=SweepPolicy(batch_size=self.batch_size, dedup=self.dedup),

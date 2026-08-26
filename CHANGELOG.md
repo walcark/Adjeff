@@ -77,9 +77,20 @@ cost, or how long it had taken.
 
 - **The warning level, which was two calls in the whole package.**
   `profile.extrapolated` fires when a radial profile is reconstructed
-  past its last radius, which a Pchip does by continuing the slope it
-  ended on. `parameter.clamped` fires when an initial value falls outside
-  a `ConstrainedParameter`'s bounds, which used to happen in silence.
+  well past its last radius, which a Pchip does by continuing the slope
+  it ended on. It follows how *far* the extrapolation reaches rather than
+  whether it happens: a profile binned from a square grid stops at the
+  centre of its outermost annulus, so the four corner pixels always sit
+  half a bin beyond, and a warning that fires on the ordinary case
+  teaches the reader to ignore it. Below 5 % overshoot it is a debug
+  line. `parameter.clamped` fires when an initial value falls outside a
+  `ConstrainedParameter`'s bounds, which used to happen in silence.
+
+- **Every line names where it came from.** The logger is rendered
+  alongside the message, and `SceneModule.forward` binds the module into
+  the context rather than only onto its own logger, so a line raised by a
+  helper three frames down carries it too. Those are the lines whose
+  origin is hardest to guess.
 
 ### Removed
 

@@ -14,6 +14,7 @@ from contextlib import redirect_stderr, redirect_stdout
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from adjeff._logging import ROOT, get_logger
 from adjeff.core import S2Band, gaussian_image_dict
@@ -414,11 +415,11 @@ def test_a_defaulted_humidity_is_a_warning(caplog):
     assert 'logger.warning(\n                "maja.rh_defaulted"' in source
 
 
-def test_extrapolating_a_profile_past_its_last_radius_warns(caplog):
+def test_extrapolating_a_profile_far_past_its_last_radius_warns(caplog):
     """A Pchip continued past its last knot follows the slope it ended on.
 
-    For a decaying profile that heads for zero and then through it, so the
-    caller has to know how much of the field is guessed.
+    For a decaying profile that heads for zero and then through it, so a
+    field reconstructed well beyond the profile is largely invented.
     """
     from adjeff.utils.radial import _profile_to_field
 
@@ -434,7 +435,61 @@ def test_extrapolating_a_profile_past_its_last_radius_warns(caplog):
     assert record.msg["event"] == "profile.extrapolated"
     assert record.msg["profile_max"] == 1.0
     assert record.msg["pixels"] > 0
-    assert 0.0 < record.msg["fraction"] <= 1.0
+    assert record.msg["overshoot_pct"] > 100.0
+
+
+def test_the_corners_of_a_square_grid_do_not_warn(caplog):
+    """Four pixels reaching 0.4 % past the last knot is how binning works.
+
+    A profile binned from a square grid stops at the centre of its
+    outermost annulus, so the corners always sit half a bin beyond it. A
+    warning that fires on the ordinary case teaches the reader to ignore
+    it, so this one drops to debug and says how far it reached.
+    """
+    from adjeff.utils.radial import _profile_to_field, natural_npix
+
+    coord = (np.arange(201) - 100) * 0.5
+    xx, yy = np.meshgrid(coord, coord)
+    rr = np.hypot(xx, yy)
+    n_bins = natural_npix(xr.DataArray(np.zeros((201, 201)), dims=["y", "x"]))
+    edges = np.linspace(0.0, rr.max(), n_bins + 1)
+    r = 0.5 * (edges[:-1] + edges[1:])
+    r[0] = 0.0
+
+    with caplog.at_level(logging.DEBUG, logger=ROOT):
+        _profile_to_field(r, np.exp(-r / 10.0), xx, yy)
+
+    (record,) = [
+        rec for rec in caplog.records if rec.msg["event"] == "profile.extrapolated"
+    ]
+    assert record.levelname == "DEBUG"
+    assert record.msg["pixels"] == 4
+    assert record.msg["overshoot_pct"] < 1.0
+
+
+def test_a_helper_says_which_module_it_was_called_from(caplog):
+    """`profile.extrapolated` is raised three frames below any module.
+
+    Without the module in the context it named no origin at all, which is
+    exactly the line whose source is hardest to guess.
+    """
+    from _test_module import TestModule
+
+    from adjeff._logging import get_logger as inner_logger
+
+    scene = gaussian_image_dict(sigma=0.4, res_km=0.01, n=9, bands=[S2Band.B02])
+
+    class Noisy(TestModule):
+        def _compute(self, scene):
+            inner_logger("adjeff.utils.helper").warning("helper.spoke")
+            return super()._compute(scene)
+
+    with caplog.at_level(logging.WARNING, logger=ROOT):
+        Noisy()(scene)
+
+    (record,) = [r for r in caplog.records if r.msg["event"] == "helper.spoke"]
+    assert record.msg["module"] == "Noisy"
+    assert record.msg["logger"] == "adjeff.utils.helper"
 
 
 def test_a_profile_that_covers_its_target_says_nothing(caplog):
