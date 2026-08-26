@@ -133,9 +133,7 @@ class WuPsfSampler(SweepSampler):
         self.afgl_type = afgl_type
         self.nr = nr
         self.n_ph = n_ph
-        super().__init__(
-            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
-        )
+        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup, rename=rename)
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.atmo_config, self.geo_config)
@@ -154,8 +152,6 @@ class WuPsfSampler(SweepSampler):
         # size its sampling grid, so the two travel together.
         for band in scene.bands:
             arr = self._sweep(rho_s=scene[band], band=band)
-            scene[band][self._slot("psf_atm")] = self._restore_coords(
-                arr, scene[band]
-            )
+            scene[band][self._slot("psf_atm")] = self._restore_coords(arr, scene[band])
             logger.info("Computed atmospheric PSF.", dims=arr.dims, band=band)
         return scene

@@ -325,9 +325,7 @@ class SceneModule:
         hashes: dict[str, str] = {}
         for band in scene.bands:
             ds = scene[band]
-            present = [
-                role for role in self._optional_vars if self._slot(role) in ds
-            ]
+            present = [role for role in self._optional_vars if self._slot(role) in ds]
             for role in [*self._required_vars, *present]:
                 # Keyed by role, read by slot: two runs that differ only
                 # by where they put their result compute the same thing

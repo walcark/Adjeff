@@ -73,9 +73,7 @@ class TdifDownSampler(SweepSampler):
         self.afgl_type = afgl_type
         self.remove_rayleigh = remove_rayleigh
         self.n_ph = n_ph
-        super().__init__(
-            cache=cache, batch_size=batch_size, dedup=dedup, rename=rename
-        )
+        super().__init__(cache=cache, batch_size=batch_size, dedup=dedup, rename=rename)
 
     def _get_configs(self) -> tuple[ConfigProtocol, ...]:
         return (self.spectral_config, self.atmo_config, self.geo_config)

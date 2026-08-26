@@ -125,12 +125,8 @@ def test_radial_metric_accepts_a_ready_made_mask():
     pred = sample.target + 0.1
 
     inside = sample.dist <= 3.0
-    on_disc = float(
-        Metric.MSE_RAD(pred, sample.target, sample.dist, inside)
-    )
-    everywhere = float(
-        Metric.MSE_RAD(pred, sample.target, sample.dist, None)
-    )
+    on_disc = float(Metric.MSE_RAD(pred, sample.target, sample.dist, inside))
+    everywhere = float(Metric.MSE_RAD(pred, sample.target, sample.dist, None))
 
     # A constant offset gives the same mean square error either way, so
     # the mask changes which pixels are averaged, not the value.
@@ -142,9 +138,10 @@ def test_radial_metric_accepts_a_ready_made_mask():
     assert float(
         Metric.MSE_RAD(spoiled, sample.target, sample.dist, inside)
     ) == pytest.approx(on_disc, rel=1e-5)
-    assert float(
-        Metric.MSE_RAD(spoiled, sample.target, sample.dist, None)
-    ) > 10.0 * everywhere
+    assert (
+        float(Metric.MSE_RAD(spoiled, sample.target, sample.dist, None))
+        > 10.0 * everywhere
+    )
 
 
 @pytest.mark.parametrize(

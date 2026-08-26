@@ -288,12 +288,8 @@ def test_king_gamma_is_confined_to_the_integrable_range(grid, band):
     """
     low, high = KingPSF.GAMMA_BOUNDS
 
-    assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()[
-        "gamma"
-    ] >= low
-    assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()[
-        "gamma"
-    ] <= high
+    assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()["gamma"] >= low
+    assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()["gamma"] <= high
 
 
 def test_king_gamma_stays_bounded_under_gradient_steps(grid, band):
@@ -386,7 +382,7 @@ def test_without_projection_the_gradient_dies():
     for _ in range(3):
         optimiser.zero_grad()
         ((param.forward() - 0.5) ** 2).backward()
-        optimiser.step()          # no projection
+        optimiser.step()  # no projection
 
     optimiser.zero_grad()
     ((param.forward() - 0.5) ** 2).backward()

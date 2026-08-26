@@ -55,9 +55,7 @@ def test_encircled_radius_matches_the_closed_form_for_a_gaussian():
 
     for fraction in (0.5, 0.9):
         expected = sigma * math.sqrt(-2.0 * math.log(1.0 - fraction))
-        assert encircled_radius(kernel, fraction) == pytest.approx(
-            expected, rel=0.05
-        )
+        assert encircled_radius(kernel, fraction) == pytest.approx(expected, rel=0.05)
 
 
 def test_encircled_radius_grows_with_the_fraction():
@@ -84,8 +82,7 @@ def test_encircled_radii_batches_over_one_grid():
     import torch
 
     kernels = [
-        torch.from_numpy(gaussian(s).values.astype(np.float32))
-        for s in (0.2, 0.4, 0.8)
+        torch.from_numpy(gaussian(s).values.astype(np.float32)) for s in (0.2, 0.4, 0.8)
     ]
 
     radii = encircled_radii(kernels, n=N, res=RES_KM, fractions=[0.5])

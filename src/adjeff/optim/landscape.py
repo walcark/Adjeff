@@ -203,6 +203,4 @@ def energy_radius_landscape(
     grid = psf_modules[0].grid
     with torch.no_grad():
         kernels = [psf.forward() for psf in tqdm(psf_modules)]
-    return encircled_radii(
-        kernels, n=grid.n, res=grid.res, fractions=fractions
-    )
+    return encircled_radii(kernels, n=grid.n, res=grid.res, fractions=fractions)

@@ -238,9 +238,7 @@ def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
     stored.to_zarr(path, mode="w")
 
     assert (
-        cache.load_vars(
-            module._cache_key(scene), [S2Band.B02], TwoOut._output_vars
-        )
+        cache.load_vars(module._cache_key(scene), [S2Band.B02], TwoOut._output_vars)
         is None
     )
     assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
@@ -433,9 +431,7 @@ def test_rename_also_redirects_an_input(tmp_path, scene):
 
     out = module(scene)[S2Band.B02]
 
-    np.testing.assert_allclose(
-        out["rho_toa"].values, (ds["rho_s_king"] + 0.05).values
-    )
+    np.testing.assert_allclose(out["rho_toa"].values, (ds["rho_s_king"] + 0.05).values)
 
 
 # --- non-finite outputs ---

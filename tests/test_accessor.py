@@ -316,9 +316,7 @@ def test_untidy_restores_the_dimensions():
     restored = original.adjeff.tidy().adjeff.untidy("rh", "href")
 
     assert set(restored.dims) == set(original.dims)
-    xr.testing.assert_allclose(
-        restored.transpose(*original.dims), original
-    )
+    xr.testing.assert_allclose(restored.transpose(*original.dims), original)
 
 
 def test_untidy_defaults_to_every_scalar_coordinate():
@@ -337,7 +335,8 @@ def test_tidied_arrays_concatenate_back():
     """
     pieces = [
         xr.DataArray(
-            np.full((1, 4, 4), aot), dims=["aot", "y", "x"],
+            np.full((1, 4, 4), aot),
+            dims=["aot", "y", "x"],
             coords={"aot": [aot]},
         ).adjeff.tidy()
         for aot in (0.2, 0.4, 0.6)
@@ -365,7 +364,8 @@ def test_radial_symmetric_mirrors_the_profile():
     full = da.adjeff.radial(symmetric=True)
 
     assert full.sizes["r"] == 2 * half.sizes["r"]
-    np.testing.assert_allclose(full.coords["r"].values[-len(half):],
-                               half.coords["r"].values)
-    np.testing.assert_allclose(full.values[-len(half):], half.values)
+    np.testing.assert_allclose(
+        full.coords["r"].values[-len(half) :], half.coords["r"].values
+    )
+    np.testing.assert_allclose(full.values[-len(half) :], half.values)
     np.testing.assert_allclose(full.values[: len(half)], half.values[::-1])

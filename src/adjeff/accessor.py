@@ -194,9 +194,7 @@ class AdjeffDataArrayAccessor:
         >>> float(tidied.aot)
         0.4
         """
-        singleton = [
-            str(dim) for dim in self._da.dims if self._da.sizes[dim] == 1
-        ]
+        singleton = [str(dim) for dim in self._da.dims if self._da.sizes[dim] == 1]
         if not singleton:
             return self._da
         return self._da.squeeze(singleton, drop=False)
