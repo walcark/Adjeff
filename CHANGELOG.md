@@ -47,6 +47,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `cache` was described eight ways across eight functions and `n_bins`
   four ways across four.
 
+- **A PSF whose profile raises the radius to a power below one made
+  every parameter NaN.** Differentiating `(r/sigma)**p` with respect to
+  `sigma` brings out `(r/sigma)**(p-1)`, which is `inf` at the origin for
+  `p < 1`, times `r/sigma**2`, which is zero: IEEE 754 answers NaN. One
+  pixel is enough, the NaN reaching every parameter through the sum of
+  the gradient on the next optimiser step. `GeneralizedGaussianPSF` is
+  always exposed, its shape exponent being constrained to `[0.1, 0.4]`,
+  and `MoffatGeneralizedPSF` whenever `beta < 0.5`.
+
+  Whether it fired was decided by floating-point rounding: `linspace`
+  lands exactly on zero for a 401-pixel grid at 0.5 km and misses it by
+  5e-08 for a 1999-pixel grid at 0.1 km. The article's figures were
+  spared; the smoke run's grid was not, and had been fitting a NaN model
+  and drawing it since long before the guard above made it visible.
+
+  `radial_power` evaluates the origin on a stand-in radius and discards
+  it, giving the gradient there the value of its limit, zero. Discarding
+  the *result* would not have been enough: the gradient of an overwritten
+  value is zero, and zero times NaN is still NaN. Every kernel is
+  unchanged, bit for bit, on twenty-one cases across three grids.
+
 - Reading a trained parameter into a `float` no longer warns. Ten sites
   did it, and torch is right to complain: that is where a value leaves
   the autograd graph, and doing it by accident inside a training loop is
@@ -68,6 +89,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - `ConstrainedParameter.scalar`, the current value as a plain number,
   detached on purpose.
+
+- `PSFModule` documents what its sampling assumes. A discrete convolution
+  needs each tap to carry the integral of the profile over one pixel;
+  sampling the profile at the pixel's centre stands in for that, within
+  0.4 % from the first neighbour outwards and 550 % out at the centre for
+  a kernel sharp against the grid. Integrating the central pixels instead
+  is measured at under 2 % of a training step, and is deliberately not
+  done: the fitted parameters absorb the bias, so a kernel truer to the
+  continuous physics is not automatically a better fit to this discrete
+  problem. Settling it needs a measurement, and the note says which.
 
 - `RadialBinning`, in `adjeff.utils.radial`: pixels grouped by radius
   once, values reduced many times through `sum`, `mean`, `std`, `cdf`

@@ -14,7 +14,7 @@ import torch
 
 from adjeff.utils import ConstrainedParameter, ExpTransform, SigmoidTransform
 
-from ._psf import PSFGrid, PSFModule
+from ._psf import PSFGrid, PSFModule, radial_power
 from .bands import SensorBand
 
 
@@ -96,7 +96,7 @@ class GeneralizedGaussianPSF(PSFModule):
         """Return normalised Generalised Gaussian kernel on the grid."""
         X, Y = self.grid.meshgrid()
         r = torch.sqrt(X**2 + Y**2)
-        kernel = torch.exp(-((r / self.sigma.value) ** self.n.value))
+        kernel = torch.exp(-radial_power(r, self.sigma.value, self.n.value))
         return kernel / kernel.sum()
 
     def param_dict(self) -> dict[str, float]:
@@ -326,7 +326,7 @@ class MoffatGeneralizedPSF(PSFModule):
         """Return normalised Generalised Moffat kernel on the grid."""
         X, Y = self.grid.meshgrid()
         r = torch.sqrt(X**2 + Y**2)
-        k = (1.0 + (r / self.alpha.value).pow(2 * self.beta.value)).pow(
+        k = (1.0 + radial_power(r, self.alpha.value, 2 * self.beta.value)).pow(
             -self.gamma.value
         )
         return k / k.sum()

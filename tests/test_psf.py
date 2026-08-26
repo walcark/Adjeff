@@ -5,7 +5,7 @@ import pytest
 import torch
 import xarray as xr
 
-from adjeff.core._psf import PSFGrid
+from adjeff.core._psf import PSFGrid, radial_power
 from adjeff.core.analytical_psf import (
     GaussPSF,
     GeneralizedGaussianPSF,
@@ -477,3 +477,96 @@ def test_a_custom_increasing_transform_is_accepted():
 
     assert float(param.value) == pytest.approx(8.0, rel=1e-5)
     assert float(param.p_min) < float(param.p_max)
+
+
+# --- radial_power: a grid that lands on r = 0 must not kill the gradient ---
+
+#: 401 pixels at 0.5 km: `linspace` lands exactly on zero here, where a
+#: 1999-pixel grid at 0.1 km misses it by 5e-08.  Both are real grids;
+#: which one a run gets is decided by floating-point rounding.
+ZERO_GRID = (0.5, 401)
+
+
+def _grad_of(psf) -> dict[str, float]:
+    """Return the gradient of a weighted sum of *psf*'s kernel."""
+    torch.manual_seed(0)
+    kernel = psf()
+    (kernel * torch.rand_like(kernel)).sum().backward()
+    return {name: float(p.grad) for name, p in psf.named_parameters()}
+
+
+def test_the_centre_pixel_of_a_grid_can_land_exactly_on_zero():
+    """The premise of the tests below, stated so it cannot drift."""
+    res, n = ZERO_GRID
+    x, y = PSFGrid(res, n).meshgrid()
+    radius = torch.sqrt(x**2 + y**2)
+
+    assert float(radius.min()) == 0.0
+    assert int((radius == 0).sum()) == 1
+
+
+@pytest.mark.parametrize(
+    ("cls", "kwargs"),
+    [
+        (GeneralizedGaussianPSF, {"sigma": 1e-3, "n": 0.20}),
+        (GeneralizedGaussianPSF, {"sigma": 1e-1, "n": 0.40}),
+        (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.2, "gamma": 2.0}),
+        (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.4, "gamma": 2.0}),
+    ],
+    ids=["gg-n0.2", "gg-n0.4", "moffat-b0.2", "moffat-b0.4"],
+)
+def test_a_fractional_power_of_the_radius_stays_differentiable(cls, kwargs):
+    """An exponent below one used to make every parameter NaN at once.
+
+    One pixel out of a hundred and sixty thousand is enough: the NaN
+    enters the sum of the gradient, the optimiser writes it into the raw
+    parameter, and every later step is lost.
+    """
+    res, n = ZERO_GRID
+    psf = cls(PSFGrid(res, n), S2Band.B03, **kwargs)
+
+    grads = _grad_of(psf)
+
+    assert all(np.isfinite(v) for v in grads.values()), grads
+    assert any(v != 0.0 for v in grads.values()), "a dead gradient is not a fix"
+
+
+def test_radial_power_leaves_the_kernel_untouched():
+    """The fix is about the gradient; not one value may move."""
+    res, n = ZERO_GRID
+    x, y = PSFGrid(res, n).meshgrid()
+    radius = torch.sqrt(x**2 + y**2)
+    scale, power = torch.tensor(1e-3), torch.tensor(0.20)
+
+    guarded = radial_power(radius, scale, power)
+    plain = (radius / scale) ** power
+
+    assert torch.equal(guarded, plain)
+
+
+def test_radial_power_gives_the_origin_the_limit_of_its_gradient():
+    """``(r/s)**p`` tends to zero at the origin, and so does its slope."""
+    scale = torch.tensor(1e-3, requires_grad=True)
+    radius = torch.zeros(1)
+
+    radial_power(radius, scale, torch.tensor(0.20)).sum().backward()
+
+    assert float(scale.grad) == 0.0
+
+
+def test_discarding_the_result_would_not_have_been_enough():
+    """Why the origin is never evaluated rather than evaluated and dropped.
+
+    Overwriting a value after the fact leaves its gradient path in the
+    graph, weighted by zero, and zero times NaN is NaN.  This pins the
+    trap that the first attempt at this fix fell into.
+    """
+    scale = torch.tensor(1e-3, requires_grad=True)
+    radius = torch.zeros(1)
+
+    naive = (radius / scale) ** torch.tensor(0.20)
+    overwritten = naive.clone()
+    overwritten[0] = 0.0
+    overwritten.sum().backward()
+
+    assert np.isnan(float(scale.grad))

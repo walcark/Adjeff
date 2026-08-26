@@ -53,8 +53,54 @@ class PSFGrid:
         return X, Y
 
 
+def radial_power(
+    r: torch.Tensor, scale: torch.Tensor, power: torch.Tensor
+) -> torch.Tensor:
+    """Return ``(r / scale) ** power``, differentiable at ``r = 0``.
+
+    Written plainly, this expression is finite at the origin but its
+    derivative is not computable there.  Differentiating with respect to
+    *scale* brings out a factor ``(r / scale) ** (power - 1)``, and a
+    *power* below one makes that ``0`` raised to a negative exponent,
+    which is ``inf``.  The chain rule then multiplies it by ``r / scale**2``,
+    which is ``0``, and IEEE 754 answers ``NaN``.  The limit exists and is
+    zero; autograd never computes limits, only products.
+
+    A grid whose centre pixel lands exactly on ``r = 0`` therefore poisons
+    the whole gradient, one pixel out of millions being enough, and every
+    parameter of the model becomes ``NaN`` on the next optimiser step.
+    Whether it happens is decided by floating-point rounding: a
+    401-pixel grid at 0.5 km lands on zero, a 1999-pixel grid at 0.1 km
+    misses it by 5e-08.
+
+    The origin is evaluated on a stand-in radius and then discarded, so
+    that no infinity is ever created.  Discarding the *result* would not
+    be enough: the gradient of a value that is overwritten is zero, and
+    ``0 * NaN`` is still ``NaN``.
+
+    Parameters
+    ----------
+    r : torch.Tensor
+        Radial distances, non-negative.
+    scale : torch.Tensor
+        Length the radii are measured in.
+    power : torch.Tensor
+        Exponent.  Values below one are what make this necessary.
+
+    Returns
+    -------
+    torch.Tensor
+        ``(r / scale) ** power``, with ``0`` at the origin and a
+        gradient of zero there, which is the limit.
+    """
+    positive = r > 0
+    stand_in = torch.where(positive, r, torch.ones_like(r))
+    powered = (stand_in / scale) ** power
+    return torch.where(positive, powered, torch.zeros_like(powered))
+
+
 class PSFModule(nn.Module, ABC):
-    """Abstract base for all PSF models.
+    r"""Abstract base for all PSF models.
 
     Subclasses must define:
 
@@ -67,6 +113,47 @@ class PSFModule(nn.Module, ABC):
     :meth:`to_dataarray` is fully implemented here using :meth:`forward` and
     :meth:`param_dict` — subclasses only override it when the attrs layout
     differs (e.g. :class:`~adjeff.core.NonAnalyticalPSF`).
+
+    Notes
+    -----
+    Every kernel here is sampled at the centre of each pixel, which is
+    the midpoint approximation of what a discrete convolution actually
+    needs.  Writing the continuous convolution over an image that is
+    constant per pixel gives
+
+    .. math::
+
+        \rho_{env}(x_i) = \sum_j \rho_{unif}(x_j)
+                          \int_{\mathrm{cell}\ j} P(x_i - x')\,dx',
+
+    so a tap *is* the integral of the profile over one cell, and the
+    value at the cell's centre only stands in for it.  That stand-in is
+    excellent wherever the profile is close to linear across a pixel: at
+    one pixel from the centre it is already within 0.4 % for a
+    generalised Gaussian at ``n = 0.2``, and within 0.2 % beyond.
+
+    It is not excellent at the centre pixel, where a peaked profile
+    varies by orders of magnitude across one cell.  Measured against the
+    true cell average, the centre tap is 8 % too high for a Gaussian of
+    ``sigma = 0.33 km`` on a 0.1 km grid, and 550 % too high for a King
+    profile of ``sigma = 0.01 km`` on the same grid.  The criterion is
+    not the family of the kernel but how much of its energy falls inside
+    one pixel.
+
+    Integrating the profile over the central pixels rather than sampling
+    it there would remove this, at a measured cost of under 2 % of a
+    training step: sub-sampling a 33x33 patch at 16x16 and the centre
+    pixel alone at 256x256 lands every tap within 0.5 % of its cell
+    average, even in the sharpest regime.  It is not done, for a reason
+    worth stating: the fitted parameters absorb the bias, so a kernel
+    that is more faithful to the continuous physics does not
+    automatically fit this discrete problem better.  Deciding it needs a
+    measurement, not an argument: fit at two resolutions with and
+    without, and compare the loss reached and how far the parameters
+    move between grids.
+
+    What was fixed rather than argued about is the gradient, which used
+    to be ``NaN`` outright on some grids.  See :func:`radial_power`.
 
     Parameters
     ----------
