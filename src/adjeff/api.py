@@ -31,8 +31,9 @@ Typical usage
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import TypedDict, TypeVar, cast, overload
+from typing import TypedDict, TypeVar, cast
 
 import numpy as np
 import xarray as xr
@@ -311,6 +312,30 @@ def make_full_config(
 
 M = TypeVar("M", bound=PSFConvModule)
 
+#: One scene or a batch of them.  Constrained rather than bound, so that
+#: a function taking a list is known to return a list.
+SceneT = TypeVar("SceneT", ImageDict, list[ImageDict])
+
+
+def _run_each(
+    scene: ImageDict | list[ImageDict], run: Callable[[ImageDict], ImageDict]
+) -> ImageDict | list[ImageDict]:
+    """Apply *run* to one scene, or to each scene of a batch."""
+    if isinstance(scene, list):
+        return [run(s) for s in scene]
+    return run(scene)
+
+
+def _map_scenes(scene: SceneT, run: Callable[[ImageDict], ImageDict]) -> SceneT:
+    """Apply *run* to *scene*, giving back whatever shape it came in.
+
+    The dispatch happens in :func:`_run_each`, whose return type is the
+    plain union: *SceneT* is constrained rather than bound, so mypy checks
+    this body once per member, and a cast written where the type is
+    already narrowed is redundant under one of them.
+    """
+    return cast(SceneT, _run_each(scene, run))
+
 
 def make_model(
     model_cls: type[M],
@@ -364,40 +389,8 @@ def make_model(
 # ---------------------------------------------------------------------------
 
 
-@overload
 def run_forward_pipeline(
-    scene: ImageDict,
-    atmo_config: AtmoConfig,
-    geo_config: GeoConfig,
-    spectral_config: SpectralConfig,
-    cache: CacheStore | None = ...,
-    remove_rayleigh: bool = ...,
-    afgl_type: str = ...,
-    nr: int = ...,
-    n_ph: int = ...,
-    batch_size: int = ...,
-    stream_dims: dict[str, int] | None = ...,
-) -> ImageDict: ...
-
-
-@overload
-def run_forward_pipeline(
-    scene: list[ImageDict],
-    atmo_config: AtmoConfig,
-    geo_config: GeoConfig,
-    spectral_config: SpectralConfig,
-    cache: CacheStore | None = ...,
-    remove_rayleigh: bool = ...,
-    afgl_type: str = ...,
-    nr: int = ...,
-    n_ph: int = ...,
-    batch_size: int = ...,
-    stream_dims: dict[str, int] | None = ...,
-) -> list[ImageDict]: ...
-
-
-def run_forward_pipeline(
-    scene: ImageDict | list[ImageDict],
+    scene: SceneT,
     atmo_config: AtmoConfig,
     geo_config: GeoConfig,
     spectral_config: SpectralConfig,
@@ -408,7 +401,7 @@ def run_forward_pipeline(
     n_ph: int = int(1e5),
     batch_size: int = 64,
     stream_dims: dict[str, int] | None = None,
-) -> ImageDict | list[ImageDict]:
+) -> SceneT:
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
 
     Chains :class:`~adjeff.modules.samplers.RadiativePipeline`,
@@ -483,9 +476,7 @@ def run_forward_pipeline(
         stream_dims=stream_dims,
     )
 
-    if isinstance(scene, list):
-        return [pipeline(s) for s in scene]
-    return pipeline(scene)
+    return _map_scenes(scene, pipeline)
 
 
 # ---------------------------------------------------------------------------
@@ -698,39 +689,15 @@ def load_maja(
 # ---------------------------------------------------------------------------
 
 
-@overload
 def run_radiatives_from_scene(
-    scene: ImageDict,
-    n_bins: int | None = ...,
-    species: dict[str, float] | None = ...,
-    remove_rayleigh: bool = ...,
-    afgl_type: str = ...,
-    cache: CacheStore | None = ...,
-    dedup: bool = ...,
-) -> ImageDict: ...
-
-
-@overload
-def run_radiatives_from_scene(
-    scene: list[ImageDict],
-    n_bins: int | None = ...,
-    species: dict[str, float] | None = ...,
-    remove_rayleigh: bool = ...,
-    afgl_type: str = ...,
-    cache: CacheStore | None = ...,
-    dedup: bool = ...,
-) -> list[ImageDict]: ...
-
-
-def run_radiatives_from_scene(
-    scene: ImageDict | list[ImageDict],
+    scene: SceneT,
     n_bins: int | None = None,
     species: dict[str, float] | None = None,
     remove_rayleigh: bool = False,
     afgl_type: str = "afgl_exp_h8km",
     cache: CacheStore | None = None,
     dedup: bool = False,
-) -> ImageDict | list[ImageDict]:
+) -> SceneT:
     """Run the radiative pipeline using configs embedded in *scene*.
 
     Unlike :func:`run_forward_pipeline` which takes explicit config objects,
@@ -790,9 +757,7 @@ def run_radiatives_from_scene(
             s[band] = scene_band[band]
         return s
 
-    if isinstance(scene, list):
-        return [_run(s) for s in scene]
-    return _run(scene)
+    return _map_scenes(scene, _run)
 
 
 # ---------------------------------------------------------------------------
