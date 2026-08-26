@@ -39,6 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   quantities of the 5S formula.  Each sampler declared its own; nothing
   named the set.
 
+- **`da.adjeff.tidy()` and `da.adjeff.untidy()`.** A scalar in a
+  configuration is coerced to an array of length one, so an output
+  carries an `aot`, `rh`, `h` and `href` dimension even when one
+  atmospheric state was simulated, and every caller peeled them off by
+  hand.  `tidy` turns those into scalar coordinates: the dimensions go,
+  the values stay, so the array still says which state produced it.
+
+  Selecting one value of a *swept* parameter needs neither: `sel` already
+  removes the dimension and keeps the coordinate.
+
+  A tidied array recombines with `concat`, which promotes the coordinate
+  back to a dimension.  It does not recombine with `merge` or
+  `combine_by_coords`, which align on dimensions: `untidy` first.  The
+  modules themselves accept either form, since they align on values.
+
 - **`ARTICLE_TRAIN_RADII_KM` and `ARTICLE_TRAIN_SIZE`** name the
   manuscript's training choices, which `fit_psf` used to impose as
   unnamed literals.  They remain its defaults, and a reader can now tell
