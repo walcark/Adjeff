@@ -239,3 +239,83 @@ def test_an_unknown_level_says_what_the_known_ones_are(clean_logging):
 
     with pytest.raises(ValueError, match="unknown log level 'verbose'"):
         setup_logging(level="verbose")
+
+
+# --- durations and run context ---
+
+
+def test_timed_brackets_the_work(caplog):
+    """A start line, a done line, and the duration nobody used to record."""
+    from adjeff._logging import timed
+
+    log = get_logger("adjeff.test")
+    with caplog.at_level(logging.INFO, logger=ROOT):
+        with timed(log, "probe", n=3) as outcome:
+            outcome["cached"] = False
+
+    start, done = caplog.records
+    assert start.msg["event"] == "probe.start"
+    assert start.msg["n"] == 3
+    assert done.msg["event"] == "probe.done"
+    assert done.msg["cached"] is False
+    assert isinstance(done.msg["duration_s"], float)
+
+
+def test_timed_says_where_a_failure_happened(caplog):
+    """A run that dies mid-way must still say where and how long it got."""
+    from adjeff._logging import timed
+
+    log = get_logger("adjeff.test")
+    with caplog.at_level(logging.INFO, logger=ROOT):
+        with pytest.raises(ValueError):
+            with timed(log, "probe", n=3):
+                raise ValueError("boom")
+
+    _, failed = caplog.records
+    assert failed.msg["event"] == "probe.failed"
+    assert failed.msg["error"] == "ValueError"
+    assert "duration_s" in failed.msg
+
+
+def test_run_context_unbinds_only_what_it_bound(caplog):
+    """Nesting must work: an inner context cannot drop an outer one."""
+    from adjeff._logging import run_context
+
+    log = get_logger("adjeff.test")
+    with caplog.at_level(logging.INFO, logger=ROOT):
+        with run_context(run_id="r-1"):
+            with run_context(band="B03"):
+                log.info("probe.inner")
+            log.info("probe.outer")
+
+    inner, outer = caplog.records
+    assert inner.msg["run_id"] == "r-1"
+    assert inner.msg["band"] == "B03"
+    assert outer.msg["run_id"] == "r-1"
+    assert "band" not in outer.msg
+
+
+def test_every_scene_module_brackets_its_work(caplog):
+    """The coverage rule, checked rather than trusted.
+
+    Each `SceneModule` must emit an entry line and an exit line carrying
+    a duration.  This is inherited from `forward`, so it holds for a
+    module written later too, but nothing enforced it before.
+    """
+    from _test_module import TestModule
+
+    scene = gaussian_image_dict(sigma=0.4, res_km=0.01, n=9, bands=[S2Band.B02])
+    module = TestModule()
+
+    with caplog.at_level(logging.INFO, logger=ROOT):
+        module(scene)
+
+    events = [r.msg["event"] for r in caplog.records]
+    assert "module.start" in events
+    assert "module.done" in events
+
+    (done,) = [r.msg for r in caplog.records if r.msg["event"] == "module.done"]
+    assert done["module"] == "TestModule"
+    assert done["bands"] == 1
+    assert "duration_s" in done
+    assert done["cached"] is False

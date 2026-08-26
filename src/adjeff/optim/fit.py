@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import xarray as xr
@@ -10,7 +11,7 @@ from adjeff.core.bands import SensorBand
 from adjeff.core.psf_tree import psf_tree, write_band
 from adjeff.modules.scene_module import TrainableSceneModule
 
-from .._logging import get_logger
+from .._logging import get_logger, run_context, timed
 from ._combo_stage import _ComboStage, restore_all_params, save_all_params
 from ._config import OptimizerConfig
 from .adam_optimizer import AdamConfig, AdamStage
@@ -122,37 +123,44 @@ def fit(
 
     total = len(combos) * len(bands)
     done = 0
-    for combo in combos:
-        for band in bands:
-            done += 1
-            label = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
-            logger.info(f"combo {done}/{total}", params=label or "-", band=str(band))
+    with run_context(run_id=uuid.uuid4().hex[:8]):
+        logger.info(
+            "fit.start",
+            combos=len(combos),
+            bands=len(bands),
+            optimisations=total,
+            stages=" ".join(type(stage).__name__ for stage in runs),
+            device=device,
+        )
+        for combo in combos:
+            for band in bands:
+                done += 1
+                label = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
+                with (
+                    run_context(band=band.id, combo=f"{done}/{total}"),
+                    timed(logger, "fit.combo", params=label or "-") as outcome,
+                ):
+                    data = training_set(
+                        train_images, inputs, target, band, device=device, **combo
+                    )
+                    restore_all_params(model, initial)
 
-            data = training_set(
-                train_images, inputs, target, band, device=device, **combo
-            )
-            restore_all_params(model, initial)
+                    best = float("inf")
+                    steps = 0
+                    for stage in runs:
+                        stage._reset_state()
+                        stage._run_combo(model, band, data, label)
+                        best = min(best, stage.best_loss)
+                        steps += stage.nloop
+                    del data
 
-            best = float("inf")
-            steps = 0
-            for stage in runs:
-                stage._reset_state()
-                stage._run_combo(model, band, data, label)
-                best = min(best, stage.best_loss)
-                steps += stage.nloop
-            del data
+                    psf = model.psf_modules[band.id]
+                    kernels[band].append((combo, psf.to_dataarray()))
+                    for name, value in psf.param_dict().items():
+                        params[band].setdefault(name, []).append((combo, value))
 
-            psf = model.psf_modules[band.id]
-            kernels[band].append((combo, psf.to_dataarray()))
-            for name, value in psf.param_dict().items():
-                params[band].setdefault(name, []).append((combo, value))
-
-            logger.info(
-                f"combo {done}/{total} done",
-                best_loss=f"{best:.4g}",
-                steps=steps,
-                band=str(band),
-            )
+                    outcome["best_loss"] = round(best, 6)
+                    outcome["steps"] = steps
 
     stacked: dict[SensorBand, xr.DataArray] = {}
     stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}

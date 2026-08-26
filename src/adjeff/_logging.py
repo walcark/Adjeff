@@ -30,11 +30,14 @@ it for them takes away the one they were entitled to.
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import structlog
 
-__all__ = ["get_logger", "setup_logging"]
+__all__ = ["get_logger", "run_context", "setup_logging", "timed"]
 
 #: Root of adjeff's logger namespace.  Everything the package emits hangs
 #: below it, so one call sets the level for all of it.
@@ -200,3 +203,90 @@ def _as_level(level: str | int) -> int:
             "warning, error, critical, or an integer"
         )
     return resolved
+
+
+@contextmanager
+def timed(log: Any, event: str, **fields: Any) -> Iterator[dict[str, Any]]:
+    """Bracket a unit of work with a start line and a done line.
+
+    The done line carries ``duration_s``, which no log in this package
+    used to. A measured run spent 94 % of its time between two lines with
+    nothing said in between, and every line it did emit arrived only once
+    the work was over: the start line is what tells a caller that
+    something is running, and the duration is what tells them whether to
+    wait for the next one.
+
+    Parameters
+    ----------
+    log : structlog.stdlib.BoundLogger
+        Logger to write through.
+    event : str
+        Event name, without a suffix. ``"module"`` produces
+        ``module.start`` and ``module.done``.
+    **fields
+        Key-value pairs attached to both lines.
+
+    Yields
+    ------
+    dict[str, Any]
+        Mutable dict whose contents are added to the done line. Use it
+        for anything only known once the work is finished, such as
+        whether the result came from cache.
+
+    Notes
+    -----
+    A failure re-raises after emitting ``<event>.failed`` with the
+    duration and the exception type, so a run that dies mid-way still
+    says where and how long it got.
+    """
+    log.info(f"{event}.start", **fields)
+    started = time.perf_counter()
+    extra: dict[str, Any] = {}
+    try:
+        yield extra
+    except BaseException as exc:
+        log.warning(
+            f"{event}.failed",
+            **fields,
+            **extra,
+            error=type(exc).__name__,
+            duration_s=round(time.perf_counter() - started, 3),
+        )
+        raise
+    log.info(
+        f"{event}.done",
+        **fields,
+        **extra,
+        duration_s=round(time.perf_counter() - started, 3),
+    )
+
+
+@contextmanager
+def run_context(**fields: Any) -> Iterator[None]:
+    """Bind *fields* onto every line emitted inside the block.
+
+    ``merge_contextvars`` is already in the processor chain, so a run id
+    bound here reaches every line below without any caller passing it
+    down. This is what makes a run of five hundred combos readable: the
+    band and the combo stop being repeated by hand at each call site and
+    stop being absent from the lines nobody remembered to pass them to.
+
+    Parameters
+    ----------
+    **fields
+        Key-value pairs to bind, e.g. ``run_id``, ``band``, ``combo``.
+
+    Yields
+    ------
+    None
+
+    Notes
+    -----
+    Only the keys bound here are unbound on exit, so nesting works and an
+    outer context survives an inner one.
+    """
+    tokens = structlog.contextvars.bind_contextvars(**fields)
+    try:
+        yield
+    finally:
+        structlog.contextvars.reset_contextvars(**tokens)
