@@ -169,15 +169,15 @@ def _make_atmo_config(
 
     Parameters
     ----------
-    aot : float or list or DataArray
+    aot : float or list or DataArray, optional
         Aerosol optical thickness (default 0.1).
-    rh : float or list or DataArray
+    rh : float or list or DataArray, optional
         Relative humidity [%] (default 50.0).
-    h : float or list or DataArray
+    h : float or list or DataArray, optional
         Ground elevation [km] (default 0.0).
-    href : float or list or DataArray
+    href : float or list or DataArray, optional
         Aerosol scale height [km] (default 2.0).
-    species : dict[str, float] or None
+    species : dict[str, float] or None, optional
         Aerosol species mix summing to 1.0 (default ``{"sulphate": 1.0}``).
 
     Returns
@@ -206,15 +206,15 @@ def _make_geo_config(
 
     Parameters
     ----------
-    sza : float or list or DataArray
+    sza : float or list or DataArray, optional
         Sun zenith angle [°] (default 30.0).
-    vza : float or list or DataArray
+    vza : float or list or DataArray, optional
         Viewing zenith angle [°] (default 0.0).
-    saa : float or list or DataArray
+    saa : float or list or DataArray, optional
         Sun azimuth angle [°] (default 120.0).
-    vaa : float or list or DataArray
+    vaa : float or list or DataArray, optional
         Viewing azimuth angle [°] (default 120.0).
-    sat_height : float
+    sat_height : float, optional
         Satellite altitude [km] (default 786.0).
 
     Returns
@@ -270,25 +270,25 @@ def make_full_config(
     ----------
     bands : list[SensorBand]
         Sensor bands to simulate.
-    aot : float or list or DataArray
+    aot : float or list or DataArray, optional
         Aerosol optical thickness (default 0.1).
-    rh : float or list or DataArray
+    rh : float or list or DataArray, optional
         Relative humidity [%] (default 50.0).
-    h : float or list or DataArray
+    h : float or list or DataArray, optional
         Ground elevation [km] (default 0.0).
-    href : float or list or DataArray
+    href : float or list or DataArray, optional
         Aerosol scale height [km] (default 2.0).
-    species : dict[str, float] or None
+    species : dict[str, float] or None, optional
         Aerosol species mix summing to 1.0 (default ``{"sulphate": 1.0}``).
-    sza : float or list or DataArray
+    sza : float or list or DataArray, optional
         Sun zenith angle [°] (default 30.0).
-    vza : float or list or DataArray
+    vza : float or list or DataArray, optional
         Viewing zenith angle [°] (default 0.0).
-    saa : float or list or DataArray
+    saa : float or list or DataArray, optional
         Sun azimuth angle [°] (default 120.0).
-    vaa : float or list or DataArray
+    vaa : float or list or DataArray, optional
         Viewing azimuth angle [°] (default 120.0).
-    sat_height : float
+    sat_height : float, optional
         Satellite altitude [km] (default 786.0).
 
     Returns
@@ -342,10 +342,10 @@ def make_model(
     init_parameters : dict[str, float] or dict[SensorBand, dict[str, float]]
         Initial PSF parameters, either shared across bands (flat dict) or
         per-band (nested dict keyed by :class:`~adjeff.core.SensorBand`).
-    device : str
+    device : str, optional
         PyTorch device (default ``"cuda"``).
-    cache : CacheStore or None
-        Optional cache backend (default ``None``).
+    cache : CacheStore or None, optional
+        Shared on-disk cache (default ``None``).
 
     Returns
     -------
@@ -433,21 +433,21 @@ def run_forward_pipeline(
     atmo_config : AtmoConfig
     geo_config : GeoConfig
     spectral_config : SpectralConfig
-    cache : CacheStore or None
-        Shared cache forwarded to all modules.
-    remove_rayleigh : bool
+    cache : CacheStore or None, optional
+        Shared on-disk cache (default ``None``).
+    remove_rayleigh : bool, optional
         Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str
+    afgl_type : str, optional
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    nr : int
+    nr : int, optional
         Radial sampling points for rho_toa (default 500).
-    n_ph : int
+    n_ph : int, optional
         Photon count per sensor for rho_toa (default ``1e5``).
-    batch_size : int
+    batch_size : int, optional
         Atmospheric states handed to Smart-G in one call inside
         :class:`~adjeff.modules.samplers.RadiativePipeline`. A cost
         decision only: it bounds GPU memory and never changes a value.
-    stream_dims : dict[str, int] or None
+    stream_dims : dict[str, int] or None, optional
         Dimensions to stream over for memory management, e.g.
         ``{"aot": 3}``.  When a dimension exists in the scene's DataArrays,
         the pipeline processes that many values at a time through the full
@@ -555,8 +555,9 @@ def load_scene(
     compute_radiatives : bool, optional
         Run the radiative pipeline after loading (default ``False``).
     n_bins : int or None, optional
-        Bins for ``aot``/``h`` digitisation when *compute_radiatives* is
-        ``True``.
+        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
+        the config, cutting the number of distinct Smart-G runs.  Ignored when
+        *compute_radiatives* is ``False``.
     species : dict[str, float] or None, optional
         Override aerosol species mix.
     remove_rayleigh : bool, optional
@@ -633,27 +634,26 @@ def load_maja(
         Bands to load.
     res : float or list[float]
         Target spatial resolution in km (e.g. ``0.12`` for 120 m).
-    mnt_path : Path or None
+    mnt_path : Path or None, optional
         Folder containing the DEM at 20 m resolution.  Must be provided;
         ``None`` raises :class:`~adjeff.exceptions.ConfigurationError`.
-    href : float
+    href : float, optional
         Aerosol scale height [km] (default ``2.0``).
-    as_map : bool
+    as_map : bool, optional
         When ``True``, load 2-D atmospheric parameters as full spatial maps
         instead of spatially-averaged scalars (default ``False``).
-    cache : CacheStore or None
-        Optional on-disk cache shared between the loader and the radiative
-        pipeline (default ``None``).
-    compute_radiatives : bool
+    cache : CacheStore or None, optional
+        Shared on-disk cache (default ``None``).
+    compute_radiatives : bool, optional
         When ``True``, run the radiative pipeline after loading (default
         ``False``).
-    n_bins : int or None
-        Number of bins used to digitise ``aot`` and ``h``, reducing the
-        number of Smart-G runs.  Ignored when *compute_radiatives* is
-        ``False``.
-    remove_rayleigh : bool
+    n_bins : int or None, optional
+        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
+        the config, cutting the number of distinct Smart-G runs.  Ignored when
+        *compute_radiatives* is ``False``.
+    remove_rayleigh : bool, optional
         Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str
+    afgl_type : str, optional
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
     dedup : bool, optional
         Collapse repeated atmospheric states before calling Smart-G.
@@ -748,18 +748,17 @@ def run_radiatives_from_scene(
         Scene(s) produced by a ProductLoader (must contain the atmospheric
         and geometric variables listed above).
     n_bins : int or None, optional
-        If provided, ``aot`` and ``h`` are digitised to *n_bins* unique
-        values before building the config, reducing the number of distinct
-        Smart-G runs.
+        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
+        the config, cutting the number of distinct Smart-G runs.
     species : dict[str, float] or None, optional
         Aerosol species mix summing to 1.0.  Defaults to
         ``{"sulphate": 1.0}`` when ``None``.
-    remove_rayleigh : bool
+    remove_rayleigh : bool, optional
         Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str
+    afgl_type : str, optional
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    cache : CacheStore or None
-        Shared cache forwarded to all pipeline instances.
+    cache : CacheStore or None, optional
+        Shared on-disk cache (default ``None``).
     dedup : bool, optional
         Collapse repeated atmospheric states before calling Smart-G.
         Worth it when the parameters are spatial maps, where many pixels
@@ -834,14 +833,14 @@ def sample_psf_atm(
         Atmospheric parameters (may contain swept dimensions).
     geo_config : GeoConfig
         Geometric parameters (sza, vza, saa, vaa must be scalar per call).
-    remove_rayleigh : bool
+    remove_rayleigh : bool, optional
         Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str
+    afgl_type : str, optional
         AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    n_ph : int
+    n_ph : int, optional
         Photon count per Smart-G run (default ``1e6``).
-    cache : CacheStore or None
-        Optional result cache.
+    cache : CacheStore or None, optional
+        Shared on-disk cache (default ``None``).
 
     Returns
     -------
@@ -907,7 +906,8 @@ def load_config(
     aggregate : bool, optional
         Reduce every field to its spatial mean.  Incompatible with *n_bins*.
     n_bins : int or None, optional
-        Digitise ``aot`` and ``h`` to *n_bins* unique values.  Incompatible
+        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
+        the config, cutting the number of distinct Smart-G runs.  Incompatible
         with *aggregate*.
     species : dict[str, float] or None, optional
         Aerosol species mix.  Resolution order: argument → attrs → default.
@@ -1012,7 +1012,7 @@ def fit_psf(
     n_train : int or None, optional
         PSF grid side in pixels for training (default 1999, must be odd).
     cache : CacheStore or None, optional
-        Shared cache forwarded to the forward pipeline.
+        Shared on-disk cache (default ``None``).
     device : str, optional
         PyTorch device (default ``"cuda"``).
 
@@ -1171,7 +1171,7 @@ def sample_psf_atm_from_scene(
     res_km : float or None, optional
         Pixel size [km].  ``None`` → inferred from *scene[band]*.
     cache : CacheStore or None, optional
-        Optional result cache.
+        Shared on-disk cache (default ``None``).
 
     Returns
     -------
