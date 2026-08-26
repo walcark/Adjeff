@@ -5,16 +5,17 @@ transfer function the second.  Both were missing from the package: the
 encircled energy existed twice, once in the radial accessor and once
 rewritten inside ``optim/landscape.py`` for speed, and the MTF, which is
 the canonical way to compare a PSF against the instrument literature,
-was nowhere.
+was nowhere.  The binning itself lives in :mod:`adjeff.utils.radial`,
+shared with the radial profile.
 """
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import torch
 import xarray as xr
+
+from adjeff.utils.radial import RadialBinning
 
 __all__ = [
     "encircled_energy",
@@ -25,79 +26,17 @@ __all__ = [
 ]
 
 
-class _RadialGrid:
-    """The radial binning of a square grid, computed once.
+def _as_grid(
+    kernel: xr.DataArray,
+) -> tuple[RadialBinning, torch.Tensor, float]:
+    """Return the binning of *kernel*'s grid, with values and pixel size.
 
-    A landscape scan evaluates hundreds of kernels on one grid, so the
-    pixel to bin mapping, the bin counts and the annulus areas are built
-    here and reused, rather than rebuilt per kernel.
-
-    Parameters
-    ----------
-    n : int
-        Grid side in pixels.
-    res : float
-        Pixel size, in the unit the radii come out in.
+    The values come back clamped to non-negative, which is what every
+    energy measure below assumes.
     """
-
-    def __init__(self, n: int, res: float) -> None:
-        self.n = n
-        self.res = res
-        npix = max(int((n - 1) / math.sqrt(2)) - 1, 2)
-        self.npix = npix
-
-        half = (n // 2) * res
-        coords = np.linspace(-half, half, n, dtype=np.float32)
-        xx, yy = np.meshgrid(coords, coords)
-        radius = torch.from_numpy(np.hypot(xx, yy).ravel())
-
-        bins = torch.linspace(0.0, float(radius.max()), npix + 1)
-        self.index = (torch.bucketize(radius, bins, right=False) - 1).clamp(
-            0, npix - 1
-        )
-        self.counts = torch.bincount(self.index, minlength=npix).float()
-        self.filled = self.counts > 0
-
-        centres = (0.5 * (bins[:-1] + bins[1:])).clone()
-        centres[0] = 0.0
-        step = centres[1:] - centres[:-1]
-        edges = torch.empty(npix + 1, dtype=centres.dtype)
-        edges[1:-1] = 0.5 * (centres[:-1] + centres[1:])
-        edges[0] = centres[0] - 0.5 * step[0]
-        edges[-1] = centres[-1] + 0.5 * step[-1]
-
-        self.centres = centres
-        self.area = math.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
-
-    def profile(self, values: torch.Tensor) -> torch.Tensor:
-        """Return the azimuthal mean of *values* per annulus."""
-        total = torch.bincount(
-            self.index, weights=values.ravel(), minlength=self.npix
-        )
-        mean = torch.zeros(self.npix, dtype=torch.float32)
-        mean[self.filled] = total[self.filled] / self.counts[self.filled]
-        return mean
-
-    def cdf(self, values: torch.Tensor) -> torch.Tensor:
-        """Return the cumulated energy, normalised to one at the edge."""
-        cumulated = torch.cumsum(self.profile(values) * self.area, dim=0)
-        if cumulated[-1] > 0:
-            cumulated = cumulated / cumulated[-1]
-        return cumulated
-
-    def radius_at(self, cdf: torch.Tensor, fraction: float) -> float:
-        """Return the radius where *cdf* first reaches *fraction*."""
-        index = min(
-            int(np.searchsorted(cdf.numpy(), fraction)), self.npix - 1
-        )
-        return float(self.centres[index])
-
-
-def _as_grid(kernel: xr.DataArray) -> tuple[_RadialGrid, torch.Tensor]:
-    """Return the binning of *kernel*'s grid and its clamped values."""
-    values = torch.from_numpy(
-        np.asarray(kernel.values, dtype=np.float32)
-    ).clamp(min=0.0)
+    values = torch.from_numpy(np.asarray(kernel.values, dtype=np.float32)).clamp(
+        min=0.0
+    )
     if values.ndim != 2 or values.shape[0] != values.shape[1]:
         raise ValueError(
             f"a kernel must be a square 2-D array, got shape {values.shape}"
@@ -105,7 +44,7 @@ def _as_grid(kernel: xr.DataArray) -> tuple[_RadialGrid, torch.Tensor]:
     name = "x_psf" if "x_psf" in kernel.coords else "x"
     coord = np.asarray(kernel.coords[name].values, dtype=float)
     res = float(abs(coord[1] - coord[0]))
-    return _RadialGrid(values.shape[0], res), values
+    return RadialBinning.on_square_grid(values.shape[0], res), values, res
 
 
 def encircled_energy(kernel: xr.DataArray) -> xr.DataArray:
@@ -129,7 +68,7 @@ def encircled_energy(kernel: xr.DataArray) -> xr.DataArray:
     radii below describe the kernel *as sampled*, which is also how it is
     convolved.
     """
-    grid, values = _as_grid(kernel)
+    grid, values, _ = _as_grid(kernel)
     return xr.DataArray(
         grid.cdf(values).numpy(),
         dims=["r"],
@@ -152,7 +91,7 @@ def encircled_radius(kernel: xr.DataArray, fraction: float = 0.5) -> float:
     float
         Radius, in the unit of the kernel's coordinates.
     """
-    grid, values = _as_grid(kernel)
+    grid, values, _ = _as_grid(kernel)
     return grid.radius_at(grid.cdf(values), fraction)
 
 
@@ -187,7 +126,7 @@ def encircled_radii(
     if not kernels:
         return {key: np.array([], dtype=np.float32) for key in keys}
 
-    grid = _RadialGrid(n, res)
+    grid = RadialBinning.on_square_grid(n, res)
     out: dict[str, list[float]] = {key: [] for key in keys}
     with torch.no_grad():
         for kernel in kernels:
@@ -211,8 +150,8 @@ def fwhm(kernel: xr.DataArray) -> float:
         Width, in the unit of the kernel's coordinates.  ``nan`` when the
         profile never falls to half its peak inside the grid.
     """
-    grid, values = _as_grid(kernel)
-    profile = grid.profile(values).numpy()
+    grid, values, _ = _as_grid(kernel)
+    profile = grid.mean(values, fill=0.0).numpy()
     radii = grid.centres.numpy()
     half = 0.5 * float(profile[0])
     below = np.nonzero(profile <= half)[0]
@@ -249,34 +188,30 @@ def mtf(kernel: xr.DataArray) -> xr.DataArray:
         frequency.  The first sample is the zero frequency, where the
         MTF is one by construction.
     """
-    grid, values = _as_grid(kernel)
+    grid, values, res = _as_grid(kernel)
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(values.numpy())))
     spectrum = spectrum / spectrum.max()
 
-    n, res = grid.n, grid.res
+    n = values.shape[0]
     freq = np.fft.fftshift(np.fft.fftfreq(n, d=res))
     fx, fy = np.meshgrid(freq, freq)
     radius = np.hypot(fx, fy).ravel()
 
     nyquist = 0.5 / res
-    n_bins = max(n // 4, 8)
-    edges = np.linspace(0.0, nyquist, n_bins + 1)
-    index = np.clip(np.digitize(radius, edges) - 1, 0, n_bins - 1)
     inside = radius <= nyquist
-
-    total = np.bincount(
-        index[inside], weights=spectrum.ravel()[inside], minlength=n_bins
+    bands = RadialBinning(
+        torch.from_numpy(radius[inside]).float(),
+        max(n // 4, 8),
+        r_max=nyquist,
     )
-    counts = np.bincount(index[inside], minlength=n_bins)
-    profile = np.where(counts > 0, total / np.maximum(counts, 1), np.nan)
+    profile = bands.mean(torch.from_numpy(spectrum.ravel()[inside]).float()).numpy()
 
     # The zero frequency is prepended rather than binned: for a
     # non-negative kernel the spectrum peaks there, so the MTF is one by
     # construction, whereas the lowest band averages it with its
-    # neighbours and lands just below.
-    centres = np.concatenate([[0.0], 0.5 * (edges[:-1] + edges[1:])])
+    # neighbours and lands just below.  The bands keep their true
+    # midpoints for the same reason.
+    centres = np.concatenate([[0.0], bands.midpoints.numpy()])
     profile = np.concatenate([[1.0], profile])
 
-    return xr.DataArray(
-        profile.astype(np.float32), dims=["f"], coords={"f": centres}
-    )
+    return xr.DataArray(profile.astype(np.float32), dims=["f"], coords={"f": centres})

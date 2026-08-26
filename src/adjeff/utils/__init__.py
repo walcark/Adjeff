@@ -5,7 +5,7 @@ package (see ``__all__``): the cache, the two convolution entry points,
 and the pieces needed to write a custom
 :class:`~adjeff.core._psf.PSFModule`.  Everything else is plumbing and
 stays reachable through its own submodule, e.g.
-``from adjeff.utils.radial import bin_radial``.
+``from adjeff.utils.radial import RadialBinning``.
 
 **Public** (importable from ``adjeff.utils``)
 
@@ -20,7 +20,7 @@ stays reachable through its own submodule, e.g.
 - :mod:`._config`: :class:`_Config`, :class:`ConfigProtocol`,
   :func:`to_arr`, and the ``Parameter`` / ``Module`` type aliases.
 - :mod:`.radial`: :func:`radial_distances`, :func:`natural_npix`,
-  :func:`bin_radial`.
+  :class:`RadialBinning`, :func:`annulus_areas`, :func:`cumulate`.
 - :mod:`.torchutils`: :func:`radial_weights`, :func:`radial_mask`.
 - :mod:`.xrutils`: :class:`ParamBatch`, :func:`square_grid`,
   :func:`grid`.

@@ -7,7 +7,6 @@ radial binning has one implementation rather than one per caller.
 
 from __future__ import annotations
 
-import math
 from typing import Literal
 
 import numpy as np
@@ -16,9 +15,11 @@ import xarray as xr
 
 from adjeff.exceptions import AdjeffAccessorError
 from adjeff.utils.radial import (
+    RadialBinning,
     _profile_to_field,
     _sample_radial_from_cdf,
-    bin_radial,
+    annulus_areas,
+    cumulate,
     natural_npix,
     radial_distances,
 )
@@ -125,14 +126,9 @@ def _radial_profile(
     if stat == "mean":
         rr_np, vv_np = radial_distances(da, center=center)
         npix = natural_npix(da)
-        rr = torch.from_numpy(rr_np)
-        vv = torch.from_numpy(vv_np)
-        _, _, counts, sum_vals, r_centers = bin_radial(rr, vv, npix)
-        val_mean = torch.full((npix,), float("nan"))
-        mask = counts > 0
-        val_mean[mask] = sum_vals[mask] / counts[mask]
-        r_np = r_centers.numpy()
-        v_np = val_mean.numpy()
+        binning = RadialBinning(torch.from_numpy(rr_np), npix)
+        r_np = binning.centres.numpy()
+        v_np = binning.mean(torch.from_numpy(vv_np)).numpy()
         if n_bins is not None and n_bins > npix:
             valid = ~np.isnan(v_np)
             r_np_new = np.linspace(r_np[0], r_np[-1], n_bins)
@@ -147,15 +143,7 @@ def _radial_profile(
             torch.from_numpy(mean_profile.values.astype(np.float32)),
             min=0.0,
         )
-        dr = r[1:] - r[:-1]
-        edges = torch.empty(r.numel() + 1, dtype=r.dtype)
-        edges[1:-1] = 0.5 * (r[:-1] + r[1:])
-        edges[0] = r[0] - 0.5 * dr[0]
-        edges[-1] = r[-1] + 0.5 * dr[-1]
-        area = math.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
-        cdf = torch.cumsum(f * area, dim=0)
-        if normalize and cdf[-1] > 0:
-            cdf = cdf / cdf[-1]
+        cdf = cumulate(f, annulus_areas(r), normalize=normalize)
         return xr.DataArray(
             cdf.numpy(),
             dims=mean_profile.dims,
@@ -165,18 +153,10 @@ def _radial_profile(
     if stat == "std":
         rr_np, vv_np = radial_distances(da, center=center)
         npix = n_bins if n_bins is not None else natural_npix(da)
-        rr = torch.from_numpy(rr_np)
-        vv = torch.from_numpy(vv_np)
-        _, inds, counts, sum_vals, r_centers = bin_radial(rr, vv, npix)
-        sum_sq = torch.bincount(inds, weights=vv**2, minlength=npix)
-        std = torch.full((npix,), float("nan"))
-        mask = counts > 0
-        mean_v = sum_vals[mask] / counts[mask]
-        std[mask] = torch.sqrt(
-            (sum_sq[mask] / counts[mask] - mean_v**2).clamp(min=0.0)
-        )
+        binning = RadialBinning(torch.from_numpy(rr_np), npix)
+        std = binning.std(torch.from_numpy(vv_np))
         return xr.DataArray(
-            std.numpy(), dims=["r"], coords={"r": r_centers.numpy()}
+            std.numpy(), dims=["r"], coords={"r": binning.centres.numpy()}
         )
 
     if stat == "adaptive":
@@ -187,9 +167,7 @@ def _radial_profile(
         if "r" in da.dims:
             profile = da
         else:
-            profile = _radial_profile(
-                da, "mean", center=center, n_bins=n_bins
-            )
+            profile = _radial_profile(da, "mean", center=center, n_bins=n_bins)
         r_vals = _sample_radial_from_cdf(profile, n, max_gap=max_gap)
         values = np.interp(r_vals, profile.coords["r"].values, profile.values)
         return xr.DataArray(values, dims=["r"], coords={"r": r_vals})
