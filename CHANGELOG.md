@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0]
+
+Observability. adjeff had 21 log calls in 11 371 lines, of which the nine
+at `info` all said `"done"`, and it discarded everything its own
+dependencies were saying. On a measured forward run of 13.8 s, 100 % of
+the wait was unannounced: nothing said what was running, what it would
+cost, or how long it had taken.
+
+### Changed
+
+- **adjeff logs through the standard library.** structlog stays the
+  writing API and stops being the transport. Left to its defaults it was
+  both, and the defaults are `PrintLoggerFactory`, which writes to stdout
+  outside `logging` altogether, and `BoundLoggerFilteringAtNotset`, which
+  filters nothing. Two consequences: raising adjeff's level did not quiet
+  `zarr` and quieting `zarr` did not raise `xsweep`, and with no level to
+  set at all, all six notebooks began by redirecting structlog to
+  `/dev/null`.
+
+  Everything the package emits is now an ordinary `logging` record under
+  the `adjeff` namespace. An application that already configures logging
+  receives adjeff's lines in its own handlers, in its own format, without
+  calling anything. `structlog.configure` is left alone: configuring the
+  process is the application's decision.
+
+- **Every log message is `object.action`**, lowercase, dotted, never
+  interpolated: `module.done`, `cache.miss`, `sweep.plan`, `fit.step`.
+  Three were f-strings, and those mattered: `fit` and both optimisers
+  pre-formatted the step and the loss into the message, which undoes
+  structlog entirely. `fit.step` now carries `optimizer`, `step`, `of`,
+  `loss` and `delta_pct` as data, and `_loss_delta` returns a number
+  rather than the string `Δ=+1.4%`.
+
+- `maja.rh_defaulted` becomes a warning; `wu_psf.done` drops to debug.
+
+### Added
+
+- **`adjeff.setup_logging()`**, one line to turn logging on:
+
+  ```python
+  adjeff.setup_logging(level="info")
+  adjeff.setup_logging(level="debug", json=True)
+  ```
+
+  `xsweep` follows adjeff's level, because it reports on the same work:
+  over one run it emits the point counts, the cache decisions and the
+  elapsed time of every sweep, all of which used to be invisible at any
+  setting. `zarr`, `numcodecs`, `matplotlib`, `asyncio`, `h5py`,
+  `trimesh`, `PIL` and `fsspec` are capped at warning, having produced
+  170 of the 205 records measured over that run. `captureWarnings` routes
+  Python's warnings into the same stream.
+
+- **Durations.** `SceneModule.forward` brackets its work with
+  `module.start` and `module.done`, the second carrying `duration_s` and
+  `cached`. A failure emits `module.failed` with the duration and the
+  exception type, so a run that dies mid-way says where and how long it
+  got. No log in this package carried a duration before.
+
+- **Run context.** `fit` binds a run id, and each optimisation its band
+  and combo; `Pipeline` binds the stage. Every line below carries them
+  without a caller passing anything down.
+
+- **The three files that had no logging at all** now have some, and they
+  are where the hours go. `sweep.plan` announces the states, bands,
+  photon count and batch size *before* the first Smart-G call.
+  `psf.convolve` names the shape and device before the FFT.
+  `landscape.scan` brackets the scan over kernels.
+
+- **The warning level, which was two calls in the whole package.**
+  `profile.extrapolated` fires when a radial profile is reconstructed
+  past its last radius, which a Pchip does by continuing the slope it
+  ended on. `parameter.clamped` fires when an initial value falls outside
+  a `ConstrainedParameter`'s bounds, which used to happen in silence.
+
+### Removed
+
+- `MultilineConsoleRenderer`, 72 lines configured nowhere in src, in the
+  notebooks or in the article's figures.
+
+### Measured
+
+Same run, before and after:
+
+| | 0.12.0 | 0.13.0 |
+| --- | --- | --- |
+| unannounced wait, at `info` | 100 % | 0 % |
+| unannounced wait, all levels | 95 % | 0 % |
+| lines at `info` | 8 | 48 |
+| distinct events at `info` | 1 | 6 |
+| `xsweep` records visible | 0 of 21 | 21 of 21 |
+
+The wait itself did not shorten and could not: the run is seven blocking
+GPU calls of about 1.8 s each, and nothing speaks from inside a CUDA
+kernel. What changed is that it is announced and costed before it is
+served. The plan's original criterion, time spent in silence, was the
+wrong measure and is corrected in `docs/plan-observabilite-0.13.0.md`.
+
+### Upgrading
+
+adjeff prints nothing until `setup_logging()` is called. Anything that
+relied on structlog's output appearing by itself, which is what it did
+before, needs that one line. The article repository's `makefig` is the
+known case.
+
 ## [0.12.0]
 
 ### Fixed
