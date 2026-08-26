@@ -347,3 +347,25 @@ def test_tidied_arrays_concatenate_back():
 
     assert stacked.dims == ("aot", "y", "x")
     np.testing.assert_allclose(stacked.aot.values, [0.2, 0.4, 0.6])
+
+
+def test_radial_symmetric_mirrors_the_profile():
+    """A transect needs both halves, and a profile only computes one.
+
+    The values are unchanged: a radial profile is symmetric by
+    construction, so this only writes the other half down.
+    """
+    da = xr.DataArray(
+        np.arange(9 * 9, dtype=float).reshape(9, 9),
+        dims=["y", "x"],
+        coords={"y": np.linspace(-4, 4, 9), "x": np.linspace(-4, 4, 9)},
+    )
+
+    half = da.adjeff.radial()
+    full = da.adjeff.radial(symmetric=True)
+
+    assert full.sizes["r"] == 2 * half.sizes["r"]
+    np.testing.assert_allclose(full.coords["r"].values[-len(half):],
+                               half.coords["r"].values)
+    np.testing.assert_allclose(full.values[-len(half):], half.values)
+    np.testing.assert_allclose(full.values[: len(half)], half.values[::-1])
