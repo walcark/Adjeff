@@ -159,3 +159,86 @@ def test_king_tail_shows_up_in_the_outer_radius():
     steep = KingPSF(grid, BAND, sigma=0.3, gamma=4.0).to_dataarray()
 
     assert encircled_radius(shallow, 0.9) > encircled_radius(steep, 0.9)
+
+
+# --- error metrics on DataArrays ---
+
+
+def _field(values, n=9):
+    """Return a square field with the coordinates the metrics need."""
+    coord = np.linspace(-1.0, 1.0, n)
+    return xr.DataArray(
+        np.asarray(values, dtype=float),
+        dims=["y", "x"],
+        coords={"y": coord, "x": coord},
+    )
+
+
+def test_rmse_of_a_constant_offset_is_that_offset():
+    """Scaled on the reference, an offset of 0.1 over a peak of 1 reads 0.1."""
+    from adjeff.analysis import rmse
+
+    truth = _field(np.ones((9, 9)))
+
+    assert rmse(truth + 0.1, truth) == pytest.approx(0.1, rel=1e-4)
+
+
+def test_rmse_rejects_a_shape_mismatch():
+    """A leftover singleton dimension must raise, not broadcast.
+
+    A silent broadcast returns a number that means nothing, which is
+    exactly what the article's own helper had to guard against.
+    """
+    from adjeff.analysis import rmse
+
+    truth = _field(np.ones((9, 9)))
+
+    with pytest.raises(ValueError, match="shape mismatch"):
+        rmse(truth.expand_dims("aot"), truth)
+
+
+def test_rmse_over_a_disc_ignores_what_lies_outside():
+    """A radius keeps a disc, and nothing beyond it counts."""
+    from adjeff.analysis import rmse
+
+    truth = _field(np.ones((9, 9)))
+    spoiled = truth.copy()
+    spoiled.values[0, 0] = 10.0
+
+    inside = rmse(spoiled, truth, mask=0.5)
+    everywhere = rmse(spoiled, truth)
+
+    assert inside == pytest.approx(0.0, abs=1e-6)
+    assert everywhere > 0.05
+
+
+def test_radial_weighting_favours_the_centre():
+    """Equal weight per radius means the few central pixels count more."""
+    from adjeff.analysis import rmse
+
+    truth = _field(np.ones((9, 9)))
+    centre_off = truth.copy()
+    centre_off.values[4, 4] = 1.5
+
+    assert rmse(centre_off, truth, radial=True) > rmse(centre_off, truth)
+
+
+def test_bias_keeps_the_sign_that_rmse_loses():
+    """A systematic offset reads negative when the estimate is low."""
+    from adjeff.analysis import bias, rmse
+
+    truth = _field(np.ones((9, 9)))
+
+    assert bias(truth - 0.2, truth) == pytest.approx(-0.2, rel=1e-6)
+    assert rmse(truth - 0.2, truth) > 0.0
+
+
+def test_mae_is_smaller_than_rmse_on_a_spiky_error():
+    """The square is what makes a few large errors dominate."""
+    from adjeff.analysis import mae, rmse
+
+    truth = _field(np.zeros((9, 9)))
+    spiky = truth.copy()
+    spiky.values[4, 4] = 1.0
+
+    assert mae(spiky, truth) < rmse(spiky, truth)

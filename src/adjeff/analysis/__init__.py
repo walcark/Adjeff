@@ -20,14 +20,18 @@ from ._energy import (
     fwhm,
     mtf,
 )
+from ._error import bias, mae, rmse
 from ._radial import radial_profile, resolution, to_field, transect
 
 __all__ = [
+    "bias",
     "encircled_energy",
     "encircled_radii",
     "encircled_radius",
     "fwhm",
+    "mae",
     "mtf",
+    "rmse",
     "radial_profile",
     "resolution",
     "to_field",
