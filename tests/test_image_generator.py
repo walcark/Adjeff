@@ -168,3 +168,75 @@ def test_random_image_dict_different_seeds():
     assert not np.array_equal(
         s1[S2Band.B02]["rho_s"].values, s2[S2Band.B02]["rho_s"].values
     )
+
+
+# --- provenance ---
+
+
+@pytest.mark.parametrize(
+    ("make", "model", "params"),
+    [
+        (
+            lambda **kw: gaussian_image_dict(sigma=0.4, **kw),
+            "gauss",
+            {"sigma": 0.4, "rho_min": 0.1, "rho_max": 0.8},
+        ),
+        (
+            lambda **kw: disk_image_dict(radius=0.4, **kw),
+            "disk",
+            {"radius": 0.4, "rho_min": 0.1, "rho_max": 0.8},
+        ),
+    ],
+)
+def test_an_analytical_field_records_what_drew_it(make, model, params):
+    """A sampler redraws a field from these attributes, so they must be there."""
+    images = make(
+        res_km=RES_B02,
+        n=9,
+        rho_min=0.1,
+        rho_max=0.8,
+        bands=[S2Band.B02, S2Band.B03],
+        var="rho_s",
+    )
+
+    for band in (S2Band.B02, S2Band.B03):
+        attrs = images[band]["rho_s"].attrs
+        assert attrs["adjeff:kind"] == "analytical"
+        assert attrs["adjeff:model"] == model
+        assert attrs["adjeff:params"] == params
+
+
+def test_the_bands_of_one_image_do_not_share_their_attributes():
+    """Editing one band's provenance must not reach into another's."""
+    images = gaussian_image_dict(
+        sigma=0.4, res_km=RES_B02, n=9, bands=[S2Band.B02, S2Band.B03]
+    )
+
+    images[S2Band.B02]["rho_s"].attrs["adjeff:params"]["sigma"] = 99.0
+
+    assert images[S2Band.B03]["rho_s"].attrs["adjeff:params"]["sigma"] == 0.4
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda **kw: gaussian_image_dict(sigma=0.4, **kw),
+        lambda **kw: disk_image_dict(radius=0.4, **kw),
+    ],
+)
+def test_a_field_declared_arbitrary_carries_no_model(make):
+    """analytical=False must drop the model, not merely relabel the field."""
+    images = make(res_km=RES_B02, n=9, bands=[S2Band.B02], analytical=False)
+
+    attrs = images[S2Band.B02]["rho_s"].attrs
+    assert attrs == {"adjeff:kind": "arbitrary"}
+
+
+def test_random_fields_are_arbitrary():
+    """Random noise cannot be redrawn from parameters and must say so."""
+    images = random_image_dict(
+        bands=[S2Band.B02], variables=["rho_s", "rho_env"], res_km=RES_B02, n=9, seed=0
+    )
+
+    for var in ("rho_s", "rho_env"):
+        assert images[S2Band.B02][var].attrs == {"adjeff:kind": "arbitrary"}
