@@ -405,3 +405,75 @@ def test_projection_leaves_a_healthy_parameter_alone():
     param.project()
 
     assert float(param.p) == before
+
+
+# --- Transform: the bound must stay somewhere a gradient survives ---
+
+
+def test_the_sigmoid_bound_is_kept_away_from_the_dead_zone():
+    """Torch would invert at the machine epsilon, where the slope is 1e-38.
+
+    ``project`` puts a runaway parameter *on* its bound, so the bound has
+    to be a place the optimiser can still move away from.
+    """
+    from torch.distributions import transforms as tt
+
+    from adjeff.utils import SigmoidTransform
+
+    ours = SigmoidTransform(1.0, 5.0)
+    theirs = tt.ComposeTransform([tt.SigmoidTransform(), tt.AffineTransform(1.0, 4.0)])
+
+    def slope(p: torch.Tensor) -> float:
+        x = p.detach().clone().requires_grad_(True)
+        torch.sigmoid(x).backward()
+        return float(x.grad)
+
+    p_low_ours = ours.inverse(torch.tensor(1.0))
+    p_low_torch = theirs.inv(torch.tensor(1.0))
+
+    assert slope(p_low_ours) > 1e-8
+    assert slope(p_low_torch) < 1e-30
+    assert float(p_low_ours) > float(p_low_torch)
+
+
+def test_the_sigmoid_bounds_are_symmetric():
+    """Both ends of an interval must be equally reachable."""
+    from adjeff.utils import SigmoidTransform
+
+    transform = SigmoidTransform(1.0, 5.0)
+
+    low = float(transform.inverse(torch.tensor(1.0)))
+    high = float(transform.inverse(torch.tensor(5.0)))
+    assert low == pytest.approx(-high, rel=1e-6)
+
+
+def test_a_transform_that_does_not_bound_the_parameter_is_refused():
+    """p_min and p_max only mean something for an increasing bijection."""
+    from adjeff.utils import ConstrainedParameter
+
+    class Decreasing:
+        def forward(self, p: torch.Tensor) -> torch.Tensor:
+            return -p
+
+        def inverse(self, theta: torch.Tensor) -> torch.Tensor:
+            return -theta
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        ConstrainedParameter(torch.tensor(2.0), Decreasing(), min_val=1.0, max_val=5.0)
+
+
+def test_a_custom_increasing_transform_is_accepted():
+    """The check is on the property, not on a list of blessed classes."""
+    from adjeff.utils import ConstrainedParameter
+
+    class Cubic:
+        def forward(self, p: torch.Tensor) -> torch.Tensor:
+            return p**3
+
+        def inverse(self, theta: torch.Tensor) -> torch.Tensor:
+            return theta ** (1 / 3)
+
+    param = ConstrainedParameter(torch.tensor(8.0), Cubic(), min_val=1.0, max_val=27.0)
+
+    assert float(param.value) == pytest.approx(8.0, rel=1e-5)
+    assert float(param.p_min) < float(param.p_max)

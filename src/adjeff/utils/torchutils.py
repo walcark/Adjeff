@@ -1,83 +1,54 @@
 """PyTorch utilities: constrained parameters, transforms, radial helpers."""
 
+from typing import Protocol, cast
+
 import torch
 import torch.nn as nn
+from torch.distributions import transforms as _transforms
 
 
-class Transform:
-    """Define a base class for parameter transformations.
+class Transform(Protocol):
+    """Map an unconstrained parameter to a physical one, and back.
 
-    A Transform maps an unconstrained trainable parameter (p) to a
-    constrained physical parameter (theta), and provides the inverse
-    mapping for proper initialization.
+    An optimiser walks the unconstrained space; the model reads the
+    constrained value.  Any strictly increasing bijection will do, which
+    is what :class:`ConstrainedParameter` checks for.
     """
 
     def forward(self, p: torch.Tensor) -> torch.Tensor:
-        """Map an unconstrained parameter to its constrained form.
-
-        Parameters
-        ----------
-        p : torch.Tensor
-            Unconstrained trainable parameter.
-
-        Returns
-        -------
-        torch.Tensor
-            Constrained parameter.
-        """
-        raise NotImplementedError
+        """Map an unconstrained parameter to its constrained form."""
+        ...
 
     def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-        """Map a constrained parameter to its unconstrained form.
-
-        Use this method to initialize trainable parameters from
-        physically meaningful values.
-
-        Parameters
-        ----------
-        theta : torch.Tensor
-            Constrained parameter.
-
-        Returns
-        -------
-        torch.Tensor
-            Unconstrained parameter.
-        """
-        raise NotImplementedError
+        """Map a constrained parameter back to the unconstrained space."""
+        ...
 
 
-class IdentityTransform(Transform):
-    """Define an identity transformation (no constraint)."""
+class ExpTransform:
+    """Map the whole line onto the strictly positive half of it.
 
-    def forward(self, p: torch.Tensor) -> torch.Tensor:
-        """Return the parameter unchanged."""
-        return p
-
-    def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-        """Return the parameter unchanged."""
-        return theta
-
-
-class ExpTransform(Transform):
-    """Define an exponential transformation to enforce positivity.
-
-    Use this transform when the parameter must be strictly positive.
+    Use this when the parameter must be positive and has no upper limit
+    of its own.  The mapping itself is
+    :class:`torch.distributions.transforms.ExpTransform`.
     """
 
+    def __init__(self) -> None:
+        self._t = _transforms.ExpTransform()
+
     def forward(self, p: torch.Tensor) -> torch.Tensor:
-        """Map to a strictly positive parameter using exponential."""
-        return torch.exp(p)
+        """Return ``exp(p)``, strictly positive."""
+        return cast(torch.Tensor, self._t(p))
 
     def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-        """Map a positive parameter back using logarithm."""
-        return torch.log(theta)
+        """Return ``log(theta)``."""
+        return cast(torch.Tensor, self._t.inv(theta))
 
 
-class SigmoidTransform(Transform):
-    """Define a sigmoid-based transformation for bounded parameters.
+class SigmoidTransform:
+    """Map the whole line onto the open interval ``(a, b)``.
 
-    Map parameters to a bounded interval [a, b] with a numerical stability
-    margin ``eps``.
+    Composes :class:`torch.distributions.transforms.SigmoidTransform`
+    with an affine rescaling onto ``(a, b)``.
 
     Parameters
     ----------
@@ -86,23 +57,38 @@ class SigmoidTransform(Transform):
     b : float
         Upper bound.
     eps : float, optional
-        Small value to avoid numerical issues at the boundaries.
+        Margin kept away from either bound when inverting, since the
+        inverse diverges there.  The default is deliberately far coarser
+        than the machine epsilon torch would use: see :meth:`inverse`.
     """
 
-    def __init__(self, a: float, b: float, eps: float = 1e-6):
+    def __init__(self, a: float, b: float, eps: float = 1e-6) -> None:
         self.a = a
         self.b = b
         self.eps = eps
+        self._t = _transforms.ComposeTransform(
+            [_transforms.SigmoidTransform(), _transforms.AffineTransform(a, b - a)]
+        )
 
     def forward(self, p: torch.Tensor) -> torch.Tensor:
-        """Map to the interval [a, b] using a sigmoid."""
-        return self.a + (self.b - self.a) * torch.sigmoid(p)
+        """Return the value in ``(a, b)`` that *p* maps to."""
+        return cast(torch.Tensor, self._t(p))
 
     def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-        """Map a bounded parameter back to the unconstrained space."""
-        theta = torch.clamp(theta, self.a + self.eps, self.b - self.eps)
-        x = (theta - self.a) / (self.b - self.a)
-        return torch.log(x / (1 - x))
+        """Return the unconstrained parameter *theta* comes from.
+
+        *theta* is pulled *eps* inside the interval first.  Inverting at
+        the bound itself is infinite, and inverting near it is worse than
+        useless: torch clamps at the machine epsilon, which puts the
+        lower bound of a ``(1, 5)`` interval at ``p = -87``, where the
+        sigmoid derivative is ``1e-38``.  A parameter projected there is
+        as dead as one left outside the interval, which is the very
+        failure :meth:`ConstrainedParameter.project` exists to prevent.
+        At ``eps = 1e-6`` the bound sits at ``p = -15.2``, where the
+        derivative is still ``2e-7`` and float32 can work with it.
+        """
+        inside = torch.clamp(theta, self.a + self.eps, self.b - self.eps)
+        return cast(torch.Tensor, self._t.inv(inside))
 
 
 class ConstrainedParameter(nn.Module):
@@ -116,7 +102,8 @@ class ConstrainedParameter(nn.Module):
     init_value : torch.Tensor
         Initial value in constrained space.
     transform : Transform
-        Must be SigmoidTransform or ExpTransform (for log-style positive).
+        Any strictly increasing bijection whose inverse is finite at
+        *min_val* and *max_val*.
     min_val : float
         Minimum allowed value.
     max_val : float
@@ -138,17 +125,29 @@ class ConstrainedParameter(nn.Module):
     ) -> None:
         super().__init__()
 
-        if not isinstance(transform, (SigmoidTransform, ExpTransform)):
-            raise ValueError("Only supports Sigmoid or Exp Transforms.")
-
         self.transform = transform
         self.name = name or "param"
         self.min_val = min_val
         self.max_val = max_val
 
-        # compute initial p in optimization space
+        # The bounds of the unconstrained space are the images of the
+        # physical ones, which only means anything for a transform that
+        # is strictly increasing.  Rather than admit a fixed list of
+        # transforms, check the property the bounds actually need.
         self.p_min = transform.inverse(torch.tensor(min_val))
         self.p_max = transform.inverse(torch.tensor(max_val))
+        if not (
+            torch.isfinite(self.p_min)
+            and torch.isfinite(self.p_max)
+            and self.p_min < self.p_max
+        ):
+            raise ValueError(
+                f"{self.name}: transform {type(transform).__name__} maps "
+                f"[{min_val}, {max_val}] to [{float(self.p_min)}, "
+                f"{float(self.p_max)}], which is not a usable interval. "
+                "A transform must be finite and strictly increasing over "
+                "the parameter's bounds."
+            )
         with torch.no_grad():
             p0 = transform.inverse(init_value)
             p0 = torch.clamp(p0, self.p_min, self.p_max)
