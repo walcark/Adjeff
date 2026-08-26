@@ -160,6 +160,24 @@ class ConstrainedParameter(nn.Module):
         p = torch.clamp(self.p, self.p_min, self.p_max)
         return self.transform.forward(p)
 
+    @torch.no_grad()
+    def project(self) -> None:
+        """Bring the raw parameter back onto its domain.
+
+        Call this after every optimiser step.  Clamping inside
+        :meth:`forward` bounds the *value* but not the raw parameter, and
+        a step large enough to send the raw parameter far past a bound
+        leaves it there for good: the derivative of ``clamp`` is zero
+        outside the interval, so the gradient dies and no later step can
+        bring it back.  The constrained value looks perfectly plausible
+        the whole time, which is what makes it worth guarding against.
+
+        Projecting keeps the raw parameter *on* the boundary instead of
+        behind it, where the transform is still differentiable and a
+        descent direction still exists.
+        """
+        self.p.clamp_(self.p_min, self.p_max)
+
     @property
     def value(self) -> torch.Tensor:
         """Return the current constrained value (theta)."""

@@ -19,6 +19,19 @@ from .training_set import TrainingSet
 # ---------------------------------------------------------------------------
 
 
+def project_all_params(model: TrainableSceneModule) -> None:
+    """Bring every constrained parameter back onto its domain.
+
+    Called after each optimiser step: see
+    :meth:`~adjeff.utils.ConstrainedParameter.project` for why a bound
+    enforced only inside the forward pass is not enough.
+    """
+    for module in cast(nn.Module, model).modules():
+        project = getattr(module, "project", None)
+        if callable(project):
+            project()
+
+
 def _loss_delta(previous: float, current: float, step: int) -> str:
     """Return a formatted relative loss change string, or '' on first step."""
     if step == 0 or previous >= float("inf"):

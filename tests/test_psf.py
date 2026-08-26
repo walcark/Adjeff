@@ -332,3 +332,80 @@ def test_band_from_wavelength_rejects_an_unknown_centre():
 
     with pytest.raises(KeyError, match="560"):
         S2Band.from_wl(600.0)
+
+
+# ---------------------------------------------------------------------------
+# ConstrainedParameter — a bound must not kill the gradient
+# ---------------------------------------------------------------------------
+
+
+def test_a_step_past_the_bound_does_not_kill_the_parameter():
+    """A parameter pushed past its bound must still be able to come back.
+
+    `forward` clamps the *value*, not the raw parameter.  A step large
+    enough to send the raw parameter far behind a bound leaves it there
+    for good, since the derivative of `clamp` is zero outside the
+    interval: the gradient dies and no later step can move it.  The
+    constrained value looks plausible throughout, which is what makes it
+    worth guarding.
+    """
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    param = ConstrainedParameter(
+        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+    )
+    optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
+
+    for _ in range(3):
+        optimiser.zero_grad()
+        ((param.forward() - 0.5) ** 2).backward()
+        optimiser.step()
+        param.project()
+
+    optimiser.zero_grad()
+    ((param.forward() - 0.5) ** 2).backward()
+
+    assert float(param.p) >= float(param.p_min)
+    assert float(param.p) <= float(param.p_max)
+    assert float(param.p.grad) != 0.0, "the parameter can no longer move"
+
+
+def test_without_projection_the_gradient_dies():
+    """The behaviour the projection exists to prevent."""
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    param = ConstrainedParameter(
+        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+    )
+    optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
+
+    for _ in range(3):
+        optimiser.zero_grad()
+        ((param.forward() - 0.5) ** 2).backward()
+        optimiser.step()          # no projection
+
+    optimiser.zero_grad()
+    ((param.forward() - 0.5) ** 2).backward()
+
+    assert float(param.p) > float(param.p_max), "the raw parameter ran away"
+    assert float(param.p.grad) == 0.0
+
+
+def test_projection_leaves_a_healthy_parameter_alone():
+    """Inside the domain, projecting is a no-op."""
+    import torch
+
+    from adjeff.utils import ConstrainedParameter, ExpTransform
+
+    param = ConstrainedParameter(
+        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+    )
+    before = float(param.p)
+
+    param.project()
+
+    assert float(param.p) == before

@@ -449,8 +449,9 @@ def test_a_non_finite_output_is_never_cached(tmp_path, scene):
     it back and fails far away, in an interpolation or a solver, with
     nothing pointing at the simulation that produced it.
     """
-    from adjeff.exceptions import ComputationError
     from _test_module import TestModule as TM
+
+    from adjeff.exceptions import ComputationError
 
     class Broken(TM):
         def _compute(self, scene):  # type: ignore[override]
@@ -480,8 +481,9 @@ def test_a_finite_output_still_goes_through(tmp_path, scene):
 
 def test_the_guard_names_the_module_and_the_variable(tmp_path, scene):
     """The message must say where to look, since the cause is upstream."""
-    from adjeff.exceptions import ComputationError
     from _test_module import TestModule as TM
+
+    from adjeff.exceptions import ComputationError
 
     class Broken(TM):
         def _compute(self, scene):  # type: ignore[override]

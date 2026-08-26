@@ -15,6 +15,7 @@ from adjeff.modules.scene_module import TrainableSceneModule
 from ._combo_stage import (
     _ComboStage,
     _loss_delta,
+    project_all_params,
     restore_all_params,
     save_all_params,
 )
@@ -66,6 +67,7 @@ class AdamStage(_ComboStage):
             loss_t = self._total_loss(model, band, data)
             loss_t.backward()  # type: ignore[no-untyped-call]
             adam.step()
+            project_all_params(model)
             loss = float(loss_t)
             params = save_all_params(model)
             self.record(loss, params)
