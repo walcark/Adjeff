@@ -436,3 +436,62 @@ def test_rename_also_redirects_an_input(tmp_path, scene):
     np.testing.assert_allclose(
         out["rho_toa"].values, (ds["rho_s_king"] + 0.05).values
     )
+
+
+# --- non-finite outputs ---
+
+
+def test_a_non_finite_output_is_never_cached(tmp_path, scene):
+    """A NaN must fail where it is produced, not where it is read.
+
+    Smart-G returns NaN rather than raising when it cannot allocate on
+    the GPU.  Cached, such a result is permanent: every later run reads
+    it back and fails far away, in an interpolation or a solver, with
+    nothing pointing at the simulation that produced it.
+    """
+    from adjeff.exceptions import ComputationError
+    from _test_module import TestModule as TM
+
+    class Broken(TM):
+        def _compute(self, scene):  # type: ignore[override]
+            for band in scene.bands:
+                ds = scene[band]
+                ds["rho_toa"] = ds["rho_s"] * np.nan
+            return scene
+
+    cache = CacheStore(tmp_path)
+    module = Broken(cache=cache)
+
+    with pytest.raises(ComputationError, match="non-finite"):
+        module(scene)
+
+    assert not any(tmp_path.iterdir()), "a rejected result must leave no entry"
+
+
+def test_a_finite_output_still_goes_through(tmp_path, scene):
+    """The guard costs one pass and must not change the normal path."""
+    module = TestModule(cache=CacheStore(tmp_path))
+
+    out = module(scene)
+
+    assert np.isfinite(out[S2Band.B02]["rho_toa"].values).all()
+    assert any(tmp_path.iterdir())
+
+
+def test_the_guard_names_the_module_and_the_variable(tmp_path, scene):
+    """The message must say where to look, since the cause is upstream."""
+    from adjeff.exceptions import ComputationError
+    from _test_module import TestModule as TM
+
+    class Broken(TM):
+        def _compute(self, scene):  # type: ignore[override]
+            for band in scene.bands:
+                scene[band]["rho_toa"] = scene[band]["rho_s"] * np.inf
+            return scene
+
+    with pytest.raises(ComputationError) as caught:
+        Broken(cache=CacheStore(tmp_path))(scene)
+
+    message = str(caught.value)
+    assert "Broken" in message
+    assert "rho_toa" in message

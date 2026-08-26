@@ -5,6 +5,25 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A non-finite result is no longer cached.** Smart-G returns NaN
+  rather than raising when it cannot allocate on the GPU, and the six
+  radiative samplers of a run then wrote six NaN entries.  Cached, that
+  is permanent: every later run read them back and failed two hundred
+  lines away, inside a Pchip interpolation, with nothing pointing at a
+  simulation that had run minutes earlier.  A module now checks its
+  outputs before writing and raises `ComputationError`, naming the
+  module, the variable and the band, and leaving no entry behind.
+
+### Added
+
+- `ComputationError`, for a result that cannot be used.  It is raised
+  before anything reaches the cache, so a bad result fails where it was
+  produced rather than becoming a value later runs keep reading.
+
 ## [0.11.0]
 
 ### Added

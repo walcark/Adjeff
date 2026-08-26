@@ -22,6 +22,7 @@ from .api import (
 from .exceptions import (
     AdjeffAccessorError,
     AdjeffError,
+    ComputationError,
     ConfigurationError,
     ImageIOError,
     MissingVariableError,
@@ -33,6 +34,7 @@ __all__ = [
     "AdjeffDataArrayAccessor",
     "AdjeffAccessorError",
     "AdjeffError",
+    "ComputationError",
     "ConfigurationError",
     "ImageIOError",
     "OptimizationWarning",
