@@ -5,37 +5,19 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-
-- **`encircled_energy(..., normalize="plane")`**, and the same option on
-  `encircled_radius`. Grid normalisation sends every curve to one at the
-  edge of the domain, which is right for the operator, since that is the
-  kernel the convolution applies. It hides how much each kernel left
-  outside on the way: on the manuscript's aerosol sweep a King fitted at
-  an optical thickness of 0.1 holds 95.6 % of its plane energy inside the
-  240 km domain, against 99.4 % at 0.7. Under grid normalisation the four
-  curves converge at the edge and their ordering vanishes exactly where
-  the question is asked.
-
-  The plane total is the integral of the fitted profile over the whole
-  plane, so it exists only for an analytical kernel carrying its model
-  and parameters, and only where that integral converges: a King needs
-  `gamma > 1`, a generalised Moffat `gamma * beta > 1`, and a Voigt never
-  qualifies, its Lorentzian part integrating as `log r`. Each case raises
-  rather than guesses, since a silent fallback would rescale a published
-  curve without saying so. `encircled_radius` returns `nan` for a
-  fraction the grid never reached.
-
-
 ## [0.13.0]
 
-Observability. adjeff had 21 log calls in 11 371 lines, of which the nine
-at `info` all said `"done"`, and it discarded everything its own
-dependencies were saying. On a measured forward run of 13.8 s, 100 % of
-the wait was unannounced: nothing said what was running, what it would
-cost, or how long it had taken.
+Observability, and what an encircled-energy curve is a fraction of.
+
+adjeff had 21 log calls in 11 371 lines, of which the nine at `info` all
+said `"done"`, and it discarded everything its own dependencies were
+saying. On a measured forward run of 13.8 s, 100 % of the wait was
+unannounced: nothing said what was running, what it would cost, or how
+long it had taken.
+
+The second subject was planned as a release of its own and folded in
+here, nothing having been published in between. It is one option and the
+provenance needed to honour it.
 
 ### Changed
 
@@ -65,6 +47,26 @@ cost, or how long it had taken.
 - `maja.rh_defaulted` becomes a warning; `wu_psf.done` drops to debug.
 
 ### Added
+
+
+- **`encircled_energy(..., normalize="plane")`**, and the same option on
+  `encircled_radius`. Grid normalisation sends every curve to one at the
+  edge of the domain, which is right for the operator, since that is the
+  kernel the convolution applies. It hides how much each kernel left
+  outside on the way: on the manuscript's aerosol sweep a King fitted at
+  an optical thickness of 0.1 holds 95.6 % of its plane energy inside the
+  240 km domain, against 99.4 % at 0.7. Under grid normalisation the four
+  curves converge at the edge and their ordering vanishes exactly where
+  the question is asked.
+
+  The plane total is the integral of the fitted profile over the whole
+  plane, so it exists only for an analytical kernel carrying its model
+  and parameters, and only where that integral converges: a King needs
+  `gamma > 1`, a generalised Moffat `gamma * beta > 1`, and a Voigt never
+  qualifies, its Lorentzian part integrating as `log r`. Each case raises
+  rather than guesses, since a silent fallback would rescale a published
+  curve without saying so. `encircled_radius` returns `nan` for a
+  fraction the grid never reached.
 
 - **`adjeff.setup_logging()`**, one line to turn logging on:
 
@@ -113,6 +115,33 @@ cost, or how long it had taken.
   the context rather than only onto its own logger, so a line raised by a
   helper three frames down carries it too. Those are the lines whose
   origin is hardest to guess.
+
+### Fixed
+
+- **A log line names where it came from, and no longer cries wolf.**
+  `profile.extrapolated` carried `stage=2/3` and nothing else: the module
+  was bound onto `SceneModule`'s own logger instead of into the context,
+  so helpers three frames below inherited nothing. The module now goes
+  into the context and the logger name is rendered on every line. The
+  level also follows how far the extrapolation reaches rather than
+  whether it happens, 5 % overshoot separating debug from warning: the
+  reported case was four pixels out of forty thousand reaching 0.36 %
+  past the last knot, which is how radial binning works and not a defect.
+
+- **`fit.done` carries the run it closes.** It was emitted outside the
+  `run_context` block, so the one line saying a fit had finished had no
+  `run_id` to match against its `fit.start`, and no duration on the
+  longest operation in the package. Found by auditing what a real fit
+  emits: of 117 records, four could not be located and this was the only
+  one where that was wrong.
+
+- **A kernel read back from a PSF tree keeps its model.** `_stack` drops
+  every attribute when it combines per-combo kernels, rightly for
+  `adjeff:params`, which differs between combos, but not for the model
+  name, which does not. `psf_kernel` restores the parameters too when the
+  tree holds a single combo. Without this, `normalize="plane"` refused
+  every kernel that had been through a fit, which is every kernel a
+  figure draws.
 
 ### Removed
 
