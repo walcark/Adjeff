@@ -271,10 +271,24 @@ séparément, si tant est que cela vaille la peine.
 
 ## Critère de réussite
 
-Trois nombres à comparer aux mesures d'ouverture, sur le même run de référence :
+**Le critère d'origine était mauvais et a été remplacé en cours de route.**
+Il demandait de faire tomber le temps passé en silence sous 20 %. C'est
+impossible : le run de référence est sept appels GPU bloquants d'environ 1.8 s
+chacun, et rien ne peut parler depuis un kernel CUDA. La mesure est restée à
+98 % après la tâche 5, alors que les logs étaient devenus utiles.
 
-| | 0.12.0 | cible 0.13.0 |
+Ce qui compte n'est pas qu'une ligne sorte chaque seconde, c'est que celui qui
+attend sache **ce qu'il attend**. Un trou ne compte donc que si la ligne qui le
+précède n'annonçait pas un début de travail.
+
+| mesure, sur le même run | 0.12.0 | 0.13.0 |
 | --- | --- | --- |
-| temps en silence de plus d'1 s | 94 % | sous 20 % |
-| lignes `info` distinctes | 1 (`"done"`) | une par module et par étape |
+| attente non annoncée, à `info` | **100 %** | **0 %** |
+| attente non annoncée, tous niveaux | 95 % | 0 % |
+| lignes émises, à `info` | 8 | 48 |
+| événements distincts, à `info` | 1 (`"done"`) | 6 |
 | enregistrements `xsweep` visibles | 0 sur 21 | 21 sur 21 |
+
+Résultat : atteint. Le temps d'attente lui-même n'a pas bougé, et ne le pouvait
+pas ; ce qui a changé, c'est qu'il est désormais annoncé et chiffré avant d'être
+subi.

@@ -10,7 +10,10 @@ from adjeff.core import ImageDict
 from adjeff.core.bands import SensorBand
 from adjeff.exceptions import ConfigurationError
 
+from .._logging import get_logger, run_context, timed
 from .scene_module import SceneModule
+
+logger = get_logger(__name__)
 
 
 class Pipeline:
@@ -120,8 +123,11 @@ class Pipeline:
 
     def _call_full(self, scene: ImageDict) -> ImageDict:
         """Apply all modules sequentially without chunking."""
-        for mod in self._modules:
-            scene = mod(scene)
+        names = [type(m).__name__ for m in self._modules]
+        with timed(logger, "pipeline", modules=len(names), chain=" ".join(names)):
+            for position, mod in enumerate(self._modules, start=1):
+                with run_context(stage=f"{position}/{len(names)}"):
+                    scene = mod(scene)
         return scene
 
     def _call_streaming(self, scene: ImageDict) -> ImageDict:

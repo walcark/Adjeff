@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import joblib  # type: ignore[import-untyped]
 import numpy as np
-import structlog
 import torch
 import torch.nn as nn
 import xarray as xr
@@ -17,12 +16,14 @@ from adjeff.exceptions import ComputationError, ConfigurationError
 from adjeff.utils import CacheStore
 from adjeff.utils._config import _Config
 
+from .._logging import get_logger, run_context, timed
+
 if TYPE_CHECKING:
     from adjeff.core import ImageDict
     from adjeff.core._psf import PSFModule
     from adjeff.core.bands import SensorBand
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class SceneModule:
@@ -166,24 +167,31 @@ class SceneModule:
         key = self._cache_key(scene)
         log = self._log.bind(key=key[:8])
 
-        cached = self._cache.load_vars(key, scene.bands, self._output_vars)
-        if cached is not None:
-            self._write_roles(scene, cached)
-            log.info("done", bands=[str(b) for b in scene.bands], cached=True)
-            return scene
+        # The module name goes into the context, not only onto `log`:
+        # a warning raised by a helper three frames down carries it too,
+        # and those are the lines whose origin is hardest to guess.
+        with (
+            run_context(module=type(self).__name__),
+            timed(log, "module", bands=len(scene.bands)) as outcome,
+        ):
+            cached = self._cache.load_vars(key, scene.bands, self._output_vars)
+            if cached is not None:
+                self._write_roles(scene, cached)
+                outcome["cached"] = True
+                return scene
 
-        scene = self._compute(scene)
-        self._reject_non_finite(scene)
-        self._stamp_provenance(scene, key)
-        self._cache.save_vars(key, self._role_view(scene), self._output_vars)
-        # Replace in-memory arrays with lazy Zarr-backed views so large
-        # outputs (e.g. rho_toa at all atmospheric combos) are not kept
-        # fully in RAM when the caller stores multiple scenes.
-        lazy = self._cache.load_vars(key, scene.bands, self._output_vars)
-        if lazy is not None:
-            self._write_roles(scene, lazy)
-        log.info("done", bands=[str(b) for b in scene.bands], cached=False)
-        return scene
+            outcome["cached"] = False
+            scene = self._compute(scene)
+            self._reject_non_finite(scene)
+            self._stamp_provenance(scene, key)
+            self._cache.save_vars(key, self._role_view(scene), self._output_vars)
+            # Replace in-memory arrays with lazy Zarr-backed views so large
+            # outputs (e.g. rho_toa at all atmospheric combos) are not kept
+            # fully in RAM when the caller stores multiple scenes.
+            lazy = self._cache.load_vars(key, scene.bands, self._output_vars)
+            if lazy is not None:
+                self._write_roles(scene, lazy)
+            return scene
 
     def _reject_non_finite(self, scene: "ImageDict") -> None:
         """Raise when an output holds NaN or infinity, before it is cached.

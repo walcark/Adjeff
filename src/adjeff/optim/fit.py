@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
-import structlog
 import xarray as xr
 
 from adjeff.core.bands import SensorBand
 from adjeff.core.psf_tree import psf_tree, write_band
 from adjeff.modules.scene_module import TrainableSceneModule
 
+from .._logging import get_logger, run_context, timed
 from ._combo_stage import _ComboStage, restore_all_params, save_all_params
 from ._config import OptimizerConfig
 from .adam_optimizer import AdamConfig, AdamStage
@@ -23,7 +24,7 @@ from .training_set import (
     training_set,
 )
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 __all__ = ["fit", "default_stages"]
 
@@ -122,59 +123,65 @@ def fit(
 
     total = len(combos) * len(bands)
     done = 0
-    for combo in combos:
+    with (
+        run_context(run_id=uuid.uuid4().hex[:8]),
+        timed(
+            logger,
+            "fit",
+            combos=len(combos),
+            bands=len(bands),
+            optimisations=total,
+            stages=" ".join(type(stage).__name__ for stage in runs),
+            device=device,
+        ),
+    ):
+        for combo in combos:
+            for band in bands:
+                done += 1
+                label = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
+                with (
+                    run_context(band=band.id, combo=f"{done}/{total}"),
+                    timed(logger, "fit.combo", params=label or "-") as outcome,
+                ):
+                    data = training_set(
+                        train_images, inputs, target, band, device=device, **combo
+                    )
+                    restore_all_params(model, initial)
+
+                    best = float("inf")
+                    steps = 0
+                    for stage in runs:
+                        stage._reset_state()
+                        stage._run_combo(model, band, data, label)
+                        best = min(best, stage.best_loss)
+                        steps += stage.nloop
+                    del data
+
+                    psf = model.psf_modules[band.id]
+                    kernels[band].append((combo, psf.to_dataarray()))
+                    for name, value in psf.param_dict().items():
+                        params[band].setdefault(name, []).append((combo, value))
+
+                    outcome["best_loss"] = round(best, 6)
+                    outcome["steps"] = steps
+
+        stacked: dict[SensorBand, xr.DataArray] = {}
+        stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
         for band in bands:
-            done += 1
-            label = "  ".join(f"{k}={v:.3g}" for k, v in combo.items())
-            logger.info(f"combo {done}/{total}", params=label or "-", band=str(band))
+            kernel = _stack(kernels[band], name="kernel")
+            band_params = {
+                name: _stack_scalars(values) for name, values in params[band].items()
+            }
+            if zpath is not None:
+                write_band(
+                    zpath / band.id, xr.Dataset({"kernel": kernel, **band_params})
+                )
+                del kernel
+            else:
+                stacked[band] = kernel
+                if band_params:
+                    stacked_params[band] = band_params
 
-            data = training_set(
-                train_images, inputs, target, band, device=device, **combo
-            )
-            restore_all_params(model, initial)
-
-            best = float("inf")
-            steps = 0
-            for stage in runs:
-                stage._reset_state()
-                stage._run_combo(model, band, data, label)
-                best = min(best, stage.best_loss)
-                steps += stage.nloop
-            del data
-
-            psf = model.psf_modules[band.id]
-            kernels[band].append((combo, psf.to_dataarray()))
-            for name, value in psf.param_dict().items():
-                params[band].setdefault(name, []).append((combo, value))
-
-            logger.info(
-                f"combo {done}/{total} done",
-                best_loss=f"{best:.4g}",
-                steps=steps,
-                band=str(band),
-            )
-
-    stacked: dict[SensorBand, xr.DataArray] = {}
-    stacked_params: dict[SensorBand, dict[str, xr.DataArray]] = {}
-    for band in bands:
-        kernel = _stack(kernels[band], name="kernel")
-        band_params = {
-            name: _stack_scalars(values) for name, values in params[band].items()
-        }
-        if zpath is not None:
-            write_band(zpath / band.id, xr.Dataset({"kernel": kernel, **band_params}))
-            del kernel
-        else:
-            stacked[band] = kernel
-            if band_params:
-                stacked_params[band] = band_params
-
-    logger.info(
-        "optimisation complete",
-        n_combos=len(combos),
-        n_bands=len(bands),
-        bands=[str(b) for b in bands],
-    )
     if zpath is not None:
         tree: xr.DataTree = xr.open_datatree(zpath, engine="zarr")
         return tree
@@ -209,6 +216,18 @@ def _stack(
             array = array.expand_dims({dim: [value]})
         datasets.append(array.to_dataset(name=name))
     combined: xr.DataArray = xr.combine_by_coords(datasets, combine_attrs="drop")[name]
+    # Attributes are dropped because `adjeff:params` differs from one
+    # combo to the next and a single value would be wrong for all but
+    # one.  The model name does not: it is the same kernel family
+    # throughout, and it is what tells a reader, or a plane
+    # normalisation, which profile these samples came from.
+    models = {
+        array.attrs["adjeff:model"]
+        for _, array in pieces
+        if "adjeff:model" in array.attrs
+    }
+    if len(models) == 1:
+        combined.attrs["adjeff:model"] = models.pop()
     return combined
 
 

@@ -5,7 +5,173 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.13.0]
+
+Observability, and what an encircled-energy curve is a fraction of.
+
+adjeff had 21 log calls in 11 371 lines, of which the nine at `info` all
+said `"done"`, and it discarded everything its own dependencies were
+saying. On a measured forward run of 13.8 s, 100 % of the wait was
+unannounced: nothing said what was running, what it would cost, or how
+long it had taken.
+
+The second subject was planned as a release of its own and folded in
+here, nothing having been published in between. It is one option and the
+provenance needed to honour it.
+
+### Changed
+
+- **adjeff logs through the standard library.** structlog stays the
+  writing API and stops being the transport. Left to its defaults it was
+  both, and the defaults are `PrintLoggerFactory`, which writes to stdout
+  outside `logging` altogether, and `BoundLoggerFilteringAtNotset`, which
+  filters nothing. Two consequences: raising adjeff's level did not quiet
+  `zarr` and quieting `zarr` did not raise `xsweep`, and with no level to
+  set at all, all six notebooks began by redirecting structlog to
+  `/dev/null`.
+
+  Everything the package emits is now an ordinary `logging` record under
+  the `adjeff` namespace. An application that already configures logging
+  receives adjeff's lines in its own handlers, in its own format, without
+  calling anything. `structlog.configure` is left alone: configuring the
+  process is the application's decision.
+
+- **Every log message is `object.action`**, lowercase, dotted, never
+  interpolated: `module.done`, `cache.miss`, `sweep.plan`, `fit.step`.
+  Three were f-strings, and those mattered: `fit` and both optimisers
+  pre-formatted the step and the loss into the message, which undoes
+  structlog entirely. `fit.step` now carries `optimizer`, `step`, `of`,
+  `loss` and `delta_pct` as data, and `_loss_delta` returns a number
+  rather than the string `Δ=+1.4%`.
+
+- `maja.rh_defaulted` becomes a warning; `wu_psf.done` drops to debug.
+
+### Added
+
+
+- **`encircled_energy(..., normalize="plane")`**, and the same option on
+  `encircled_radius`. Grid normalisation sends every curve to one at the
+  edge of the domain, which is right for the operator, since that is the
+  kernel the convolution applies. It hides how much each kernel left
+  outside on the way: on the manuscript's aerosol sweep a King fitted at
+  an optical thickness of 0.1 holds 95.6 % of its plane energy inside the
+  240 km domain, against 99.4 % at 0.7. Under grid normalisation the four
+  curves converge at the edge and their ordering vanishes exactly where
+  the question is asked.
+
+  The plane total is the integral of the fitted profile over the whole
+  plane, so it exists only for an analytical kernel carrying its model
+  and parameters, and only where that integral converges: a King needs
+  `gamma > 1`, a generalised Moffat `gamma * beta > 1`, and a Voigt never
+  qualifies, its Lorentzian part integrating as `log r`. Each case raises
+  rather than guesses, since a silent fallback would rescale a published
+  curve without saying so. `encircled_radius` returns `nan` for a
+  fraction the grid never reached.
+
+- **`adjeff.setup_logging()`**, one line to turn logging on:
+
+  ```python
+  adjeff.setup_logging(level="info")
+  adjeff.setup_logging(level="debug", json=True)
+  ```
+
+  `xsweep` follows adjeff's level, because it reports on the same work:
+  over one run it emits the point counts, the cache decisions and the
+  elapsed time of every sweep, all of which used to be invisible at any
+  setting. `zarr`, `numcodecs`, `matplotlib`, `asyncio`, `h5py`,
+  `trimesh`, `PIL` and `fsspec` are capped at warning, having produced
+  170 of the 205 records measured over that run. `captureWarnings` routes
+  Python's warnings into the same stream.
+
+- **Durations.** `SceneModule.forward` brackets its work with
+  `module.start` and `module.done`, the second carrying `duration_s` and
+  `cached`. A failure emits `module.failed` with the duration and the
+  exception type, so a run that dies mid-way says where and how long it
+  got. No log in this package carried a duration before.
+
+- **Run context.** `fit` binds a run id, and each optimisation its band
+  and combo; `Pipeline` binds the stage. Every line below carries them
+  without a caller passing anything down.
+
+- **The three files that had no logging at all** now have some, and they
+  are where the hours go. `sweep.plan` announces the states, bands,
+  photon count and batch size *before* the first Smart-G call.
+  `psf.convolve` names the shape and device before the FFT.
+  `landscape.scan` brackets the scan over kernels.
+
+- **The warning level, which was two calls in the whole package.**
+  `profile.extrapolated` fires when a radial profile is reconstructed
+  well past its last radius, which a Pchip does by continuing the slope
+  it ended on. It follows how *far* the extrapolation reaches rather than
+  whether it happens: a profile binned from a square grid stops at the
+  centre of its outermost annulus, so the four corner pixels always sit
+  half a bin beyond, and a warning that fires on the ordinary case
+  teaches the reader to ignore it. Below 5 % overshoot it is a debug
+  line. `parameter.clamped` fires when an initial value falls outside a
+  `ConstrainedParameter`'s bounds, which used to happen in silence.
+
+- **Every line names where it came from.** The logger is rendered
+  alongside the message, and `SceneModule.forward` binds the module into
+  the context rather than only onto its own logger, so a line raised by a
+  helper three frames down carries it too. Those are the lines whose
+  origin is hardest to guess.
+
+### Fixed
+
+- **A log line names where it came from, and no longer cries wolf.**
+  `profile.extrapolated` carried `stage=2/3` and nothing else: the module
+  was bound onto `SceneModule`'s own logger instead of into the context,
+  so helpers three frames below inherited nothing. The module now goes
+  into the context and the logger name is rendered on every line. The
+  level also follows how far the extrapolation reaches rather than
+  whether it happens, 5 % overshoot separating debug from warning: the
+  reported case was four pixels out of forty thousand reaching 0.36 %
+  past the last knot, which is how radial binning works and not a defect.
+
+- **`fit.done` carries the run it closes.** It was emitted outside the
+  `run_context` block, so the one line saying a fit had finished had no
+  `run_id` to match against its `fit.start`, and no duration on the
+  longest operation in the package. Found by auditing what a real fit
+  emits: of 117 records, four could not be located and this was the only
+  one where that was wrong.
+
+- **A kernel read back from a PSF tree keeps its model.** `_stack` drops
+  every attribute when it combines per-combo kernels, rightly for
+  `adjeff:params`, which differs between combos, but not for the model
+  name, which does not. `psf_kernel` restores the parameters too when the
+  tree holds a single combo. Without this, `normalize="plane"` refused
+  every kernel that had been through a fit, which is every kernel a
+  figure draws.
+
+### Removed
+
+- `MultilineConsoleRenderer`, 72 lines configured nowhere in src, in the
+  notebooks or in the article's figures.
+
+### Measured
+
+Same run, before and after:
+
+| | 0.12.0 | 0.13.0 |
+| --- | --- | --- |
+| unannounced wait, at `info` | 100 % | 0 % |
+| unannounced wait, all levels | 95 % | 0 % |
+| lines at `info` | 8 | 48 |
+| distinct events at `info` | 1 | 6 |
+| `xsweep` records visible | 0 of 21 | 21 of 21 |
+
+The wait itself did not shorten and could not: the run is seven blocking
+GPU calls of about 1.8 s each, and nothing speaks from inside a CUDA
+kernel. What changed is that it is announced and costed before it is
+served. The plan's original criterion, time spent in silence, was the
+wrong measure and is corrected in `docs/plan-observabilite-0.13.0.md`.
+
+### Upgrading
+
+adjeff prints nothing until `setup_logging()` is called. Anything that
+relied on structlog's output appearing by itself, which is what it did
+before, needs that one line. The article repository's `makefig` is the
+known case.
 
 ## [0.12.0]
 

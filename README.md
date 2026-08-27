@@ -34,8 +34,9 @@
 13. [PSF optimization](#13-psf-optimization)
 14. [High-level API](#14-high-level-api)
 15. [xarray accessor and caching](#15-xarray-accessor-and-caching)
-16. [Installation](#16-installation)
-17. [Roadmap](#17-roadmap)
+16. [Logging](#16-logging)
+17. [Installation](#17-installation)
+18. [Roadmap](#18-roadmap)
 
 ---
 
@@ -669,7 +670,74 @@ scene = pipeline(scene)   # loaded from cache, no GPU call
 
 ---
 
-## 16. Installation
+## 16. Logging
+
+adjeff prints nothing until asked. A library has no business configuring
+logging for the process it is imported into, so importing it installs a
+`NullHandler` and stops there. One line turns it on:
+
+```python
+import adjeff
+
+adjeff.setup_logging(level="info")               # readable console
+adjeff.setup_logging(level="debug", json=True)   # one JSON object per line
+```
+
+What that call knows, and a caller should not have to:
+
+| | |
+| --- | --- |
+| `xsweep` follows adjeff's level | it runs the sweeps, and reports the point counts, the cache decisions and the elapsed time of every one |
+| `zarr`, `numcodecs`, `matplotlib`, `asyncio`, `h5py`, `trimesh`, `PIL`, `fsspec` are capped at `warning` | measured over one forward run, they produced 170 of the 205 records that reached the standard library, all `debug` |
+| Python's `warnings` join the same stream | the `ResourceWarning` raised per Smart-G call stops arriving on stderr in a format of its own |
+
+Pass `quiet=(...)` to change which loggers are capped, or `quiet=()` to
+cap none.
+
+Everything adjeff emits is an ordinary `logging` record under the
+`adjeff` namespace, so an application that already configures logging
+receives them in its own handlers, in its own format, without calling
+`setup_logging` at all.
+
+### What the lines look like
+
+Messages are `object.action`, never interpolated, and the data stays
+data:
+
+```
+[info ] module.start   module=TdirDownSampler bands=1 key=18e7e4dd stage=1/3
+[info ] sweep.plan     states=1 bands=1 n_ph=10000 batch_size=64 dedup=False
+[info ] sweep start    points=1 calls=1 cached=0 skipped=0
+[info ] sweep done     ok=1 failed=0 skipped=0 cached=0 elapsed=2.2s
+[info ] module.done    module=TdirDownSampler cached=False duration_s=2.204
+```
+
+The four levels answer four different questions:
+
+| level | question | reader |
+| --- | --- | --- |
+| `debug` | why this particular result? | someone debugging |
+| `info` | where is my run, and what is it costing? | someone watching a three-hour run |
+| `warning` | the result is valid, but is it the one you asked for? | the same person, afterwards |
+| `error` | this failed and the run continued | immediately |
+
+A result that cannot be used raises `AdjeffError` rather than logging.
+
+### Correlating a long run
+
+`fit` binds a run id, and each optimisation binds its band and combo, so
+every line below carries them without any caller passing them down:
+
+```python
+from adjeff._logging import run_context
+
+with run_context(experiment="aot-sweep"):
+    ...   # every line emitted inside carries experiment=aot-sweep
+```
+
+---
+
+## 17. Installation
 
 ### Prerequisites
 
@@ -748,7 +816,7 @@ pixi run -e notebooks-gpu jupyter lab notebooks/
 
 ---
 
-## 17. Roadmap
+## 18. Roadmap
 
 - **Integrating the PSF over the central pixels, rather than sampling it there.** A tap of a discrete convolution is the integral of the profile over one pixel: writing the continuous convolution over an image that is constant per pixel gives `rho_env(x_i) = sum_j rho_unif(x_j) * integral over cell j of P(x_i - x')`. Sampling the profile at the pixel's centre stands in for that integral, and stands in well from the first neighbour outwards, within 0.4 % for a generalised Gaussian at `n = 0.2`. It does not at the centre pixel, where a kernel sharp against the grid varies by orders of magnitude across one cell: measured against the true cell average, the centre tap is 8 % too high for a Gaussian of `sigma = 0.33 km` on a 0.1 km grid and 550 % too high for a King profile of `sigma = 0.01 km` on the same one. The criterion is not the family of the kernel but how much of its energy falls inside one pixel.
 

@@ -25,7 +25,6 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 import xarray as xr
-from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 from adjeff.core import ImageDict
@@ -33,6 +32,8 @@ from adjeff.modules.samplers._smartg import psf_atm
 from adjeff.modules.sweep_sampler import SweepSampler
 from adjeff.utils import CacheStore
 from adjeff.utils._config import ConfigProtocol
+
+from .._logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -153,5 +154,5 @@ class WuPsfSampler(SweepSampler):
         for band in scene.bands:
             arr = self._sweep(rho_s=scene[band], band=band)
             scene[band][self._slot("psf_atm")] = self._restore_coords(arr, scene[band])
-            logger.info("Computed atmospheric PSF.", dims=arr.dims, band=band)
+            logger.debug("wu_psf.done", dims=list(arr.dims), band=str(band))
         return scene

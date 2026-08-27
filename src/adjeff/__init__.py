@@ -4,6 +4,7 @@ The package provides utilities to simulate environment effects and optimize
 models for adjacency effects.
 """
 
+from ._logging import setup_logging
 from .accessor import AdjeffDataArrayAccessor
 from .api import (
     FullConfig,
@@ -31,6 +32,7 @@ from .exceptions import (
 from .optim import fit
 
 __all__ = [
+    "setup_logging",
     "AdjeffDataArrayAccessor",
     "AdjeffAccessorError",
     "AdjeffError",

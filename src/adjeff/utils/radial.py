@@ -18,6 +18,16 @@ import torch
 import xarray as xr
 from scipy.interpolate import PchipInterpolator  # type: ignore[import-untyped]
 
+from .._logging import get_logger
+
+logger = get_logger(__name__)
+
+#: How far past a profile's last radius the reconstruction may reach
+#: before it is worth a warning rather than a debug line, as a fraction.
+#: The corners of a square grid overshoot by 0.4 % structurally; a
+#: profile covering half its target overshoots by 100 %.
+OVERSHOOT_WARNS = 0.05
+
 
 def _sample_radial_from_cdf(
     profile: xr.DataArray,
@@ -104,6 +114,28 @@ def _profile_to_field(
     _, unique_idx = np.unique(r, return_index=True)
     r_u = r[unique_idx]
     v_u = values[unique_idx]
+
+    # A Pchip continued past its last knot follows the slope it ended on,
+    # which for a decaying profile heads for zero and then through it.
+    # Worth saying, but not always worth a warning: a profile binned from
+    # a square grid stops at the centre of its outermost annulus, so the
+    # four corner pixels always sit half a bin beyond it.  That is four
+    # pixels out of forty thousand, reaching 0.4 % past the last knot,
+    # and a warning that fires on the ordinary case teaches the reader to
+    # ignore it.  The level follows how far the extrapolation reaches,
+    # not whether it happens at all.
+    outside = rr > r_u[-1]
+    if outside.any():
+        overshoot = float(rr.max()) / float(r_u[-1]) - 1.0
+        emit = logger.warning if overshoot > OVERSHOOT_WARNS else logger.debug
+        emit(
+            "profile.extrapolated",
+            pixels=int(outside.sum()),
+            fraction=round(float(outside.mean()), 4),
+            overshoot_pct=round(100.0 * overshoot, 3),
+            profile_max=round(float(r_u[-1]), 4),
+            grid_max=round(float(rr.max()), 4),
+        )
 
     result: np.ndarray = PchipInterpolator(r_u, v_u, extrapolate=True)(rr).astype(
         np.float32

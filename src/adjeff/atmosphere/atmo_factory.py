@@ -1,13 +1,14 @@
 """Functions to instantiate a multi-profile atmosphere."""
 
 import numpy as np
-import structlog
 import xarray as xr
 from luts.luts import MLUT  # type: ignore[import-untyped]
 
 from adjeff.exceptions import ConfigurationError, MissingVariableError
 
-logger = structlog.get_logger(__name__)
+from .._logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def create_atmosphere(
@@ -64,10 +65,7 @@ def create_atmosphere(
 
     all_atm = []
     for params in params_li:
-        logger.debug(
-            "Atmosphere LUT generation. %s",
-            ", ".join(f"{n}={v}" for n, v in params.items()),
-        )
+        logger.debug("atmosphere.build", **params)
 
         atm: MLUT = create_atmafgl(
             height=params["h"],
@@ -84,7 +82,7 @@ def create_atmosphere(
         )
         all_atm.append(atm)
 
-    logger.debug("Merge all atmospheres with multi-profile.")
+    logger.debug("atmosphere.merge", profiles=len(all_atm))
     return multi_profiles(all_atm)
 
 

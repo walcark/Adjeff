@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-import structlog
 import torch
 import torch.nn as nn
 
 from adjeff.core.bands import SensorBand
 from adjeff.modules.scene_module import TrainableSceneModule
 
+from .._logging import get_logger
 from ._combo_stage import (
     _ComboStage,
     _loss_delta,
@@ -22,7 +22,7 @@ from ._combo_stage import (
 from ._config import OptimizerConfig
 from .training_set import TrainingSet
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -74,8 +74,12 @@ class AdamStage(_ComboStage):
 
             delta = _loss_delta(self.previous_loss, loss, self.nloop)
             logger.info(
-                f"Adam  {self.nloop + 1}/{self.config.max_steps}"
-                f"  loss={loss:.4g}{delta}"
+                "fit.step",
+                optimizer="adam",
+                step=self.nloop + 1,
+                of=self.config.max_steps,
+                loss=loss,
+                delta_pct=delta,
             )
 
             if loss < self.best_loss:

@@ -113,7 +113,26 @@ def psf_kernel(tree: xr.DataTree, band: SensorBand) -> xr.DataArray:
         raise KeyError(
             f"No PSF for band {band.id!r} in this tree. Holds: {known}."
         ) from None
-    return group.ds[PSF_KERNEL]
+    kernel: xr.DataArray = group.ds[PSF_KERNEL].copy()
+
+    # Put the fitted parameters back on the kernel, but only when the
+    # tree holds one combo: over several, each parameter is an array and
+    # no single value describes the kernel.  `psf_params` is the way to
+    # read those.  Restoring them here is what lets a kernel read back
+    # from a tree be normalised on the plane, which needs the profile it
+    # came from and not only its samples.
+    #
+    # The test is on size and not on rank: a single-combo fit still keeps
+    # one length-one dimension per swept parameter, six of them for a
+    # full atmospheric state, so nothing here is ever zero-dimensional.
+    fitted = {
+        name: float(array.values.reshape(()))
+        for name, array in group.ds.data_vars.items()
+        if name != PSF_KERNEL and array.size == 1
+    }
+    if fitted and len(fitted) == len(group.ds.data_vars) - 1:
+        kernel.attrs["adjeff:params"] = fitted
+    return kernel
 
 
 def psf_params(tree: xr.DataTree, band: SensorBand) -> dict[str, xr.DataArray]:

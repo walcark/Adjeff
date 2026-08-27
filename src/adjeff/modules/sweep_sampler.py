@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
+import numpy as np
 import xarray as xr
 from xsweep import Sweeper, SweepPolicy
 
@@ -145,10 +146,31 @@ class SweepSampler(SceneModule):
         if bound:
             func = functools.partial(func, **bound)
         sweeper = Sweeper(type(self).contract, func)
+        space = self._space()
+        statics = self._statics()
+
+        # What the call is about to cost, before it is paid.  xsweep says
+        # how many points one sweep will run, but only once it starts and
+        # only for that sweep; nothing said, before a fit of five hundred
+        # combos, that it was about to make thousands of Smart-G calls.
+        # Not every sampler carries a spectral config: the ones that
+        # write into a scene's own bands read them from the scene.  The
+        # key is left out rather than reported as None, a key whose value
+        # is None being one more thing for the reader to interpret.
+        spectral = getattr(self, "spectral_config", None)
+        plan: dict[str, Any] = {
+            "states": int(np.prod([space.sizes[d] for d in space.dims]) or 1),
+            "n_ph": statics.get("n_ph"),
+            "batch_size": self.batch_size,
+            "dedup": self.dedup,
+        }
+        if spectral is not None:
+            plan["bands"] = len(spectral.bands)
+        self._log.info("sweep.plan", **plan)
         result = sweeper(
-            self._space(),
+            space,
             policy=SweepPolicy(batch_size=self.batch_size, dedup=self.dedup),
-            **self._statics(),
+            **statics,
         )
         out: xr.DataArray = result[self._contract.outputs[0]]
         return out

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from structlog import get_logger
-
 import adjeff.atmosphere as atmo
 from adjeff.core import ImageDict
 from adjeff.utils import CacheStore
 from adjeff.utils._config import ConfigProtocol
 
+from ..._logging import get_logger
 from ..sweep_sampler import SweepSampler
 from ._smartg import rho_toa_sym
 from .rho_atm import ensure_rho_atm

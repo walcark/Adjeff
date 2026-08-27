@@ -285,3 +285,123 @@ def test_mae_is_smaller_than_rmse_on_a_spiky_error():
     spiky.values[4, 4] = 1.0
 
     assert mae(spiky, truth) < rmse(spiky, truth)
+
+
+# --- plane normalisation: what the grid did not capture ---
+
+#: The manuscript's own grid for figures 7 to 17: 240 km across.
+SWEEP_GRID = PSFGrid(0.12, 1999)
+
+#: Kernels fitted at four aerosol loads, and the fraction of their plane
+#: energy that grid holds.  Computed from the closed form
+#: `E(r) = pi a [1 - (1 + r^2/a)^(1-g)] / (g-1)` with `a = 2 g sigma^2`.
+SWEEP_FITS = [
+    (0.17313, 1.24220, 0.9557),
+    (0.17727, 1.30837, 0.9805),
+    (0.17523, 1.35532, 0.9892),
+    (0.17060, 1.39497, 0.9936),
+]
+
+
+@pytest.mark.parametrize(("sigma", "gamma", "ceiling"), SWEEP_FITS)
+def test_the_plane_curve_stops_at_what_the_grid_captured(sigma, gamma, ceiling):
+    """Grid normalisation sends every curve to one and hides the truncation.
+
+    These four differ by a factor of seven in how much they leave
+    outside, which is the whole point of showing it.
+    """
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=sigma, gamma=gamma).to_dataarray()
+
+    curve = encircled_energy(kernel, normalize="plane")
+
+    assert float(curve[0]) == 0.0
+    assert float(curve[-1]) == pytest.approx(ceiling, abs=5e-4)
+    assert float(encircled_energy(kernel)[-1]) == pytest.approx(1.0)
+
+
+def test_a_kernel_the_grid_holds_entirely_reaches_one_either_way():
+    """A Gaussian dies fast enough that the two normalisations agree."""
+    kernel = GaussPSF(SWEEP_GRID, BAND, sigma=0.33).to_dataarray()
+
+    plane = encircled_energy(kernel, normalize="plane")
+
+    assert float(plane[-1]) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_the_two_normalisations_differ_only_by_a_constant():
+    """The shape is the kernel's; only the denominator changes."""
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.173, gamma=1.242).to_dataarray()
+
+    grid = encircled_energy(kernel).values
+    plane = encircled_energy(kernel, normalize="plane").values
+
+    # The curves come back float32, so a constant ratio is constant to
+    # about 1e-7 and no tighter.
+    ratio = plane[1:].astype(np.float64) / grid[1:].astype(np.float64)
+    assert np.allclose(ratio, ratio[0], rtol=1e-6)
+
+
+def test_a_radius_the_grid_never_reaches_is_nan():
+    """Refusing to answer beats extrapolating a curve past its ceiling.
+
+    A King fitted at an optical thickness of 0.1 never holds 99 % of its
+    plane energy inside 240 km, so there is no such radius to report.
+    """
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.17313, gamma=1.2422).to_dataarray()
+
+    assert encircled_radius(kernel, 0.99) > 0
+    assert np.isnan(encircled_radius(kernel, 0.99, normalize="plane"))
+
+
+def test_the_plane_radius_is_the_larger_one():
+    """Dividing by a bigger total pushes every radius outwards."""
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.173, gamma=1.242).to_dataarray()
+
+    on_grid = encircled_radius(kernel, 0.9)
+    on_plane = encircled_radius(kernel, 0.9, normalize="plane")
+
+    assert on_plane > on_grid
+    assert on_plane == pytest.approx(2.0 * on_grid, rel=0.05)
+
+
+def test_a_king_that_does_not_converge_says_so():
+    """Below gamma = 1 the tail falls as r^-2 and the integral diverges."""
+    from adjeff.exceptions import ConfigurationError
+
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.2, gamma=1.0).to_dataarray()
+    kernel.attrs["adjeff:params"] = {"sigma": 0.2, "gamma": 0.8}
+
+    with pytest.raises(ConfigurationError, match="no finite energy"):
+        encircled_energy(kernel, normalize="plane")
+
+
+def test_a_sampled_kernel_cannot_be_normalised_on_the_plane():
+    """Without a model there is no profile to integrate, and no guessing."""
+    from adjeff.exceptions import ConfigurationError
+
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.2, gamma=1.5).to_dataarray()
+    del kernel.attrs["adjeff:model"]
+
+    with pytest.raises(ConfigurationError, match="only an analytical PSF"):
+        encircled_energy(kernel, normalize="plane")
+
+
+def test_a_voigt_is_refused_by_name():
+    """Its Lorentzian part integrates as log r: there is no total."""
+    from adjeff.exceptions import ConfigurationError
+
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.2, gamma=1.5).to_dataarray()
+    kernel.attrs["adjeff:model"] = "Voigt"
+
+    with pytest.raises(ConfigurationError, match="Voigt"):
+        encircled_energy(kernel, normalize="plane")
+
+
+def test_an_unknown_normalisation_is_refused():
+    """A typo must not silently fall through to the grid."""
+    from adjeff.exceptions import ConfigurationError
+
+    kernel = KingPSF(SWEEP_GRID, BAND, sigma=0.2, gamma=1.5).to_dataarray()
+
+    with pytest.raises(ConfigurationError, match="'grid' or 'plane'"):
+        encircled_energy(kernel, normalize="full")

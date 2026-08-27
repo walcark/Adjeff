@@ -27,12 +27,15 @@ from adjeff.modules.models.unif2surface import _rho_s_from_rho_env
 from adjeff.modules.scene_module import TrainableSceneModule
 from adjeff.utils import fft_convolve_2D_torch
 
+from .._logging import get_logger, timed
 from .training_set import (
     TrainingImages,
     TrainingSample,
     iterate_broadcasted_dims,
     training_set,
 )
+
+logger = get_logger(__name__)
 
 #: What `loss_landscape` needs of a loss: to be callable the way `fit`
 #: calls it.  `Loss` satisfies it, and so does anything else.
@@ -157,7 +160,17 @@ def loss_landscape(
     n_combos = max(len(prefetched), 1)
     result = np.zeros(len(psf_modules), dtype=np.float32)
 
-    with torch.no_grad():
+    with (
+        torch.no_grad(),
+        timed(
+            logger,
+            "landscape.scan",
+            kernels=len(psf_modules),
+            combos=n_combos,
+            band=band.id,
+            device=device,
+        ),
+    ):
         for i, psf in tqdm(enumerate(psf_modules), total=len(psf_modules)):
             kernel = psf.forward().to(dev)
             if model is None:

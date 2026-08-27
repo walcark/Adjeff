@@ -13,7 +13,6 @@ import geoclide as gc  # type: ignore[import-untyped]
 import numpy as np
 import xarray as xr
 from smartg.visualizegeo import Entity, Plane, Transformation
-from structlog import get_logger
 
 import adjeff.atmosphere as atmo
 from adjeff.core import GeneralizedGaussianPSF, PSFGrid, SensorBand
@@ -25,6 +24,8 @@ from adjeff.utils.smartgutils import (
     make_sensors,
 )
 from adjeff.utils.xrutils import ParamBatch
+
+from ..._logging import get_logger
 
 if TYPE_CHECKING:
     from smartg.smartg import Sensor
