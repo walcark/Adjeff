@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`encircled_energy(..., normalize="plane")`**, and the same option on
+  `encircled_radius`. Grid normalisation sends every curve to one at the
+  edge of the domain, which is right for the operator, since that is the
+  kernel the convolution applies. It hides how much each kernel left
+  outside on the way: on the manuscript's aerosol sweep a King fitted at
+  an optical thickness of 0.1 holds 95.6 % of its plane energy inside the
+  240 km domain, against 99.4 % at 0.7. Under grid normalisation the four
+  curves converge at the edge and their ordering vanishes exactly where
+  the question is asked.
+
+  The plane total is the integral of the fitted profile over the whole
+  plane, so it exists only for an analytical kernel carrying its model
+  and parameters, and only where that integral converges: a King needs
+  `gamma > 1`, a generalised Moffat `gamma * beta > 1`, and a Voigt never
+  qualifies, its Lorentzian part integrating as `log r`. Each case raises
+  rather than guesses, since a silent fallback would rescale a published
+  curve without saying so. `encircled_radius` returns `nan` for a
+  fraction the grid never reached.
+
+
 ## [0.13.0]
 
 Observability. adjeff had 21 log calls in 11 371 lines, of which the nine

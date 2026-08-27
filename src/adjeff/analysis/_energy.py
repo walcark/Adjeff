@@ -11,11 +11,16 @@ shared with the radial profile.
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 import torch
 import xarray as xr
 
+from adjeff.exceptions import ConfigurationError
 from adjeff.utils.radial import RadialBinning
+
+from ._plane import grid_share
 
 __all__ = [
     "encircled_energy",
@@ -47,38 +52,73 @@ def _as_grid(
     return RadialBinning.on_square_grid(values.shape[0], res), values, res
 
 
-def encircled_energy(kernel: xr.DataArray) -> xr.DataArray:
+def encircled_energy(
+    kernel: xr.DataArray, *, normalize: Literal["grid", "plane"] = "grid"
+) -> xr.DataArray:
     """Return the fraction of a kernel's energy within each radius.
 
     Parameters
     ----------
     kernel : xr.DataArray
         Square 2-D kernel, with either ``x_psf`` or ``x`` coordinates.
+    normalize : {"grid", "plane"}, optional
+        What the curve is a fraction *of* (default ``"grid"``).
+
+        - ``"grid"`` divides by the energy the grid holds, so the curve
+          reaches one at its edge.  This is the kernel as sampled, and
+          as convolved.
+        - ``"plane"`` divides by the integral of the fitted profile over
+          the whole plane, so the curve stops at the fraction the grid
+          actually captured.  Needs an analytical kernel carrying its
+          model and parameters.
 
     Returns
     -------
     xr.DataArray
         Cumulated energy against radius, with dim ``"r"``, starting at
-        zero and rising to one at the edge of the grid.  The radii are
-        the bin edges: each value is the energy enclosed by that radius,
-        which is what makes the curve invertible.
+        zero.  The radii are the bin edges: each value is the energy
+        enclosed by that radius, which is what makes the curve
+        invertible.
+
+    Raises
+    ------
+    ConfigurationError
+        With ``normalize="plane"`` on a kernel that carries no
+        provenance, or whose profile has no finite energy over the
+        plane.
 
     Notes
     -----
-    The normalisation is the grid's, not the plane's.  A profile with a
-    heavy tail keeps part of its energy outside any finite grid, so the
-    radii below describe the kernel *as sampled*, which is also how it is
-    convolved.
+    The two normalisations answer different questions and neither is
+    always right.  Grid normalisation describes the operator: that is the
+    kernel the convolution applies, truncation included.  Plane
+    normalisation describes the profile the fit believes in, and makes
+    the truncation visible: on the manuscript's aerosol sweep a King
+    fitted at an optical thickness of 0.1 stops at 0.956 where one at 0.7
+    stops at 0.994, a difference grid normalisation hides by sending both
+    to one.
+
+    The plane ceiling is an extrapolation. Nothing constrains the fitted
+    profile beyond the simulated domain, and it is the widest kernel
+    whose ceiling is least certain.
     """
     grid, values, _ = _as_grid(kernel)
-    return xr.DataArray(
-        grid.cdf(values).numpy(),
-        dims=["r"],
-        coords={"r": grid.edges.numpy()},
-    )
+    curve = grid.cdf(values).numpy()
+    if normalize == "plane":
+        curve = curve * grid_share(kernel, float(grid.edges[-1]))
+    elif normalize != "grid":
+        raise ConfigurationError(
+            f"normalize must be 'grid' or 'plane', not {normalize!r}"
+        )
+    return xr.DataArray(curve, dims=["r"], coords={"r": grid.edges.numpy()})
 
 
-def encircled_radius(kernel: xr.DataArray, fraction: float = 0.5) -> float:
+def encircled_radius(
+    kernel: xr.DataArray,
+    fraction: float = 0.5,
+    *,
+    normalize: Literal["grid", "plane"] = "grid",
+) -> float:
     """Return the radius encircling *fraction* of a kernel's energy.
 
     Parameters
@@ -87,14 +127,36 @@ def encircled_radius(kernel: xr.DataArray, fraction: float = 0.5) -> float:
         Square 2-D kernel.
     fraction : float, optional
         Energy fraction, between zero and one.
+    normalize : {"grid", "plane"}, optional
+        Fraction of what; see :func:`encircled_energy` (default
+        ``"grid"``).
 
     Returns
     -------
     float
-        Radius, in the unit of the kernel's coordinates.
+        Radius, in the unit of the kernel's coordinates.  ``nan`` when
+        *fraction* lies above what the grid captured, which
+        ``normalize="plane"`` makes possible: a fitted King at an optical
+        thickness of 0.1 never reaches 0.99 of its plane energy inside a
+        240 km domain.
+
+    Notes
+    -----
+    The two normalisations can differ by a factor of two.  On the
+    manuscript's sweep the 90 % radius of the low-load kernel is 15.8 km
+    of what the grid holds, and 31.7 km of what the profile implies.
     """
     grid, values, _ = _as_grid(kernel)
-    return grid.radius_at(grid.cdf(values), fraction)
+    curve = grid.cdf(values)
+    if normalize == "plane":
+        curve = curve * grid_share(kernel, float(grid.edges[-1]))
+    elif normalize != "grid":
+        raise ConfigurationError(
+            f"normalize must be 'grid' or 'plane', not {normalize!r}"
+        )
+    if fraction > float(curve[-1]):
+        return float("nan")
+    return grid.radius_at(curve, fraction)
 
 
 def encircled_radii(
