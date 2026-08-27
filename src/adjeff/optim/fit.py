@@ -216,6 +216,18 @@ def _stack(
             array = array.expand_dims({dim: [value]})
         datasets.append(array.to_dataset(name=name))
     combined: xr.DataArray = xr.combine_by_coords(datasets, combine_attrs="drop")[name]
+    # Attributes are dropped because `adjeff:params` differs from one
+    # combo to the next and a single value would be wrong for all but
+    # one.  The model name does not: it is the same kernel family
+    # throughout, and it is what tells a reader, or a plane
+    # normalisation, which profile these samples came from.
+    models = {
+        array.attrs["adjeff:model"]
+        for _, array in pieces
+        if "adjeff:model" in array.attrs
+    }
+    if len(models) == 1:
+        combined.attrs["adjeff:model"] = models.pop()
     return combined
 
 
