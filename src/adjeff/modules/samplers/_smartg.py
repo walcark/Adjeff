@@ -130,7 +130,7 @@ def rho_atm(
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    sat_sensor = make_sensors(180.0 - vza, vaa, posz=sat_height)
+    sat_sensor = make_sensors(180.0 - vza, (vaa + 180.0) % 360.0, posz=sat_height)
     sun_le = {
         "th_deg": np.atleast_1d(sza.values),
         "phi_deg": saa,

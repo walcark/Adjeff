@@ -402,16 +402,6 @@ def test_two_batched_angles_each_keep_their_own_point():
         assert got == pytest.approx(expected, rel=0.10), f"sza={sza}, vza={vza}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "rho_atm builds its satellite sensor with PHDEG = vaa, mirroring "
-        "the geometry through the principal plane.  _grid_sensors, which "
-        "rho_toa uses, has PHDEG = vaa + 180.  The two cannot both be "
-        "right and this test says which is.  Fixing it changes every "
-        "rho_atm ever computed, so it is a decision, not a patch."
-    ),
-)
 def test_the_path_reflectance_follows_the_scattering_angle():
     """The azimuth convention, settled against the phase function.
 
@@ -427,10 +417,12 @@ def test_the_path_reflectance_follows_the_scattering_angle():
     the Rayleigh phase function alone falls from 1.97 to 1.12 over that
     span.  ``rho_atm`` must fall with it.
 
-    A sensor declared with ``PHDEG = vaa`` rather than ``vaa + 180``
-    reverses the trend, by 25 percent at ``raa = 0``.  Nothing shows at
-    ``raa = 90``, where the two are the same scattering angle: a test in
-    that plane would pass either way.
+    A satellite at azimuth ``vaa`` sits along ``vaa`` from the ground
+    point, so its photons travel along ``vaa + 180``.  Declaring
+    ``PHDEG = vaa`` instead mirrors the geometry through the principal
+    plane and reverses the trend, by 25 percent at ``raa = 0``.  Nothing
+    shows at ``raa = 90``, where the two are the same scattering angle:
+    a test in that plane would pass either way.
     """
     from adjeff.atmosphere import AtmoConfig
     from adjeff.modules.samplers import RhoAtmSampler
