@@ -8,8 +8,10 @@ from adjeff.utils import CacheStore
 from ..pipeline import Pipeline
 from .rho_atm import RhoAtmSampler
 from .sph_alb import SphAlbSampler
+from .sph_alb_brdf import SphAlbBrdfSampler
 from .tdif_down import TdifDownSampler
 from .tdif_up import TdifUpSampler
+from .tdif_up_brdf import TdifUpBrdfSampler
 from .tdir_down import TdirDownSampler
 from .tdir_up import TdirUpSampler
 
@@ -20,8 +22,11 @@ class RadiativePipeline(Pipeline):
     Chains six :class:`~adjeff.modules.SweepSampler` samplers that
     produce the variables required by the 5S formula in order:
 
-    ``tdir_down`` → ``tdir_up`` → ``sph_alb`` → ``tdif_up`` →
-    ``tdif_down`` → ``rho_atm``
+    ``tdir_down`` → ``tdir_up`` → ``tdif_down`` → ``rho_atm`` →
+    ``sph_alb`` → ``tdif_up``
+
+    The two surface-dependent terms come last so that their BRDF
+    variants, when *rtls* is given, can read the four others.
 
     Notes
     -----
@@ -59,6 +64,15 @@ class RadiativePipeline(Pipeline):
         Atmospheric states per Smart-G call, forwarded to all modules.
     dedup : bool, optional
         Collapse repeated states before calling, forwarded to all modules.
+    rtls : tuple[float, float, float] or None, optional
+        RTLS kernel weights ``(k0, k1p, k2p)`` of a non-lambertian
+        surface.  ``None``, the default, keeps the Lambertian samplers.
+        Given, it swaps **only** ``tdif_up`` and ``sph_alb`` for their
+        BRDF variants: the downward quantities never see the ground, and
+        ``rho_atm`` is a path reflectance, so none of the four others
+        depends on the surface model.  The BRDF variants read the
+        downward terms this pipeline has just produced, which is why
+        they come last.
     """
 
     def __init__(
@@ -75,6 +89,7 @@ class RadiativePipeline(Pipeline):
         cache: CacheStore | None = None,
         batch_size: int = 64,
         dedup: bool = False,
+        rtls: tuple[float, float, float] | None = None,
         rename: dict[str, str] | None = None,
     ) -> None:
         common: dict[str, Any] = dict(
@@ -87,10 +102,12 @@ class RadiativePipeline(Pipeline):
             batch_size=batch_size,
             dedup=dedup,
         )
-        super().__init__(
-            [
-                TdirDownSampler(**common),
-                TdirUpSampler(**common),
+        # The two surface-dependent terms are replaced, not added: they
+        # write the same slots, and they are the two most expensive
+        # samplers of the six.  Their BRDF variants read the downward
+        # terms produced above them, hence the position.
+        if rtls is None:
+            surface_modules: list[Any] = [
                 SphAlbSampler(
                     atmo_config=atmo_config,
                     spectral_config=spectral_config,
@@ -102,7 +119,26 @@ class RadiativePipeline(Pipeline):
                     dedup=dedup,
                 ),
                 TdifUpSampler(**common, n_ph=n_ph_tdif_up),
+            ]
+        else:
+            k0, k1p, k2p = rtls
+            surface_modules = [
+                SphAlbBrdfSampler(**common, k0=k0, k1p=k1p, k2p=k2p, n_ph=n_ph_sph_alb),
+                TdifUpBrdfSampler(
+                    **common,
+                    k0=k0,
+                    k1p=k1p,
+                    k2p=k2p,
+                    n_ph=n_ph_tdif_up,
+                    n_ph_tdif_down=n_ph_tdif_down,
+                ),
+            ]
+        super().__init__(
+            [
+                TdirDownSampler(**common),
+                TdirUpSampler(**common),
                 TdifDownSampler(**common, n_ph=n_ph_tdif_down),
                 RhoAtmSampler(**common, n_ph=n_ph_rho_atm),
+                *surface_modules,
             ]
         )

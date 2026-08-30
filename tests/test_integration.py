@@ -402,6 +402,132 @@ def test_two_batched_angles_each_keep_their_own_point():
         assert got == pytest.approx(expected, rel=0.10), f"sza={sza}, vza={vza}"
 
 
+# --- Non-lambertian surface ---
+
+
+def _brdf_common(sza, vza, n_ph):
+    """Return the configuration the BRDF acceptance tests share."""
+    from adjeff.atmosphere import AtmoConfig
+
+    return dict(
+        atmo_config=AtmoConfig(
+            aot=[0.3, 0.6], rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+        ),
+        geo_config=GeoConfig(sza=sza, vza=vza, saa=0.0, vaa=0.0),
+        spectral_config=SpectralConfig.from_bands([BAND]),
+        remove_rayleigh=False,
+        n_ph=n_ph,
+    )
+
+
+def test_the_brdf_sampler_is_linear_in_the_isotropic_weight():
+    """With one surface interaction the result scales exactly with ``k0``.
+
+    This isolates the surface normalisation without comparing two
+    different simulations, so it is the first thing to look at when the
+    cross-model test below disagrees.
+    """
+    from adjeff.modules.samplers import TdifUpBrdfSampler
+
+    common = _brdf_common(30.0, 10.0, int(1e6))
+
+    def raw(k0):
+        sampler = TdifUpBrdfSampler(**common, k0=k0)
+        scene = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]
+        t_sun = scene["tdir_down"] + scene["tdif_down"]
+        # Undo the normalisation to get back to what Smart-G returned.
+        return np.ravel(
+            np.asarray(
+                ((scene["tdif_up"] + scene["tdir_up"]) * t_sun / k0).values, dtype=float
+            )
+        )
+
+    np.testing.assert_allclose(raw(1.0), raw(0.5), rtol=0.05)
+
+
+def test_tdif_up_and_tdif_down_agree_at_equal_angles():
+    """The 6S reciprocity the BRDF normalisation leans on.
+
+    ``tdif_up`` collected at one zenith and ``tdif_down`` for the same
+    zenith are the same function read in two directions.  If this fails,
+    the normalisation of the BRDF sampler is built on sand, and no
+    cross-model comparison can succeed.
+    """
+    from adjeff.atmosphere import AtmoConfig
+    from adjeff.modules.samplers import TdifDownSampler, TdifUpSampler
+
+    common = dict(
+        atmo_config=AtmoConfig(
+            aot=[0.3, 0.6], rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+        ),
+        geo_config=GeoConfig(sza=30.0, vza=30.0, saa=0.0, vaa=0.0),
+        spectral_config=SpectralConfig.from_bands([BAND]),
+        remove_rayleigh=False,
+        n_ph=int(1e6),
+    )
+    scene = TdifDownSampler(**common)(
+        TdifUpSampler(**common)(ImageDict({BAND: xr.Dataset()}))
+    )[BAND]
+
+    np.testing.assert_allclose(
+        np.ravel(np.asarray(scene["tdif_up"].values, dtype=float)),
+        np.ravel(np.asarray(scene["tdif_down"].values, dtype=float)),
+        rtol=0.10,
+    )
+
+
+def test_a_lambertian_brdf_reproduces_the_lambertian_sampler():
+    """``k1p = k2p = 0`` is a Lambertian surface, so the two must agree.
+
+    The comparison is made against the total transmittance rather than
+    against ``tdif_up`` itself.  The BRDF sampler measures ``T`` and
+    subtracts the direct beam, so its Monte-Carlo error lives on ``T``:
+    asking for a relative tolerance on the small difference would make
+    the test flaky without making it any stricter.  A normalisation, a
+    pairing or an azimuth error moves the result by a fraction of ``T``,
+    well above this threshold.
+    """
+    from adjeff.modules.samplers import TdifUpBrdfSampler, TdifUpSampler
+
+    common = _brdf_common(30.0, 30.0, int(3e6))
+
+    lambertian = TdifUpSampler(**common)(ImageDict({BAND: xr.Dataset()}))[BAND]
+    brdf = TdifUpBrdfSampler(**common, k0=1.0, k1p=0.0, k2p=0.0)(
+        ImageDict({BAND: xr.Dataset()})
+    )[BAND]
+
+    t_view = lambertian["tdir_up"] + lambertian["tdif_up"]
+    gap = np.abs(
+        np.ravel(np.asarray(brdf["tdif_up"].values, dtype=float))
+        - np.ravel(np.asarray(lambertian["tdif_up"].values, dtype=float))
+    )
+    assert (gap < 0.02 * np.ravel(np.asarray(t_view.values, dtype=float))).all(), (
+        f"largest gap {gap.max()}"
+    )
+
+
+def test_a_lambertian_brdf_reproduces_the_spherical_albedo():
+    """Same acceptance criterion for the coupling term."""
+    from adjeff.modules.samplers import SphAlbBrdfSampler, SphAlbSampler
+
+    common = _brdf_common(30.0, 30.0, int(3e6))
+    lambertian = SphAlbSampler(
+        atmo_config=common["atmo_config"],
+        spectral_config=common["spectral_config"],
+        remove_rayleigh=False,
+        n_ph=common["n_ph"],
+    )(ImageDict({BAND: xr.Dataset()}))[BAND]
+    brdf = SphAlbBrdfSampler(**common, k0=1.0, k1p=0.0, k2p=0.0)(
+        ImageDict({BAND: xr.Dataset()})
+    )[BAND]
+
+    np.testing.assert_allclose(
+        np.ravel(np.asarray(brdf["sph_alb"].values, dtype=float)),
+        np.ravel(np.asarray(lambertian["sph_alb"].values, dtype=float)),
+        rtol=0.10,
+    )
+
+
 def test_a_second_run_reads_back_the_scene_it_computed(config, surface, tmp_path):
     """The pipeline must not depend on whether its cache is warm.
 

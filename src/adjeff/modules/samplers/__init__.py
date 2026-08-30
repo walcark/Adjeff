@@ -20,6 +20,15 @@ by the 5S radiative transfer formula::
 - :class:`SphAlbSampler`   — atmospheric spherical albedo ``sph_alb``.
 - :class:`RhoAtmSampler`   — atmospheric path reflectance ``rho_atm``.
 
+**Non-lambertian surface**: only ``tdif_up`` and ``sph_alb`` depend on
+the surface model, the four other quantities never see the ground.
+
+- :class:`TdifUpBrdfSampler` — ``tdif_up`` over an RTLS surface.
+- :class:`SphAlbBrdfSampler` — ``sph_alb`` over an RTLS surface.
+
+Both write the slot their Lambertian counterpart writes, so nothing
+downstream changes; :class:`RadiativePipeline` swaps them on ``rtls``.
+
 **TOA reflectance samplers** (require ``rho_s`` in the scene):
 
 - :class:`RhoToaSymSampler` — radial sampling (symmetric PSF assumption).
@@ -39,8 +48,10 @@ from .rho_atm import RhoAtmSampler
 from .rho_toa import RhoToaSampler
 from .rho_toa_sym import RhoToaSymSampler
 from .sph_alb import SphAlbSampler
+from .sph_alb_brdf import SphAlbBrdfSampler
 from .tdif_down import TdifDownSampler
 from .tdif_up import TdifUpSampler
+from .tdif_up_brdf import TdifUpBrdfSampler
 from .tdir_down import TdirDownSampler
 from .tdir_up import TdirUpSampler
 
@@ -62,8 +73,10 @@ __all__ = [
     "RhoAtmSampler",
     "RhoToaSampler",
     "RhoToaSymSampler",
+    "SphAlbBrdfSampler",
     "SphAlbSampler",
     "TdifDownSampler",
+    "TdifUpBrdfSampler",
     "TdifUpSampler",
     "TdirDownSampler",
     "TdirUpSampler",

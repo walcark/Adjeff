@@ -942,3 +942,286 @@ def psf_atm(
         / result.sum()
     )
     return result.rename(None)
+
+
+# ---------------------------------------------------------------------------
+# Non-lambertian surface: tdif_up and sph_alb under an RTLS BRDF
+# ---------------------------------------------------------------------------
+
+
+def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
+    """Return a Smart-G Ross-Thick Li-Sparse surface.
+
+    The kernel weights travel as plain floats rather than as a built
+    surface: a Smart-G object in a sampler's signature would end up in
+    the cache key, where nothing guarantees it hashes the same twice.
+
+    Parameters
+    ----------
+    k0 : float
+        Spectral albedo of the isotropic kernel.
+    k1p : float
+        Weight of the geometric kernel, relative to the isotropic one.
+    k2p : float
+        Weight of the volumetric kernel, relative to the isotropic one.
+    """
+    from smartg.albedo import Albedo_cst
+    from smartg.smartg import RTLSSurface
+
+    return RTLSSurface(k0=Albedo_cst(k0), k1p=Albedo_cst(k1p), k2p=Albedo_cst(k2p))
+
+
+def _viewing_sensors(
+    vza: xr.DataArray, azimuth: float, sat_height: float
+) -> list["Sensor"]:
+    """Return one Smart-G source per viewing zenith angle.
+
+    In forward mode the sensor emits along the reverse of the direction
+    it observes, and Smart-G reads a sensor back as the physical
+    direction ``(180 - THDEG, PHDEG - 180)`` (``device.cu:1904``).  A
+    satellite observing at ``(vza, vaa)`` is therefore declared as
+    ``THDEG = 180 - vza`` and ``PHDEG = vaa + 180``; giving ``PHDEG =
+    vaa`` instead mirrors the geometry through the principal plane,
+    which a Lambertian surface hides and a BRDF does not.
+
+    Parameters
+    ----------
+    vza : xr.DataArray
+        Viewing zenith angles [deg].
+    azimuth : float
+        Viewing azimuth ``vaa`` [deg], before the 180 degree reversal.
+    sat_height : float
+        Satellite altitude [km].
+    """
+    from smartg.smartg import Sensor
+
+    return [
+        Sensor(
+            POSZ=sat_height,
+            THDEG=float(180.0 - th),
+            PHDEG=float((azimuth + 180.0) % 360.0),
+            LOC="ATMOS",
+        )
+        for th in np.atleast_1d(np.squeeze(vza.values))
+    ]
+
+
+def tdif_up_brdf(
+    wl: xr.DataArray,
+    aot: xr.DataArray,
+    rh: xr.DataArray,
+    h: xr.DataArray,
+    href: xr.DataArray,
+    sza: xr.DataArray,
+    vza: xr.DataArray,
+    species: dict[str, float],
+    afgl_type: str,
+    remove_rayleigh: bool,
+    n_ph: int,
+    saa: float,
+    raa: float,
+    sat_height: float,
+    k0: float,
+    k1p: float,
+    k2p: float,
+) -> xr.DataArray:
+    """Sample the two-way surface-reflected radiance over an RTLS surface.
+
+    Photons leave the satellite along ``vza``, reflect **once** on the
+    surface and are collected toward the sun by local estimate.  By
+    reciprocity this is the sun-to-surface-to-satellite path, so the
+    return is::
+
+        raw = rho_eff * T(vza) * T_up(sza)
+
+    with ``rho_eff`` the RTLS reflectance for the pair.  Turning it into
+    a transmittance needs the downward quantities, which live in the
+    scene; :class:`~adjeff.modules.samplers.TdifUpBrdfSampler` does that
+    division.  ``RMIN = RMAX = 1`` keeps exactly one surface
+    interaction, which removes the surface-atmosphere coupling instead
+    of correcting for it afterwards, and keeps the result linear in the
+    kernel weights.
+
+    Unlike :func:`tdif_up`, this depends on **both** angles: a BRDF
+    breaks the reciprocity that let the Lambertian case collapse them
+    into one.
+
+    Parameters
+    ----------
+    wl : xr.DataArray
+        Wavelengths [nm], 1-D.
+    aot : xr.DataArray
+        Aerosol optical thickness, 1-D.
+    rh : xr.DataArray
+        Relative humidity [%], 1-D.
+    h : xr.DataArray
+        Ground elevation [km], 1-D.
+    href : xr.DataArray
+        Reference height of the aerosol vertical profile [km], 1-D.
+    sza : xr.DataArray
+        Solar zenith angles [deg], 1-D.
+    vza : xr.DataArray
+        Viewing zenith angles [deg], 1-D.
+    species : dict[str, float]
+        OPAC aerosol species and fractional contributions.
+    afgl_type : str
+        AFGL standard atmosphere profile identifier.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed.
+    n_ph : int
+        Number of photons per Smart-G call and per sensor.
+    saa : float
+        Solar azimuth angle [deg], setting the absolute frame.
+    raa : float
+        Relative azimuth ``vaa - saa`` [deg].  It is what the BRDF
+        actually depends on, so it is named rather than derived.
+    sat_height : float
+        Satellite altitude [km].
+    k0, k1p, k2p : float
+        RTLS kernel weights, see :func:`_rtls_surface`.
+
+    Returns
+    -------
+    xr.DataArray
+        Raw two-way radiance, with ``sza`` and ``vza`` paired against
+        the points of a batched call.
+    """
+    from smartg.smartg import Smartg
+
+    atm, batch, atm_size = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
+    )
+    sensors = _viewing_sensors(vza, saa + raa, sat_height)
+    sun_le = {"th_deg": np.atleast_1d(np.squeeze(sza.values)), "phi_deg": saa}
+
+    smartg = Smartg(autoinit=False)
+    try:
+        res: xr.DataArray = smartg.run(
+            wl=atm.axes["wavelength"],
+            atm=atm,
+            surf=_rtls_surface(k0, k1p, k2p),
+            sensor=sensors,
+            le=sun_le,
+            NBPHOTONS=n_ph * atm_size * len(sensors),
+            NF=int(1e3),
+            RMIN=1,
+            RMAX=1,
+        )["I_up (TOA)"].to_xarray()
+    finally:
+        smartg.clear_context()
+
+    return collect_batched(
+        res,
+        batch,
+        angles={
+            "sensor index": ("vza", np.atleast_1d(np.squeeze(vza.values))),
+            "Zenith angles": ("sza", np.atleast_1d(np.squeeze(sza.values))),
+        },
+        drop=["Azimuth angles"],
+    )
+
+
+def sph_alb_brdf(
+    wl: xr.DataArray,
+    aot: xr.DataArray,
+    rh: xr.DataArray,
+    h: xr.DataArray,
+    href: xr.DataArray,
+    sza: xr.DataArray,
+    species: dict[str, float],
+    afgl_type: str,
+    remove_rayleigh: bool,
+    n_ph: int,
+    saa: float,
+    sat_height: float,
+    k0: float,
+    k1p: float,
+    k2p: float,
+) -> xr.DataArray:
+    """Sample the flux returned to the surface by one RTLS reflection.
+
+    Photons leave the sun direction as a planar flux, reflect **once**
+    on the surface, and the flux coming back down at ground level is
+    read.  Normalised by the downward transmittance it gives the
+    coupling term the 5S formula writes as ``sph_alb`` for a Lambertian
+    surface; :class:`~adjeff.modules.samplers.SphAlbBrdfSampler` does
+    that division.
+
+    Only ``sza`` is swept: the quantity is a hemispheric integral, so
+    there is no viewing direction to carry.
+
+    Parameters
+    ----------
+    wl : xr.DataArray
+        Wavelengths [nm], 1-D.
+    aot : xr.DataArray
+        Aerosol optical thickness, 1-D.
+    rh : xr.DataArray
+        Relative humidity [%], 1-D.
+    h : xr.DataArray
+        Ground elevation [km], 1-D.
+    href : xr.DataArray
+        Reference height of the aerosol vertical profile [km], 1-D.
+    sza : xr.DataArray
+        Solar zenith angles [deg], 1-D.
+    species : dict[str, float]
+        OPAC aerosol species and fractional contributions.
+    afgl_type : str
+        AFGL standard atmosphere profile identifier.
+    remove_rayleigh : bool
+        If ``True``, Rayleigh scattering is suppressed.
+    n_ph : int
+        Number of photons per Smart-G call and per sensor.
+    saa : float
+        Solar azimuth angle [deg].
+    sat_height : float
+        Altitude the photons are launched from [km].
+    k0, k1p, k2p : float
+        RTLS kernel weights, see :func:`_rtls_surface`.
+
+    Returns
+    -------
+    xr.DataArray
+        Raw downward flux at ground, with ``sza`` paired against the
+        points of a batched call.
+    """
+    from smartg.smartg import Sensor, Smartg
+
+    atm, batch, atm_size = _make_atmosphere(
+        wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
+    )
+    # A planar-flux source (TYPE=1), so the output is a flux and no
+    # local estimate is involved: an `le` here would have no effect.
+    sensors = [
+        Sensor(
+            POSZ=sat_height,
+            THDEG=float(180.0 - th),
+            PHDEG=float(saa),
+            LOC="ATMOS",
+            TYPE=1,
+        )
+        for th in np.atleast_1d(np.squeeze(sza.values))
+    ]
+
+    smartg = Smartg(autoinit=False)
+    try:
+        res: xr.DataArray = smartg.run(
+            wl=atm.axes["wavelength"],
+            atm=atm,
+            surf=_rtls_surface(k0, k1p, k2p),
+            sensor=sensors,
+            NBPHOTONS=n_ph * atm_size * len(sensors),
+            OUTPUT_LAYERS=3,
+            flux="planar",
+            NF=int(1e3),
+            RMIN=1,
+            RMAX=1,
+        )["flux_down (0+)"].to_xarray()
+    finally:
+        smartg.clear_context()
+
+    return collect_batched(
+        res,
+        batch,
+        angles={"sensor index": ("sza", np.atleast_1d(np.squeeze(sza.values)))},
+    )
