@@ -400,6 +400,7 @@ def run_forward_pipeline(
     nr: int = 500,
     n_ph: int = int(1e5),
     batch_size: int = 64,
+    rtls: tuple[float, float, float] | None = None,
     stream_dims: dict[str, int] | None = None,
 ) -> SceneT:
     """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
@@ -440,6 +441,13 @@ def run_forward_pipeline(
         Atmospheric states handed to Smart-G in one call inside
         :class:`~adjeff.modules.samplers.RadiativePipeline`. A cost
         decision only: it bounds GPU memory and never changes a value.
+    rtls : tuple[float, float, float] or None, optional
+        Ross-Li kernel weights ``(k0, k1p, k2p)`` of a non-lambertian
+        surface, forwarded to
+        :class:`~adjeff.modules.samplers.RadiativePipeline`.  ``None``,
+        the default, keeps the Lambertian samplers.  It changes only the
+        scalar terms the inversion uses, not the surface ``rho_toa`` is
+        simulated over, so the two can be varied independently.
     stream_dims : dict[str, int] or None, optional
         Dimensions to stream over for memory management, e.g.
         ``{"aot": 3}``.  When a dimension exists in the scene's DataArrays,
@@ -461,6 +469,7 @@ def run_forward_pipeline(
         afgl_type=afgl_type,
         cache=cache,
         batch_size=batch_size,
+        rtls=rtls,
     )
     rho_toa = RhoToaSymSampler(
         atmo_config=atmo_config,

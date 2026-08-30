@@ -7,6 +7,8 @@ raw draw into a 5S term, and the pipeline swap.  The physics itself is
 checked on a GPU, in ``test_integration.py``.
 """
 
+import inspect
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -270,3 +272,31 @@ def test_the_pipeline_forwards_the_kernel_weights():
     assert len(brdf) == 2
     for module in brdf:
         assert (module.k0, module.k1p, module.k2p) == (0.6, 0.3, 0.1)
+
+
+def test_the_forward_pipeline_forwards_the_surface():
+    """``run_forward_pipeline`` must reach the two BRDF samplers.
+
+    The study varies the surface the scalar terms assume while keeping
+    the one ``rho_toa`` was simulated over, so the switch has to be
+    reachable from the entry point, not only from the pipeline class.
+    """
+    from adjeff.api import run_forward_pipeline
+
+    def kinds(**kwargs):
+        captured: list[type] = []
+        pipeline = RadiativePipeline(
+            atmo_config=AtmoConfig(
+                aot=0.2, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+            ),
+            geo_config=GeoConfig(sza=40.0, vza=10.0, saa=30.0, vaa=120.0),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            **kwargs,
+        )
+        captured += [type(m) for m in pipeline._modules]
+        return captured
+
+    assert "rtls" in inspect.signature(run_forward_pipeline).parameters
+    assert TdifUpBrdfSampler in kinds(rtls=(1.0, 0.3, 0.1))
+    assert TdifUpSampler in kinds()
