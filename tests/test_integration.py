@@ -355,6 +355,53 @@ def test_batched_angles_match_one_call_per_angle():
     np.testing.assert_allclose(batched, alone, rtol=0.08)
 
 
+def test_two_batched_angles_each_keep_their_own_point():
+    """``rho_atm`` sweeps ``vza`` and ``sza`` together and must pair both.
+
+    It is the only kernel whose Smart-G return carries two angle axes on
+    top of the batch, so it is the only one where a collector can pair
+    one of them and forget the other.  Every cell of the swept grid must
+    reproduce what a call for that geometry alone gives.
+    """
+    from adjeff.atmosphere import AtmoConfig
+    from adjeff.modules.samplers import RhoAtmSampler
+
+    n_ph = int(1e5)
+    szas, vzas = (20.0, 60.0), (0.0, 50.0)
+
+    def rho_atm(sza, vza):
+        sampler = RhoAtmSampler(
+            atmo_config=AtmoConfig(
+                aot=0.3,
+                rh=50.0,
+                h=0.0,
+                href=2.0,
+                species={"sulphate": 1.0},
+            ),
+            geo_config=GeoConfig(sza=sza, vza=vza, saa=120.0, vaa=0.0),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            n_ph=n_ph,
+        )
+        return sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["rho_atm"]
+
+    batched = rho_atm(
+        xr.DataArray(list(szas), dims=["sza"]),
+        xr.DataArray(list(vzas), dims=["vza"]),
+    )
+    alone = {(s, v): float(rho_atm(s, v).values.ravel()[0]) for s in szas for v in vzas}
+
+    # Selecting by label rather than by position: the dim order of the
+    # swept result is not part of what is under test here.
+    assert {"sza", "vza"} <= set(batched.dims)
+    # A collector pairing only one angle would hand two geometries the
+    # same value, which would make the comparison below vacuous.
+    assert len(set(np.round(list(alone.values()), 4))) == 4
+    for (sza, vza), expected in alone.items():
+        got = float(batched.sel(sza=sza, vza=vza).values.ravel()[0])
+        assert got == pytest.approx(expected, rel=0.10), f"sza={sza}, vza={vza}"
+
+
 def test_a_second_run_reads_back_the_scene_it_computed(config, surface, tmp_path):
     """The pipeline must not depend on whether its cache is warm.
 
