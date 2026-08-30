@@ -20,8 +20,10 @@ from adjeff.exceptions import ConfigurationError
 from adjeff.utils import fft_convolve_2D
 from adjeff.utils.smartgutils import (
     adapt_smartg_output,
+    collect_batched,
     compute_optical_depth,
     make_sensors,
+    pair_angles_with_points,
 )
 from adjeff.utils.xrutils import ParamBatch
 
@@ -33,46 +35,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Internal helper
-# ---------------------------------------------------------------------------
-
-
-def _pair_angles_with_points(res: xr.DataArray, *angles: str) -> xr.DataArray:
-    """Keep, for each point of a batched call, the angle it asked for.
-
-    Smart-G evaluates every requested direction for every atmosphere it
-    is handed, so a batched call comes back as the cross product of the
-    angle axis with the point axis.  Only the diagonal is meaningful:
-    point ``i`` asked for angle ``i``.  Without this the caller receives
-    an extra axis it never declared, and xsweep rejects the return as
-    the wrong shape for one point.
-
-    A call outside a batch has no point dim and is returned unchanged,
-    angle axes included, since those are then genuine sweep axes.
-
-    Parameters
-    ----------
-    res : xr.DataArray
-        Unstacked Smart-G output, carrying the angle axes and, when the
-        call was batched, the point axis.
-    *angles : str
-        Names of the angle dims to pair, e.g. ``"vza"``, ``"sza"``.
-
-    Returns
-    -------
-    xr.DataArray
-        Same array with each paired angle dim consumed.
-    """
-    if ParamBatch.GROUP_DIM not in res.dims:
-        return res
-    n = res.sizes[ParamBatch.GROUP_DIM]
-    picks = {
-        name: xr.DataArray(np.arange(n), dims=ParamBatch.GROUP_DIM)
-        for name in angles
-        if name in res.dims and res.sizes[name] == n
-    }
-    return res.isel(picks) if picks else res
+#: Kept as a module-level alias: the helper now lives in
+#: :mod:`adjeff.utils.smartgutils`, next to the output adapter it belongs with.
+_pair_angles_with_points = pair_angles_with_points
 
 
 def _make_atmosphere(
@@ -182,31 +147,15 @@ def rho_atm(
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
 
-    res = adapt_smartg_output(
+    return collect_batched(
         res,
-        squeeze=["Azimuth angles"],
-        rename={"sensor index": "vza", "Zenith angles": "sza"},
-        coords={"vza": vza.values, "sza": sza.values},
-        expand={
-            "vza": vza.values,
-            "sza": sza.values,
-            "wavelength": atm.axes["wavelength"],
+        batch,
+        angles={
+            "sensor index": ("vza", vza.values),
+            "Zenith angles": ("sza", sza.values),
         },
+        drop=["Azimuth angles"],
     )
-
-    res = res.transpose("vza", "sza", "wavelength")
-    res = batch.unstack(
-        xr.DataArray(
-            res.values,
-            dims=["vza", "sza", "index"],
-            coords={
-                "vza": vza.values,
-                "sza": sza.values,
-                "index": batch.index_coord,
-            },
-        )
-    )
-    return _pair_angles_with_points(res, "vza", "sza")
 
 
 # ---------------------------------------------------------------------------
@@ -399,22 +348,7 @@ def tdif_down(
     )["flux_down (0+)"].to_xarray()
     smartg.clear_context()
 
-    res = adapt_smartg_output(
-        res,
-        rename={"sensor index": "sza"},
-        coords={"sza": sza.values},
-        expand={"sza": sza.values, "wavelength": atm.axes["wavelength"]},
-    )
-
-    res = res.transpose("sza", "wavelength")
-    res = batch.unstack(
-        xr.DataArray(
-            res.values,
-            dims=["sza", "index"],
-            coords={"sza": sza.values, "index": batch.index_coord},
-        )
-    )
-    return _pair_angles_with_points(res, "sza")
+    return collect_batched(res, batch, angles={"sensor index": ("sza", sza.values)})
 
 
 # ---------------------------------------------------------------------------
@@ -485,23 +419,12 @@ def tdif_up(
         NF=int(1e3),
     )["I_up (TOA)"].to_xarray()
     smartg.clear_context()
-    res = adapt_smartg_output(
+    return collect_batched(
         res,
-        squeeze=["Azimuth angles"],
-        rename={"Zenith angles": "vza"},
-        coords={"vza": vza.values},
-        expand={"vza": vza.values, "wavelength": atm.axes["wavelength"]},
+        batch,
+        angles={"Zenith angles": ("vza", vza.values)},
+        drop=["Azimuth angles"],
     )
-
-    res = res.transpose("vza", "wavelength")
-    res = batch.unstack(
-        xr.DataArray(
-            res.values,
-            dims=["vza", "index"],
-            coords={"vza": vza.values, "index": batch.index_coord},
-        )
-    )
-    return _pair_angles_with_points(res, "vza")
 
 
 # ---------------------------------------------------------------------------
@@ -565,15 +488,7 @@ def sph_alb(
     )["flux_down (0+)"].to_xarray()
     smartg.clear_context()
 
-    res = adapt_smartg_output(res, expand={"wavelength": atm.axes["wavelength"]})
-    res = batch.unstack(
-        xr.DataArray(
-            res.values,
-            dims=["index"],
-            coords={"index": batch.index_coord},
-        )
-    )
-    return res
+    return collect_batched(res, batch)
 
 
 # ---------------------------------------------------------------------------

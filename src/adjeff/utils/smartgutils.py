@@ -1,10 +1,13 @@
 """Utility helpers for Smart-G input construction and output normalisation."""
 
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
 from luts.luts import MLUT  # type: ignore[import-untyped]
+
+from .xrutils import ParamBatch
 
 if TYPE_CHECKING:
     from smartg.smartg import Sensor
@@ -121,7 +124,9 @@ def adapt_smartg_output(
     """
     for dim in squeeze or []:
         if dim in res.dims:
-            res = res.squeeze(dim=dim).drop_vars(dim)
+            # Smart-G labels these axes, but not always: a dim it built
+            # without a coordinate has nothing to drop.
+            res = res.squeeze(dim=dim).drop_vars(dim, errors="ignore")
 
     if rename:
         present = {src: tgt for src, tgt in rename.items() if src in res.dims}
@@ -136,3 +141,100 @@ def adapt_smartg_output(
             res = res.expand_dims({dim: values})
 
     return res
+
+
+def pair_angles_with_points(res: xr.DataArray, *angles: str) -> xr.DataArray:
+    """Keep, for each point of a batched call, the angle it asked for.
+
+    Smart-G evaluates every requested direction for every atmosphere it
+    is handed, so a batched call comes back as the cross product of the
+    angle axis with the point axis.  Only the diagonal is meaningful:
+    point ``i`` asked for angle ``i``.  Without this the caller receives
+    an extra axis it never declared, and xsweep rejects the return as
+    the wrong shape for one point.
+
+    A call outside a batch has no point dim and is returned unchanged,
+    angle axes included, since those are then genuine sweep axes.
+
+    Parameters
+    ----------
+    res : xr.DataArray
+        Unstacked Smart-G output, carrying the angle axes and, when the
+        call was batched, the point axis.
+    *angles : str
+        Names of the angle dims to pair, e.g. ``"vza"``, ``"sza"``.
+
+    Returns
+    -------
+    xr.DataArray
+        Same array with each paired angle dim consumed.
+    """
+    if ParamBatch.GROUP_DIM not in res.dims:
+        return res
+    n = res.sizes[ParamBatch.GROUP_DIM]
+    picks = {
+        name: xr.DataArray(np.arange(n), dims=ParamBatch.GROUP_DIM)
+        for name in angles
+        if name in res.dims and res.sizes[name] == n
+    }
+    return res.isel(picks) if picks else res
+
+
+def collect_batched(
+    res: xr.DataArray,
+    batch: ParamBatch,
+    *,
+    angles: Mapping[str, tuple[str, np.ndarray]] | None = None,
+    drop: Sequence[str] = (),
+) -> xr.DataArray:
+    """Turn one batched Smart-G output into what a sweep contract expects.
+
+    A batched call hands Smart-G one wavelength per flattened parameter
+    state, so the ``"wavelength"`` axis it returns is the batch index,
+    not a wavelength.  Naming it as such is the whole of the work: once
+    it carries ``batch.index_coord`` it can be unstacked back into the
+    parameter dims, and every remaining axis is placed by its label
+    rather than by its position.
+
+    This replaces the older idiom of transposing the result and
+    rebuilding a DataArray from ``res.values``, which was correct only
+    as long as the final diagonal pick hid a wrong axis order.
+
+    Parameters
+    ----------
+    res : xr.DataArray
+        Raw Smart-G output, straight from ``.to_xarray()``.
+    batch : ParamBatch
+        The batch the atmosphere was built from.
+    angles : Mapping[str, tuple[str, np.ndarray]] or None, optional
+        Smart-G dim name → the ``(name, values)`` it should carry, e.g.
+        ``{"Zenith angles": ("vza", vza.values)}``.  Each renamed dim is
+        expanded when Smart-G collapsed it, then paired against the
+        point axis on the way out.
+    drop : Sequence[str], optional
+        Smart-G dims to squeeze away, e.g. ``"Azimuth angles"``.
+
+    Returns
+    -------
+    xr.DataArray
+        Result carrying the swept parameter dims, with each angle in
+        *angles* consumed against the point axis of a batched call.
+    """
+    angles = angles or {}
+    res = adapt_smartg_output(
+        res,
+        squeeze=list(drop),
+        rename={
+            **{src: name for src, (name, _) in angles.items()},
+            "wavelength": "index",
+        },
+        coords={**dict(angles.values()), "index": batch.index_coord},
+        expand=dict(angles.values()),
+    )
+    # A single atmospheric state leaves Smart-G no axis to return, so the
+    # index has to be put back before it can be unstacked.
+    if "index" not in res.dims:
+        res = res.expand_dims(index=1).assign_coords(index=batch.index_coord)
+    return pair_angles_with_points(
+        batch.unstack(res), *(name for name, _ in angles.values())
+    )
