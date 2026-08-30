@@ -965,10 +965,18 @@ def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
     k2p : float
         Weight of the volumetric kernel, relative to the isotropic one.
     """
+    import warnings
+
     from smartg.albedo import Albedo_cst
     from smartg.smartg import RTLSSurface
 
-    return RTLSSurface(k0=Albedo_cst(k0), k1p=Albedo_cst(k1p), k2p=Albedo_cst(k2p))
+    # The k0/k1p/k2p keywords Smart-G 1.1 advertises raise
+    # "'tuple' object does not support item assignment": they write into
+    # the tuple default they were given.  The deprecated `kp` triple is
+    # the only path that runs, so its warning is not the caller's to see.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return RTLSSurface(kp=(Albedo_cst(k0), Albedo_cst(k1p), Albedo_cst(k2p)))
 
 
 def _viewing_sensors(
@@ -976,13 +984,18 @@ def _viewing_sensors(
 ) -> list["Sensor"]:
     """Return one Smart-G source per viewing zenith angle.
 
-    In forward mode the sensor emits along the reverse of the direction
-    it observes, and Smart-G reads a sensor back as the physical
-    direction ``(180 - THDEG, PHDEG - 180)`` (``device.cu:1904``).  A
-    satellite observing at ``(vza, vaa)`` is therefore declared as
-    ``THDEG = 180 - vza`` and ``PHDEG = vaa + 180``; giving ``PHDEG =
-    vaa`` instead mirrors the geometry through the principal plane,
-    which a Lambertian surface hides and a BRDF does not.
+    A satellite at azimuth ``vaa`` sits along ``vaa`` from the ground
+    point it observes, so in forward mode its photons travel along
+    ``vaa + 180``.  Declaring ``PHDEG = vaa`` instead mirrors the
+    geometry through the principal plane, which reverses the trend of
+    the path reflectance with the relative azimuth: 25 percent at
+    ``raa = 0`` and nothing at ``raa = 90``, where both are the same
+    scattering angle.  See
+    ``test_the_path_reflectance_follows_the_scattering_angle``.
+
+    This matches :func:`_grid_sensors`, and **not**
+    :func:`~adjeff.utils.smartgutils.make_sensors` as ``rho_atm`` calls
+    it.
 
     Parameters
     ----------

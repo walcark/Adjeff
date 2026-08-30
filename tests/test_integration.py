@@ -402,6 +402,61 @@ def test_two_batched_angles_each_keep_their_own_point():
         assert got == pytest.approx(expected, rel=0.10), f"sza={sza}, vza={vza}"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "rho_atm builds its satellite sensor with PHDEG = vaa, mirroring "
+        "the geometry through the principal plane.  _grid_sensors, which "
+        "rho_toa uses, has PHDEG = vaa + 180.  The two cannot both be "
+        "right and this test says which is.  Fixing it changes every "
+        "rho_atm ever computed, so it is a decision, not a patch."
+    ),
+)
+def test_the_path_reflectance_follows_the_scattering_angle():
+    """The azimuth convention, settled against the phase function.
+
+    Single scattering makes ``rho_atm`` proportional to ``P(Theta)``,
+    and the scattering angle follows from the geometry::
+
+        cos(Theta) = -cos(sza) cos(vza) - sin(sza) sin(vza) cos(raa)
+
+    ``raa = 0`` puts sun and satellite at the same azimuth, which is the
+    hotspot: at ``sza = vza`` it gives ``Theta = 180`` exactly.  So
+    ``Theta`` **decreases** with the relative azimuth, from 170 degrees
+    at ``raa = 0`` to 110 at ``raa = 180`` for the geometry below, and
+    the Rayleigh phase function alone falls from 1.97 to 1.12 over that
+    span.  ``rho_atm`` must fall with it.
+
+    A sensor declared with ``PHDEG = vaa`` rather than ``vaa + 180``
+    reverses the trend, by 25 percent at ``raa = 0``.  Nothing shows at
+    ``raa = 90``, where the two are the same scattering angle: a test in
+    that plane would pass either way.
+    """
+    from adjeff.atmosphere import AtmoConfig
+    from adjeff.modules.samplers import RhoAtmSampler
+
+    def rho_atm(raa):
+        sampler = RhoAtmSampler(
+            atmo_config=AtmoConfig(
+                aot=0.4, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+            ),
+            geo_config=GeoConfig(sza=40.0, vza=30.0, saa=0.0, vaa=raa),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            n_ph=int(1e6),
+        )
+        out = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["rho_atm"]
+        return float(np.asarray(out.values, dtype=float).ravel()[0])
+
+    hotspot, forward = rho_atm(0.0), rho_atm(180.0)
+
+    assert hotspot > forward * 1.10, (
+        f"rho_atm did not fall with the scattering angle: raa=0 gives "
+        f"{hotspot}, raa=180 gives {forward}.  A sensor azimuth off by "
+        f"180 degrees reverses exactly this."
+    )
+
+
 # --- Non-lambertian surface ---
 
 
@@ -496,7 +551,9 @@ def test_a_lambertian_brdf_reproduces_the_lambertian_sampler():
         ImageDict({BAND: xr.Dataset()})
     )[BAND]
 
-    t_view = lambertian["tdir_up"] + lambertian["tdif_up"]
+    # tdir_up comes from the BRDF scene: ensure_downward put it there,
+    # while the lambertian sampler alone produces only its own output.
+    t_view = brdf["tdir_up"] + lambertian["tdif_up"]
     gap = np.abs(
         np.ravel(np.asarray(brdf["tdif_up"].values, dtype=float))
         - np.ravel(np.asarray(lambertian["tdif_up"].values, dtype=float))
