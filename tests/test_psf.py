@@ -622,3 +622,27 @@ def test_the_kernel_comes_out_on_the_module_device(cls, params, grid, band):
     """``forward`` must not silently move the kernel back to the CPU."""
     psf = cls(grid, band, **params).to("cpu")
     assert psf.forward().device == psf.r2.device
+
+
+@pytest.mark.parametrize(
+    "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
+)
+def test_nothing_in_the_module_tree_is_left_behind_by_to(cls, params, grid, band):
+    """No tensor may hang off a module as a plain attribute.
+
+    ``fit`` moves the model to its device, and ``.to`` carries parameters
+    and buffers only.  A tensor assigned directly stays on the host and
+    turns every step into a mixed-device operation, which is what the
+    bounds of a ``ConstrainedParameter`` used to be.  This catches the
+    next one without needing a GPU to run on.
+    """
+    psf = cls(grid, band, **params)
+    registered = {id(t) for t in psf.parameters()} | {id(t) for t in psf.buffers()}
+
+    for module in psf.modules():
+        for name, attr in vars(module).items():
+            if isinstance(attr, torch.Tensor) and id(attr) not in registered:
+                raise AssertionError(
+                    f"{type(module).__name__}.{name} is a plain tensor: "
+                    "register it as a buffer so .to(device) moves it."
+                )

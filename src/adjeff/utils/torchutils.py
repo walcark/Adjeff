@@ -118,6 +118,9 @@ class ConstrainedParameter(nn.Module):
         Parameter name for logging/debug.
     """
 
+    p_min: torch.Tensor
+    p_max: torch.Tensor
+
     def __init__(
         self,
         init_value: torch.Tensor,
@@ -138,8 +141,17 @@ class ConstrainedParameter(nn.Module):
         # physical ones, which only means anything for a transform that
         # is strictly increasing.  Rather than admit a fixed list of
         # transforms, check the property the bounds actually need.
-        self.p_min = transform.inverse(torch.tensor(min_val))
-        self.p_max = transform.inverse(torch.tensor(max_val))
+        # Registered rather than assigned: `forward` clamps the parameter
+        # against them and `project` does so in place, so a bound left
+        # behind on the host when the model moves to a GPU puts a
+        # mixed-device pair into every step.  Non-persistent, being
+        # derived from `min_val` and `max_val` rather than learned.
+        self.register_buffer(
+            "p_min", transform.inverse(torch.tensor(min_val)), persistent=False
+        )
+        self.register_buffer(
+            "p_max", transform.inverse(torch.tensor(max_val)), persistent=False
+        )
         if not (
             torch.isfinite(self.p_min)
             and torch.isfinite(self.p_max)
