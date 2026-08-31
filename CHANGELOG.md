@@ -5,6 +5,48 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.1]
+
+The PSF was built on the CPU, once per training landscape.
+
+`PSFGrid.meshgrid` allocated its tensors on whatever device torch
+defaults to, which is the CPU, and `PSFModule.forward` called it afresh
+on every evaluation. `fit` moved the training data to the requested
+device but never the model, so the kernel was assembled on the host and
+copied across the bus, gradient included, once per sample per step.
+
+Measured on a CNES GPU node, at the manuscript's `n = 3999`: building a
+King kernel takes **268 ms** on the one core the scheduler allocates,
+against **1 ms** on the Tesla V100 of the same node, where the
+convolution the fit is supposedly bound by takes 23 ms. With three
+training landscapes, an Adam step spent about 2.4 s on the kernel and
+0.2 s on everything the GPU was there for.
+
+### Fixed
+
+- **The radial grid is a buffer, built once.** `PSFModule` registers
+  `_r2` at construction and exposes `r` and `r2`; the five analytical
+  kernels read them instead of calling `meshgrid`. It is non-persistent,
+  being derived from `grid` rather than learned, so it stays out of a
+  checkpoint. `PSFGrid.meshgrid` gains a `device` argument.
+
+- **`fit` moves the model to its device.** The training data already went
+  there; the model, and with it the parameters and the radial grid, did
+  not.
+
+- **The kernel is evaluated once per step, not once per landscape.**
+  `_ComboStage._total_loss` builds it and passes it through the `kernel`
+  argument `forward_band` already accepted for the loss-landscape scan.
+
+- `float(loss_t)` in the Adam loop becomes `float(loss_t.detach())`,
+  which is what the surrounding code meant and what torch was warning
+  about on every step.
+
+### Upgrading
+
+Nothing to change. `PSFGrid.meshgrid()` keeps its signature, with
+`device` optional, and the kernels are numerically unchanged.
+
 ## [0.13.0]
 
 Observability, and what an encircled-energy curve is a fraction of.

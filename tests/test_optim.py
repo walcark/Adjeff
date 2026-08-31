@@ -192,3 +192,47 @@ def test_training_images_rejects_a_wrong_number_of_weights():
 
     with pytest.raises(ConfigurationError, match="one per image"):
         TrainingImages(images=[object(), object()], weights=[1.0])
+
+
+# ---------------------------------------------------------------------------
+# The kernel is built once per step, not once per landscape
+# ---------------------------------------------------------------------------
+
+
+def test_the_kernel_is_built_once_per_step_not_once_per_sample():
+    """One optimisation step must evaluate the PSF exactly once.
+
+    The kernel does not depend on the training landscape, but
+    ``forward_band`` used to rebuild it for every sample, multiplying the
+    cost of a step by the size of the training set.  At n = 3999 that was
+    three times 268 ms of CPU per step.
+    """
+    from adjeff.core.bands import S2Band
+    from adjeff.optim.adam_optimizer import AdamConfig, AdamStage
+    from adjeff.optim.loss import Loss
+    from adjeff.optim.metrics import Metric
+
+    band = S2Band.B03
+    samples = [_sample(), _sample(), _sample()]
+    kernel = torch.ones(3, 3) / 9.0
+
+    psf = MagicMock()
+    psf.forward.return_value = kernel
+    model = MagicMock()
+    model.psf_modules = {band.id: psf}
+    model.forward_band.side_effect = lambda b, **kw: kw["rho_unif"]
+
+    stage = AdamStage(
+        AdamConfig(
+            min_steps=1,
+            max_steps=1,
+            loss_relative_tolerance=1e-4,
+            loss=Loss(Metric.RMSE_RAD),
+        )
+    )
+    stage._total_loss(model, band, samples)
+
+    assert psf.forward.call_count == 1
+    assert model.forward_band.call_count == len(samples)
+    for call in model.forward_band.call_args_list:
+        assert call.kwargs["kernel"] is kernel

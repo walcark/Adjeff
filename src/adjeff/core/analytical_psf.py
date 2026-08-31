@@ -45,8 +45,7 @@ class GaussPSF(PSFModule):
 
     def forward(self) -> torch.Tensor:
         """Return normalised Gaussian kernel on the grid."""
-        X, Y = self.grid.meshgrid()
-        r2 = X**2 + Y**2
+        r2 = self.r2
         kernel = torch.exp(-r2 / (2.0 * self.sigma.value**2))
         return kernel / kernel.sum()
 
@@ -94,8 +93,7 @@ class GeneralizedGaussianPSF(PSFModule):
 
     def forward(self) -> torch.Tensor:
         """Return normalised Generalised Gaussian kernel on the grid."""
-        X, Y = self.grid.meshgrid()
-        r = torch.sqrt(X**2 + Y**2)
+        r = self.r
         kernel = torch.exp(-radial_power(r, self.sigma.value, self.n.value))
         return kernel / kernel.sum()
 
@@ -171,8 +169,7 @@ class VoigtPSF(PSFModule):
 
     def forward(self) -> torch.Tensor:
         """Return normalised Voigt kernel on the grid."""
-        X, Y = self.grid.meshgrid()
-        r = torch.sqrt(X**2 + Y**2)
+        r = self.r
         G = torch.exp(-(r**2) / (2.0 * self.sigma.value**2))
         L = 1.0 / (1.0 + (r / self.gamma.value) ** 2)
         eta = self._eta()
@@ -250,8 +247,7 @@ class KingPSF(PSFModule):
 
     def forward(self) -> torch.Tensor:
         """Return normalised King kernel on the grid."""
-        X, Y = self.grid.meshgrid()
-        r2 = X**2 + Y**2
+        r2 = self.r2
         core = 1.0 + r2 / (2.0 * self.sigma.value**2 * self.gamma.value)
         k = core.pow(-self.gamma.value)
         return k / k.sum()
@@ -324,8 +320,7 @@ class MoffatGeneralizedPSF(PSFModule):
 
     def forward(self) -> torch.Tensor:
         """Return normalised Generalised Moffat kernel on the grid."""
-        X, Y = self.grid.meshgrid()
-        r = torch.sqrt(X**2 + Y**2)
+        r = self.r
         k = (1.0 + radial_power(r, self.alpha.value, 2 * self.beta.value)).pow(
             -self.gamma.value
         )

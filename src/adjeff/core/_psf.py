@@ -45,10 +45,19 @@ class PSFGrid:
         coords = np.linspace(-half, half, self.n)
         return xr.Coordinates({"x_psf": coords, "y_psf": coords})
 
-    def meshgrid(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return (X, Y) float32 meshgrid tensors centered on the grid."""
+    def meshgrid(
+        self, device: torch.device | str | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return (X, Y) float32 meshgrid tensors centered on the grid.
+
+        Parameters
+        ----------
+        device : torch.device or str or None, optional
+            Where to allocate the tensors.  ``None`` keeps the torch
+            default, which is the CPU.
+        """
         half = (self.n // 2) * self.res
-        t = torch.linspace(-half, half, self.n, dtype=torch.float32)
+        t = torch.linspace(-half, half, self.n, dtype=torch.float32, device=device)
         X, Y = torch.meshgrid(t, t, indexing="xy")
         return X, Y
 
@@ -165,10 +174,32 @@ class PSFModule(nn.Module, ABC):
 
     _model_name: ClassVar[str] = ""
 
+    _r2: torch.Tensor
+
     def __init__(self, grid: PSFGrid, band: SensorBand) -> None:
         super().__init__()
         self.grid = grid
         self.band = band
+        # The radial grid never changes and carries no gradient, yet
+        # forward() used to rebuild it on every call, on whatever device
+        # torch defaults to.  Measured at n = 3999: 268 ms of CPU per
+        # evaluation on one core, against 1 ms once it sits on the GPU,
+        # and the optimiser pays it once per training landscape per step.
+        # Held as a buffer so that `.to(device)` moves it along with the
+        # parameters, and non-persistent because it is derived from
+        # `grid` rather than learned.
+        X, Y = grid.meshgrid()
+        self.register_buffer("_r2", X * X + Y * Y, persistent=False)
+
+    @property
+    def r2(self) -> torch.Tensor:
+        """Squared radial distance of each pixel, on the module's device."""
+        return self._r2
+
+    @property
+    def r(self) -> torch.Tensor:
+        """Radial distance of each pixel, on the module's device."""
+        return torch.sqrt(self._r2)
 
     @abstractmethod
     def forward(self) -> torch.Tensor:

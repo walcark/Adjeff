@@ -143,10 +143,17 @@ class _ComboStage(abc.ABC):
         band: SensorBand,
         data: TrainingSet,
     ) -> torch.Tensor:
-        """Loss of one band at one atmospheric combo."""
+        """Loss of one band at one atmospheric combo.
+
+        The kernel is built once and passed to every sample rather than
+        rebuilt inside ``forward_band``: it does not depend on the
+        landscape, so evaluating it per sample multiplied the cost of a
+        step by the size of the training set.
+        """
+        kernel = model.psf_modules[band.id].forward()
 
         def forward(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
-            return model.forward_band(band, **inputs)
+            return model.forward_band(band, kernel=kernel, **inputs)
 
         return self.config.loss(forward, data)
 
