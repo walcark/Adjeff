@@ -109,6 +109,12 @@ def fit(
     bands: list[SensorBand] = [psf.band for psf in model.psf_modules.values()]
 
     combos = list(iterate_broadcasted_dims(train_images, inputs, target, bands[0]))
+
+    # The training data was already moved to *device*, but the model was
+    # not, so every kernel was built on the CPU and copied across the bus
+    # once per landscape per step.  Moving the model carries its
+    # parameters and the radial grid buffer with it.
+    model.to(device)
     initial = save_all_params(model)
 
     # Kernels are captured as each combo finishes rather than replayed
