@@ -5,6 +5,30 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.2]
+
+The other half of moving the model.
+
+0.13.1 moved the model to the device the fit runs on. `.to` carries
+parameters and buffers, and `ConstrainedParameter` kept its bounds as
+plain tensors, so the parameter left for the GPU and its bounds stayed
+on the host.
+
+### Fixed
+
+- **A parameter's bounds move with the parameter.** `p_min` and `p_max`
+  become non-persistent buffers. `forward` clamps against them and
+  `project` does so in place, so leaving them behind put a mixed-device
+  pair into every optimisation step. A test now walks the PSF module
+  tree and rejects any tensor that is neither a parameter nor a buffer,
+  which catches the next one without needing a GPU to run on.
+
+### Upgrading
+
+Nothing to change. 0.13.1 is superseded rather than broken: the bounds
+are zero-dimensional, which torch is willing to treat as scalars, so the
+mixed-device pair may well have gone unnoticed.
+
 ## [0.13.1]
 
 The PSF was built on the CPU, once per training landscape.
@@ -37,13 +61,6 @@ training landscapes, an Adam step spent about 2.4 s on the kernel and
 - **The kernel is evaluated once per step, not once per landscape.**
   `_ComboStage._total_loss` builds it and passes it through the `kernel`
   argument `forward_band` already accepted for the loss-landscape scan.
-
-- **The bounds of a `ConstrainedParameter` are buffers.** `p_min` and
-  `p_max` were plain tensors, so `.to(device)` moved the parameter and
-  left its bounds on the host, putting a mixed-device pair into the
-  `clamp` of every `forward` and every `project`. A test now walks the
-  PSF module tree and rejects any tensor that is neither a parameter nor
-  a buffer, which catches the next one without needing a GPU to run on.
 
 - `float(loss_t)` in the Adam loop becomes `float(loss_t.detach())`,
   which is what the surrounding code meant and what torch was warning
