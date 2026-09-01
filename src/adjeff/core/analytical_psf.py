@@ -210,11 +210,14 @@ class KingPSF(PSFModule):
         Initial power-law index.  Clamped into :data:`GAMMA_BOUNDS`.
     """
 
-    #: Range the power-law index is confined to.  The lower end is the
-    #: integrability threshold; the upper end is far above any value an
-    #: atmospheric fit has produced, and only keeps the sigmoid on a
-    #: usable slope.
-    GAMMA_BOUNDS: ClassVar[tuple[float, float]] = (1.0, 5.0)
+    #: Range the power-law index is confined to.  The lower end sits just
+    #: above the integrability threshold rather than on it: at ``γ = 1``
+    #: the plane integral diverges, so the value is unusable, and a fit
+    #: started or projected there has both a meaningless kernel and a
+    #: sigmoid derivative near zero.  The upper end is far above any
+    #: value an atmospheric fit has produced, and only keeps the sigmoid
+    #: on a usable slope.
+    GAMMA_BOUNDS: ClassVar[tuple[float, float]] = (1.02, 5.0)
 
     _model_name: ClassVar[str] = "King"
 
