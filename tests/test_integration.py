@@ -355,6 +355,228 @@ def test_batched_angles_match_one_call_per_angle():
     np.testing.assert_allclose(batched, alone, rtol=0.08)
 
 
+def test_two_batched_angles_each_keep_their_own_point():
+    """``rho_atm`` sweeps ``vza`` and ``sza`` together and must pair both.
+
+    It is the only kernel whose Smart-G return carries two angle axes on
+    top of the batch, so it is the only one where a collector can pair
+    one of them and forget the other.  Every cell of the swept grid must
+    reproduce what a call for that geometry alone gives.
+    """
+    from adjeff.atmosphere import AtmoConfig
+    from adjeff.modules.samplers import RhoAtmSampler
+
+    n_ph = int(1e5)
+    szas, vzas = (20.0, 60.0), (0.0, 50.0)
+
+    def rho_atm(sza, vza):
+        sampler = RhoAtmSampler(
+            atmo_config=AtmoConfig(
+                aot=0.3,
+                rh=50.0,
+                h=0.0,
+                href=2.0,
+                species={"sulphate": 1.0},
+            ),
+            geo_config=GeoConfig(sza=sza, vza=vza, saa=120.0, vaa=0.0),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            n_ph=n_ph,
+        )
+        return sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["rho_atm"]
+
+    batched = rho_atm(
+        xr.DataArray(list(szas), dims=["sza"]),
+        xr.DataArray(list(vzas), dims=["vza"]),
+    )
+    alone = {(s, v): float(rho_atm(s, v).values.ravel()[0]) for s in szas for v in vzas}
+
+    # Selecting by label rather than by position: the dim order of the
+    # swept result is not part of what is under test here.
+    assert {"sza", "vza"} <= set(batched.dims)
+    # A collector pairing only one angle would hand two geometries the
+    # same value, which would make the comparison below vacuous.
+    assert len(set(np.round(list(alone.values()), 4))) == 4
+    for (sza, vza), expected in alone.items():
+        got = float(batched.sel(sza=sza, vza=vza).values.ravel()[0])
+        assert got == pytest.approx(expected, rel=0.10), f"sza={sza}, vza={vza}"
+
+
+def test_the_path_reflectance_follows_the_scattering_angle():
+    """The azimuth convention, settled against the phase function.
+
+    Single scattering makes ``rho_atm`` proportional to ``P(Theta)``,
+    and the scattering angle follows from the geometry::
+
+        cos(Theta) = -cos(sza) cos(vza) - sin(sza) sin(vza) cos(raa)
+
+    ``raa = 0`` puts sun and satellite at the same azimuth, which is the
+    hotspot: at ``sza = vza`` it gives ``Theta = 180`` exactly.  So
+    ``Theta`` **decreases** with the relative azimuth, from 170 degrees
+    at ``raa = 0`` to 110 at ``raa = 180`` for the geometry below, and
+    the Rayleigh phase function alone falls from 1.97 to 1.12 over that
+    span.  ``rho_atm`` must fall with it.
+
+    A satellite at azimuth ``vaa`` sits along ``vaa`` from the ground
+    point, so its photons travel along ``vaa + 180``.  Declaring
+    ``PHDEG = vaa`` instead mirrors the geometry through the principal
+    plane and reverses the trend, by 25 percent at ``raa = 0``.  Nothing
+    shows at ``raa = 90``, where the two are the same scattering angle:
+    a test in that plane would pass either way.
+    """
+    from adjeff.atmosphere import AtmoConfig
+    from adjeff.modules.samplers import RhoAtmSampler
+
+    def rho_atm(raa):
+        sampler = RhoAtmSampler(
+            atmo_config=AtmoConfig(
+                aot=0.4, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+            ),
+            geo_config=GeoConfig(sza=40.0, vza=30.0, saa=0.0, vaa=raa),
+            spectral_config=SpectralConfig.from_bands([BAND]),
+            remove_rayleigh=False,
+            n_ph=int(1e6),
+        )
+        out = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]["rho_atm"]
+        return float(np.asarray(out.values, dtype=float).ravel()[0])
+
+    hotspot, forward = rho_atm(0.0), rho_atm(180.0)
+
+    assert hotspot > forward * 1.10, (
+        f"rho_atm did not fall with the scattering angle: raa=0 gives "
+        f"{hotspot}, raa=180 gives {forward}.  A sensor azimuth off by "
+        f"180 degrees reverses exactly this."
+    )
+
+
+# --- Non-lambertian surface ---
+
+
+def _brdf_common(sza, vza, n_ph):
+    """Return the configuration the BRDF acceptance tests share."""
+    from adjeff.atmosphere import AtmoConfig
+
+    return dict(
+        atmo_config=AtmoConfig(
+            aot=[0.3, 0.6], rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+        ),
+        geo_config=GeoConfig(sza=sza, vza=vza, saa=0.0, vaa=0.0),
+        spectral_config=SpectralConfig.from_bands([BAND]),
+        remove_rayleigh=False,
+        n_ph=n_ph,
+    )
+
+
+def test_the_brdf_sampler_is_linear_in_the_isotropic_weight():
+    """With one surface interaction the result scales exactly with ``k0``.
+
+    This isolates the surface normalisation without comparing two
+    different simulations, so it is the first thing to look at when the
+    cross-model test below disagrees.
+    """
+    from adjeff.modules.samplers import TdifUpBrdfSampler
+
+    common = _brdf_common(30.0, 10.0, int(1e6))
+
+    def raw(k0):
+        sampler = TdifUpBrdfSampler(**common, k0=k0)
+        scene = sampler(ImageDict({BAND: xr.Dataset()}))[BAND]
+        t_sun = scene["tdir_down"] + scene["tdif_down"]
+        # Undo the normalisation to get back to what Smart-G returned.
+        return np.ravel(
+            np.asarray(
+                ((scene["tdif_up"] + scene["tdir_up"]) * t_sun / k0).values, dtype=float
+            )
+        )
+
+    np.testing.assert_allclose(raw(1.0), raw(0.5), rtol=0.05)
+
+
+def test_tdif_up_and_tdif_down_agree_at_equal_angles():
+    """The 6S reciprocity the BRDF normalisation leans on.
+
+    ``tdif_up`` collected at one zenith and ``tdif_down`` for the same
+    zenith are the same function read in two directions.  If this fails,
+    the normalisation of the BRDF sampler is built on sand, and no
+    cross-model comparison can succeed.
+    """
+    from adjeff.atmosphere import AtmoConfig
+    from adjeff.modules.samplers import TdifDownSampler, TdifUpSampler
+
+    common = dict(
+        atmo_config=AtmoConfig(
+            aot=[0.3, 0.6], rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+        ),
+        geo_config=GeoConfig(sza=30.0, vza=30.0, saa=0.0, vaa=0.0),
+        spectral_config=SpectralConfig.from_bands([BAND]),
+        remove_rayleigh=False,
+        n_ph=int(1e6),
+    )
+    scene = TdifDownSampler(**common)(
+        TdifUpSampler(**common)(ImageDict({BAND: xr.Dataset()}))
+    )[BAND]
+
+    np.testing.assert_allclose(
+        np.ravel(np.asarray(scene["tdif_up"].values, dtype=float)),
+        np.ravel(np.asarray(scene["tdif_down"].values, dtype=float)),
+        rtol=0.10,
+    )
+
+
+def test_a_lambertian_brdf_reproduces_the_lambertian_sampler():
+    """``k1p = k2p = 0`` is a Lambertian surface, so the two must agree.
+
+    The comparison is made against the total transmittance rather than
+    against ``tdif_up`` itself.  The BRDF sampler measures ``T`` and
+    subtracts the direct beam, so its Monte-Carlo error lives on ``T``:
+    asking for a relative tolerance on the small difference would make
+    the test flaky without making it any stricter.  A normalisation, a
+    pairing or an azimuth error moves the result by a fraction of ``T``,
+    well above this threshold.
+    """
+    from adjeff.modules.samplers import TdifUpBrdfSampler, TdifUpSampler
+
+    common = _brdf_common(30.0, 30.0, int(3e6))
+
+    lambertian = TdifUpSampler(**common)(ImageDict({BAND: xr.Dataset()}))[BAND]
+    brdf = TdifUpBrdfSampler(**common, k0=1.0, k1p=0.0, k2p=0.0)(
+        ImageDict({BAND: xr.Dataset()})
+    )[BAND]
+
+    # tdir_up comes from the BRDF scene: ensure_downward put it there,
+    # while the lambertian sampler alone produces only its own output.
+    t_view = brdf["tdir_up"] + lambertian["tdif_up"]
+    gap = np.abs(
+        np.ravel(np.asarray(brdf["tdif_up"].values, dtype=float))
+        - np.ravel(np.asarray(lambertian["tdif_up"].values, dtype=float))
+    )
+    assert (gap < 0.02 * np.ravel(np.asarray(t_view.values, dtype=float))).all(), (
+        f"largest gap {gap.max()}"
+    )
+
+
+def test_a_lambertian_brdf_reproduces_the_spherical_albedo():
+    """Same acceptance criterion for the coupling term."""
+    from adjeff.modules.samplers import SphAlbBrdfSampler, SphAlbSampler
+
+    common = _brdf_common(30.0, 30.0, int(3e6))
+    lambertian = SphAlbSampler(
+        atmo_config=common["atmo_config"],
+        spectral_config=common["spectral_config"],
+        remove_rayleigh=False,
+        n_ph=common["n_ph"],
+    )(ImageDict({BAND: xr.Dataset()}))[BAND]
+    brdf = SphAlbBrdfSampler(**common, k0=1.0, k1p=0.0, k2p=0.0)(
+        ImageDict({BAND: xr.Dataset()})
+    )[BAND]
+
+    np.testing.assert_allclose(
+        np.ravel(np.asarray(brdf["sph_alb"].values, dtype=float)),
+        np.ravel(np.asarray(lambertian["sph_alb"].values, dtype=float)),
+        rtol=0.10,
+    )
+
+
 def test_a_second_run_reads_back_the_scene_it_computed(config, surface, tmp_path):
     """The pipeline must not depend on whether its cache is warm.
 

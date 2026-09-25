@@ -25,7 +25,8 @@ stays reachable through its own submodule, e.g.
 - :mod:`.xrutils`: :class:`ParamBatch`, :func:`square_grid`,
   :func:`grid`.
 - :mod:`.smartgutils`: :func:`make_sensors`,
-  :func:`compute_optical_depth`, :func:`adapt_smartg_output`.
+  :func:`compute_optical_depth`, :func:`adapt_smartg_output`,
+  :func:`pair_angles_with_points`, :func:`collect_batched`.
 """
 
 from .cache_store import CacheStore
