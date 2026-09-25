@@ -5,6 +5,58 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.0]
+
+What the scalar terms of the 5S model become when the ground is not
+Lambertian, and one sensor that had been pointed the wrong way.
+
+The 5S formalism uses a single upward diffuse transmittance and a single
+spherical albedo, which is exact only over a Lambertian surface. Of the six
+quantities a forward run produces, exactly two depend on the surface model:
+`tdif_up` and `sph_alb`. This release computes those two over a Ross-Li
+surface, which is what quantifying the cost of the Lambertian assumption
+requires.
+
+### Added
+
+- **`TdifUpBrdfSampler` and `SphAlbBrdfSampler`** sample `tdif_up` and
+  `sph_alb` over an RTLS surface given its `(k0, k1p, k2p)` weights. They
+  write the slot their Lambertian counterpart writes, so nothing downstream
+  learns which one ran.
+
+- **`RadiativePipeline(rtls=...)` and `run_forward_pipeline(rtls=...)`**
+  swap the two surface-dependent samplers. `None`, the default, keeps the
+  Lambertian ones. The surface the scalar terms assume is independent of the
+  surface `rho_toa` is simulated over, which is what lets the two be varied
+  one at a time.
+
+- **`collect_batched` and `pair_angles_with_points`**, public in
+  `adjeff.utils`. Four Smart-G kernels had each grown their own tail to pull
+  a batched output apart; they now share one that places results by label
+  rather than by the layout Smart-G happened to return.
+
+### Fixed
+
+- **`rho_atm`'s satellite sensor points where the caller asked.** The
+  azimuth was passed through unchanged where Smart-G expects the direction
+  the sensor looks along, not the direction it looks from. Measured against
+  the Rayleigh phase function across relative azimuth, `vaa + 180` is the
+  one that reproduces it. At nadir the correction is worth 0.07 %, so the
+  article's geometry is unaffected; at `theta_v = 30` it is worth 12.5 %.
+
+- **`RadiativePipeline(rename=...)` is no longer accepted and ignored.**
+  It is now split per module: each sampler receives the part of the mapping
+  naming a role it declares.
+
+- **`RTLSSurface` is built through the keyword triple that works.** Smart-G
+  1.1 raises on the per-argument form.
+
+### Upgrading
+
+Anything computed before this release with `theta_v != 0` was simulated at
+the wrong azimuth. Clear the caches of those runs; `_cache_key` hashes the
+module configuration, not the code, so a stale result is served silently.
+
 ## [0.13.3]
 
 A fit that started on a singularity of its own model.
