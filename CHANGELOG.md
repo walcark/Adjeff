@@ -5,6 +5,37 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.3]
+
+A fit that started on a singularity of its own model.
+
+`KingPSF` takes its initial `gamma` from the caller, and every figure script
+passed `1.0`, which is exactly `GAMMA_BOUNDS`' lower end. Two things go wrong
+at once there. The plane integral of `(1 + r^2/2*sigma^2*gamma)^-gamma`
+diverges at `gamma = 1`, so the initial kernel is defined only by its
+truncation at the edge of the grid: the loss starts at `0.35` instead of the
+`0.02` to `0.09` a usable start gives. And the sigmoid that maps the raw
+parameter onto the interval is flat there, `dgamma/dp` around `1e-3` against
+`0.75` at the middle, so Adam moves `gamma` by `2e-6` over its twenty steps
+and L-BFGS is left to find the basin in one jump. Whether it lands well is
+luck: on three Sentinel-2 bands fitted with identical settings, one stalled at
+`0.080` while the others reached `0.049` and `0.037`.
+
+### Fixed
+
+- **`GAMMA_BOUNDS` starts above the integrability threshold**, `(1.02, 5.0)`
+  rather than `(1.0, 5.0)`. The class docstring already explained why
+  `gamma > 1` is required; the bound had been placed on the threshold itself,
+  where `project()` sends the parameter back to a value the model does not
+  admit and where the gradient is dead.
+
+### Upgrading
+
+Kernels fitted with an initial `gamma` of `1.0` are not comparable to those
+fitted after this release: the optimiser starts from a different point. Clear
+any PSF cache before refitting. Callers should also move their initial `gamma`
+to the middle of the interval, `2.0` rather than `1.0`.
+
 ## [0.13.2]
 
 The other half of moving the model.
