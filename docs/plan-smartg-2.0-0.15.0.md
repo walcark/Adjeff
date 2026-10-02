@@ -1,7 +1,9 @@
 # Migration vers Smart-G 2.0, adjeff 0.15.0
 
 Date : 2026-10-02. Branche : `adapt_smartg2`.
-Cible : `smartg 2.0.0b1`, publiée le 2026-09-22 sur PyPI.
+Cible : `smartg 2.0.1`, sur PyPI. L'API est celle de la `2.0.0b1`
+relevée ici, la 2.0.1 n'ayant changé que des docstrings et le `th_deg`
+par défaut du `Sensor`, passé de 0 à 180.
 
 Smart-G 2.0 n'est pas une montée de version, c'est une réécriture de
 l'API publique. Trois changements structurels, puis une longue liste de
@@ -71,7 +73,7 @@ Relevé sur les 11 appels `.run()` d'adjeff.
 | --- | --- |
 | `POSZ` | `pos_z` |
 | `LOC` | `loc` |
-| `TYPE` | à vérifier, absent de la docstring |
+| `TYPE` | `sensor_type` |
 | `FOV` | `fov` |
 | `THDEG`, `PHDEG` | `th_deg`, `ph_deg` |
 
@@ -100,9 +102,11 @@ revérifier : la forme `k0=`, `k1p=`, `k2p=` est peut-être réparée.
    dimensions conditionnent tout `smartgutils.py`. À relever sur une
    vraie sortie avant de réécrire quoi que ce soit.
 
-3. **`TYPE=1` du `Sensor`.** Absent de la docstring 2.0, utilisé par
-   `tdif_up` et `tdif_down` avec `FOV=90`. Si le paramètre a disparu, la
-   méthode de ces deux samplers est à revoir, pas seulement leur appel.
+3. **Le `th_deg` par défaut du `Sensor` passe de 0 à 180.** Tout appel
+   qui ne le fixait pas regarde désormais vers le nadir au lieu du
+   zénith. `tdif_up` et `tdif_down` construisent un `Sensor(POSZ=0.0,
+   LOC="ATMOS", TYPE=1, FOV=90)` sans angle : ces deux-là changent de
+   sens si le défaut n'est pas explicité.
 
 ## Ordre de travail
 
