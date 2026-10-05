@@ -883,14 +883,14 @@ def psf_atm(
             f"Image grid size n must be odd (got {n}): a PSF kernel requires "
             "a well-defined centre pixel."
         )
-    # SmartG computes cells per half-axis as floor(half_size / TC) then
+    # SmartG computes cells per half-axis as floor(half_size / tc) then
     # doubles, so an odd n would yield n-1 cells. Use n+1 (even) for the
     # Entity and trim the extra edge row/col afterwards.
     half_size = res * (n + 1) / 2
 
     sampling_grid = Entity(
         name="receiver",
-        TC=res,
+        tc=res,
         geo=Plane(
             p1=gc.Point(-half_size, -half_size, 0.0),
             p2=gc.Point(half_size, -half_size, 0.0),
@@ -914,7 +914,7 @@ def psf_atm(
         remove_rayleigh,
     )
 
-    smartg = Smartg(obj3D=True, autoinit=False)
+    smartg = Smartg(obj3d=True, autoinit=False)
     result = smartg.run(
         wavelength=band.wl_nm,
         atmosphere=atm,

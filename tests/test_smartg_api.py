@@ -22,6 +22,7 @@ def _targets() -> dict[str, object]:
     """Return the Smart-G callables adjeff passes keywords to."""
     from smartg.albedo import AlbedoCst, AlbedoMap
     from smartg.atmosphere import AerOPAC, Atm1D
+    from smartg.objects3d import Entity, Plane, Transformation
     from smartg.sensor import Sensor
     from smartg.smartg import Smartg
     from smartg.surface import Environment, LambSurface, RTLSSurface
@@ -35,6 +36,10 @@ def _targets() -> dict[str, object]:
         "AlbedoMap": AlbedoMap.__init__,
         "AerOPAC": AerOPAC.__init__,
         "Atm1D": Atm1D.__init__,
+        "Entity": Entity.__init__,
+        "Plane": Plane.__init__,
+        "Transformation": Transformation.__init__,
+        "Smartg": Smartg.__init__,
         "run": Smartg.run,
         "calc": Atm1D.calc,
     }
