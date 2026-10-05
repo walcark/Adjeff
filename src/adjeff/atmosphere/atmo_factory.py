@@ -1,8 +1,9 @@
 """Functions to instantiate a multi-profile atmosphere."""
 
+from typing import cast
+
 import numpy as np
 import xarray as xr
-from luts.luts import MLUT  # type: ignore[import-untyped]
 
 from adjeff.exceptions import ConfigurationError, MissingVariableError
 
@@ -17,13 +18,13 @@ def create_atmosphere(
     afgl_type: str = "afgl_exp_h8km",
     remove_rayleigh: bool = False,
     wl_ref_nm: float = 560.0,
-) -> MLUT:
+) -> xr.Dataset:
     """Create a multi-profile Smart-G atmosphere from atmospheric parameters.
 
     Each parameter DataArray must share the same single named dimension
-    (e.g. ``"index"``).  One :class:`~smartg.atmosphere.AtmAFGL` instance
+    (e.g. ``"index"``).  One :class:`~smartg.atmosphere.Atm1D` instance
     is built per element along that dimension; all instances are then merged
-    into a single ``MLUT`` via ``multi_profiles``.
+    into a single ``xarray.Dataset`` via ``multi_profiles``.
 
     Parameters
     ----------
@@ -47,7 +48,7 @@ def create_atmosphere(
 
     Returns
     -------
-    MLUT
+    xr.Dataset
         A merged multi-profile Smart-G atmosphere ready for simulation.
 
     Raises
@@ -67,7 +68,7 @@ def create_atmosphere(
     for params in params_li:
         logger.debug("atmosphere.build", **params)
 
-        atm: MLUT = create_atmafgl(
+        atm: xr.Dataset = create_atmafgl(
             height=params["h"],
             aot=params["aot"],
             rh=params["rh"],
@@ -83,7 +84,7 @@ def create_atmosphere(
         all_atm.append(atm)
 
     logger.debug("atmosphere.merge", profiles=len(all_atm))
-    return multi_profiles(all_atm)
+    return cast(xr.Dataset, multi_profiles(all_atm))
 
 
 def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
@@ -143,8 +144,8 @@ def create_atmafgl(
     remove_rayleigh: bool,
     afgl_type: str,
     wl_ref: float,
-) -> MLUT:
-    """Calculate an AtmAFGL instance for a set of atmospheric parameters.
+) -> xr.Dataset:
+    """Calculate an Atm1D instance for a set of atmospheric parameters.
 
     Parameters
     ----------
@@ -173,34 +174,35 @@ def create_atmafgl(
 
     Returns
     -------
-    MLUT
-        The multi-LUT representing the Smart-G atmosphere instance.
+    xr.Dataset
+        The profile table representing the Smart-G atmosphere instance.
     """
     # Deferred like every other Smart-G import in the package: importing
     # smartg raises unless SMARTG_DIR_AUXDATA is set, and half of adjeff
     # never touches the radiative transfer at all.
-    from smartg.atmosphere import AerOPAC, AtmAFGL
+    from smartg.atmosphere import AerOPAC, Atm1D
 
     aer_mix: list[AerOPAC] = [
         AerOPAC(
-            filename=aer,
+            fname=aer,
             tau_ref=aot * prop,
             w_ref=wl_ref,
             rh_mix=rh,
-            Z_mix=zmix,
+            z_mix=zmix,
         )
         for (aer, prop) in species.items()
     ]
 
-    return AtmAFGL(
-        atm_filename=afgl_type,
+    atm = Atm1D(
+        fname=afgl_type,
         comp=aer_mix,
         grid=grid,
         pfgrid=pfgrid,
-        RH_cst=rh,
-        P0=surface_pressure(height),
-        tauR=0.0 if remove_rayleigh else None,
+        rh_cst=rh,
+        p0=surface_pressure(height),
+        tau_r=0.0 if remove_rayleigh else None,
     ).calc(wl)
+    return cast(xr.Dataset, atm)
 
 
 def surface_pressure(height: float) -> float:

@@ -2,7 +2,7 @@
 
 Unlike :mod:`rho_toa_sym`, this module accepts an arbitrary surface
 reflectance map.  The full 2D albedo field is passed to Smart-G via an
-``Albedo_map`` environment; sensors are placed on an ``nx × ny`` sub-grid
+``AlbedoMap`` environment; sensors are placed on an ``nx × ny`` sub-grid
 starting at ``topleft_pix``.  Unsampled pixels are set to ``NaN`` (no
 interpolation); a companion boolean variable ``rho_toa_valid`` marks which
 pixels were actually computed.
@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 class RhoToaSampler(SweepSampler):
     """Compute rho_toa by 2D grid sampling without symmetry assumption.
 
-    The full 2D surface reflectance map is encoded as an ``Albedo_map``
+    The full 2D surface reflectance map is encoded as an ``AlbedoMap``
     environment passed to Smart-G.  ``nx × ny`` sensors are placed on the
     sub-grid starting at ``topleft_pix``; after the simulation the flat sensor
     axis is reshaped into ``(y, x)``.  Pixels outside the sampled region are
@@ -53,10 +53,10 @@ class RhoToaSampler(SweepSampler):
     n_ph : int
         Number of photons per sensor.
     n_alb : int
-        Number of discrete albedo levels in the ``Albedo_map`` (default 1000).
+        Number of discrete albedo levels in the ``AlbedoMap`` (default 1000).
     rho_background : float | "mean" | "min" | "zero"
         Reflectance of the ``LambSurface`` for photons leaving the
-        ``Albedo_map`` region.  See :class:`~adjeff.atmosphere.SurfaceFactory`
+        ``AlbedoMap`` region.  See :class:`~adjeff.atmosphere.SurfaceFactory`
         for details.  Default is ``"mean"``.
     """
 

@@ -44,7 +44,7 @@ platforms = ["linux-64"]
 adjeff = { path = ".", editable = true }
 xsweep = ">=0.4.0"
 # Smart-G 2.0 has no conda-forge build yet; 1.2.0 was the last one.  Its
-# pycuda dependency must still come from conda (see the gpu feature): the
+# pycuda dependency must still come from conda (see below): the
 # PyPI sdist compiles against `cudaProfiler.h`, which only the CUDA
 # toolkit ships, and uv has no way to find it.
 smartg = ">=2.0.1,<3"
@@ -60,6 +60,10 @@ pydantic = ">=2.12.5,<3"
 # `get_rotate_x_tf` in geoclide 4.0.0, and only `PsfAtmSampler` reached
 # that path, so the break stayed invisible until it ran.
 geoclide = ">=4,<5"
+# smartg hard-depends on pycuda, including in the cpu environment.  It has
+# to come from conda: the PyPI sdist compiles against `cudaProfiler.h` and
+# g++, neither of which a cpu environment ships.
+pycuda = "*"
 luts = ">=1.0.6,<2"
 xarray = ">=2026.1.0,<2027"
 numpy = ">=2.4.2,<3"
@@ -80,7 +84,7 @@ scipy = ">=1.14.0,<2"
 # where it would force CUDA on the `cpu` environment as well.  Kept until
 # pixi accepts a per-feature platform constraint.
 system-requirements = { cuda = "12.9" }
-dependencies = { cuda-version = "12.9.*", pytorch-gpu = "*", cuda-cudart-dev = "12.9.*", cuda-nvcc = "12.9.*", pycuda = "*" }
+dependencies = { cuda-version = "12.9.*", pytorch-gpu = "*", cuda-cudart-dev = "12.9.*", cuda-nvcc = "12.9.*" }
 
 [tool.pixi.feature.cpu]
 dependencies = { pytorch-cpu = "*" }

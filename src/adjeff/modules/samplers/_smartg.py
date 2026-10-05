@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import geoclide as gc  # type: ignore[import-untyped]
 import numpy as np
 import xarray as xr
-from smartg.visualizegeo import Entity, Plane, Transformation
+from smartg.objects3d import Entity, Plane, Transformation
 
 import adjeff.atmosphere as atmo
 from adjeff.core import GeneralizedGaussianPSF, PSFGrid, SensorBand
@@ -30,7 +30,7 @@ from adjeff.utils.xrutils import ParamBatch
 from ..._logging import get_logger
 
 if TYPE_CHECKING:
-    from smartg.smartg import Sensor
+    from smartg.sensor import Sensor
 
 logger = get_logger(__name__)
 
@@ -52,7 +52,7 @@ def _make_atmosphere(
 ) -> tuple[Any, ParamBatch, int]:
     """Build a batched Smart-G atmosphere from atmospheric DataArrays.
 
-    Returns the MLUT atmosphere, the :class:`~adjeff.ParamBatch`
+    Returns the atmosphere profile table, the :class:`~adjeff.ParamBatch`
     used to build it, and the number of atmospheric profiles
     (``atm_size``).
     """
@@ -138,13 +138,13 @@ def rho_atm(
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
+        wavelength=atm["wavelength"],
+        atmosphere=atm,
         sensor=sat_sensor,
         le=sun_le,
-        NBPHOTONS=n_ph * atm_size * len(sat_sensor),
-        NF=int(1e3),
-    )["I_up (TOA)"].to_xarray()
+        n_photons=n_ph * atm_size * len(sat_sensor),
+        n_icdf=int(1e3),
+    )["I_up (TOA)"]
     smartg.clear_context()
 
     return collect_batched(
@@ -338,14 +338,14 @@ def tdif_down(
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
+        wavelength=atm["wavelength"],
+        atmosphere=atm,
         sensor=sun_sensor,
-        OUTPUT_LAYERS=3,
+        output_layers=3,
         flux="planar",
-        NBPHOTONS=n_ph * atm_size * len(sun_sensor),
-        NF=int(1e3),
-    )["flux_down (0+)"].to_xarray()
+        n_photons=n_ph * atm_size * len(sun_sensor),
+        n_icdf=int(1e3),
+    )["flux_down (0+)"]
     smartg.clear_context()
 
     return collect_batched(res, batch, angles={"sensor index": ("sza", sza.values)})
@@ -401,7 +401,8 @@ def tdif_up(
     xr.DataArray
         Upward diffuse transmittance with dims ``(vza, wl, ...)``.
     """
-    from smartg.smartg import Sensor, Smartg
+    from smartg.sensor import Sensor
+    from smartg.smartg import Smartg
 
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
@@ -411,13 +412,13 @@ def tdif_up(
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        sensor=Sensor(POSZ=0.0, LOC="ATMOS", TYPE=1, FOV=90),
+        wavelength=atm["wavelength"],
+        atmosphere=atm,
+        sensor=Sensor(pos_z=0.0, loc="ATMOS", sensor_type=1, fov=90),
         le=sat_le,
-        NBPHOTONS=n_ph * atm_size,
-        NF=int(1e3),
-    )["I_up (TOA)"].to_xarray()
+        n_photons=n_ph * atm_size,
+        n_icdf=int(1e3),
+    )["I_up (TOA)"]
     smartg.clear_context()
     return collect_batched(
         res,
@@ -471,21 +472,22 @@ def sph_alb(
     xr.DataArray
         Spherical albedo with dims ``(wl, ...)``.
     """
-    from smartg.smartg import Sensor, Smartg
+    from smartg.sensor import Sensor
+    from smartg.smartg import Smartg
 
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        sensor=Sensor(POSZ=0.0, LOC="ATMOS", TYPE=1, FOV=90),
-        OUTPUT_LAYERS=3,
+        wavelength=atm["wavelength"],
+        atmosphere=atm,
+        sensor=Sensor(pos_z=0.0, loc="ATMOS", sensor_type=1, fov=90),
+        output_layers=3,
         flux="planar",
-        NBPHOTONS=n_ph * atm_size,
-        NF=int(1e3),
-    )["flux_down (0+)"].to_xarray()
+        n_photons=n_ph * atm_size,
+        n_icdf=int(1e3),
+    )["flux_down (0+)"]
     smartg.clear_context()
 
     return collect_batched(res, batch)
@@ -569,15 +571,15 @@ def rho_toa(
 
     smartg = Smartg(autoinit=False)
     result: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        surf=surf,
-        env=env,
+        wavelength=atm["wavelength"],
+        atmosphere=atm,
+        surface=surf,
+        environment=env,
         sensor=sensors,
         le=sun_le,
-        NBPHOTONS=n_ph * atm_size * n_sensors,
-        NF=int(1e4),
-    )["I_up (TOA)"].to_xarray()
+        n_photons=n_ph * atm_size * n_sensors,
+        n_icdf=int(1e4),
+    )["I_up (TOA)"]
     smartg.clear_context()
 
     result = adapt_smartg_output(
@@ -587,7 +589,7 @@ def rho_toa(
         coords={"sensor": np.arange(n_sensors)},
         expand={
             "sensor": np.arange(n_sensors),
-            "wavelength": atm.axes["wavelength"],
+            "wavelength": atm["wavelength"],
         },
     )
 
@@ -650,7 +652,7 @@ def _grid_sensors(
     list[Sensor]
         ``len(y_vals) * len(x_vals)`` Smart-G Sensor instances.
     """
-    from smartg.smartg import Sensor
+    from smartg.sensor import Sensor
 
     dx = sat_height * np.tan(np.deg2rad(vza)) * np.cos(np.deg2rad(vaa))
     dy = sat_height * np.tan(np.deg2rad(vza)) * np.sin(np.deg2rad(vaa))
@@ -659,10 +661,10 @@ def _grid_sensors(
         Sensor(
             POSX=float(gx + dx),
             POSY=float(gy + dy),
-            POSZ=sat_height,
-            THDEG=180.0 - vza,
-            PHDEG=(vaa + 180.0) % 360.0,
-            LOC="ATMOS",
+            pos_z=sat_height,
+            th_deg=180.0 - vza,
+            ph_deg=(vaa + 180.0) % 360.0,
+            loc="ATMOS",
         )
         for gy in y_vals
         for gx in x_vals
@@ -744,16 +746,16 @@ def rho_toa_sym(
 
     smartg = Smartg(autoinit=False)
     result: xr.DataArray = smartg.run(
-        wl=atm.axes["wavelength"],
-        atm=atm,
-        surf=surf,
-        env=env,
+        wavelength=atm["wavelength"],
+        atmosphere=atm,
+        surface=surf,
+        environment=env,
         sensor=sensors,
         le=sun_le,
-        NBPHOTONS=n_ph * atm_size * len(sensors),
-        NF=int(1e4),
-        RMIN=1,
-    )["I_up (TOA)"].to_xarray()
+        n_photons=n_ph * atm_size * len(sensors),
+        n_icdf=int(1e4),
+        r_min=1,
+    )["I_up (TOA)"]
     smartg.clear_context()
 
     result = adapt_smartg_output(
@@ -763,7 +765,7 @@ def rho_toa_sym(
         coords={"r": r_vals.coords["r"]},
         expand={
             "r": r_vals.coords["r"],
-            "wavelength": atm.axes["wavelength"],
+            "wavelength": atm["wavelength"],
         },
     )
 
@@ -828,7 +830,7 @@ def _radial_sensors(
     list[Sensor]
         One Smart-G Sensor per radial distance value.
     """
-    from smartg.smartg import Sensor
+    from smartg.sensor import Sensor
 
     cos_vaa = np.cos(np.deg2rad(vaa))
     sin_vaa = np.sin(np.deg2rad(vaa))
@@ -843,10 +845,10 @@ def _radial_sensors(
         Sensor(
             POSX=float(r * cos_perp + dx),
             POSY=float(r * sin_perp + dy),
-            POSZ=sat_height,
-            THDEG=180.0 - vza,
-            PHDEG=(vaa + 180.0) % 360.0,
-            LOC="ATMOS",
+            pos_z=sat_height,
+            th_deg=180.0 - vza,
+            ph_deg=(vaa + 180.0) % 360.0,
+            loc="ATMOS",
         )
         for r in r_vals
     ]
@@ -914,14 +916,14 @@ def psf_atm(
 
     smartg = Smartg(obj3D=True, autoinit=False)
     result = smartg.run(
-        wl=band.wl_nm,
-        atm=atm,
-        THVDEG=float(vza),
-        PHVDEG=180.0 - float(vaa),
-        myObjects=[sampling_grid],
-        NBPHOTONS=n_ph * atm_size,
-        NF=1e4,
-    ).to_xarray()
+        wavelength=band.wl_nm,
+        atmosphere=atm,
+        th_deg=float(vza),
+        ph_deg=180.0 - float(vaa),
+        my_objects=[sampling_grid],
+        n_photons=n_ph * atm_size,
+        n_icdf=1e4,
+    )
     smartg.clear_context()
 
     result = adapt_smartg_output(
@@ -967,8 +969,8 @@ def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
     """
     import warnings
 
-    from smartg.albedo import Albedo_cst
-    from smartg.smartg import RTLSSurface
+    from smartg.albedo import AlbedoCst
+    from smartg.surface import RTLSSurface
 
     # The k0/k1p/k2p keywords Smart-G 1.1 advertises raise
     # "'tuple' object does not support item assignment": they write into
@@ -976,7 +978,7 @@ def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
     # the only path that runs, so its warning is not the caller's to see.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        return RTLSSurface(kp=(Albedo_cst(k0), Albedo_cst(k1p), Albedo_cst(k2p)))
+        return RTLSSurface(kp=(AlbedoCst(k0), AlbedoCst(k1p), AlbedoCst(k2p)))
 
 
 def _viewing_sensors(
@@ -986,7 +988,7 @@ def _viewing_sensors(
 
     A satellite at azimuth ``vaa`` sits along ``vaa`` from the ground
     point it observes, so in forward mode its photons travel along
-    ``vaa + 180``.  Declaring ``PHDEG = vaa`` instead mirrors the
+    ``vaa + 180``.  Declaring ``ph_deg= vaa`` instead mirrors the
     geometry through the principal plane, which reverses the trend of
     the path reflectance with the relative azimuth: 25 percent at
     ``raa = 0`` and nothing at ``raa = 90``, where both are the same
@@ -1006,14 +1008,14 @@ def _viewing_sensors(
     sat_height : float
         Satellite altitude [km].
     """
-    from smartg.smartg import Sensor
+    from smartg.sensor import Sensor
 
     return [
         Sensor(
-            POSZ=sat_height,
-            THDEG=float(180.0 - th),
-            PHDEG=float((azimuth + 180.0) % 360.0),
-            LOC="ATMOS",
+            pos_z=sat_height,
+            th_deg=float(180.0 - th),
+            ph_deg=float((azimuth + 180.0) % 360.0),
+            loc="ATMOS",
         )
         for th in np.atleast_1d(np.squeeze(vza.values))
     ]
@@ -1110,16 +1112,16 @@ def tdif_up_brdf(
     smartg = Smartg(autoinit=False)
     try:
         res: xr.DataArray = smartg.run(
-            wl=atm.axes["wavelength"],
-            atm=atm,
-            surf=_rtls_surface(k0, k1p, k2p),
+            wavelength=atm["wavelength"],
+            atmosphere=atm,
+            surface=_rtls_surface(k0, k1p, k2p),
             sensor=sensors,
             le=sun_le,
-            NBPHOTONS=n_ph * atm_size * len(sensors),
-            NF=int(1e3),
-            RMIN=1,
-            RMAX=1,
-        )["I_up (TOA)"].to_xarray()
+            n_photons=n_ph * atm_size * len(sensors),
+            n_icdf=int(1e3),
+            r_min=1,
+            r_max=1,
+        )["I_up (TOA)"]
     finally:
         smartg.clear_context()
 
@@ -1198,7 +1200,8 @@ def sph_alb_brdf(
         Raw downward flux at ground, with ``sza`` paired against the
         points of a batched call.
     """
-    from smartg.smartg import Sensor, Smartg
+    from smartg.sensor import Sensor
+    from smartg.smartg import Smartg
 
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
@@ -1207,11 +1210,11 @@ def sph_alb_brdf(
     # local estimate is involved: an `le` here would have no effect.
     sensors = [
         Sensor(
-            POSZ=sat_height,
-            THDEG=float(180.0 - th),
-            PHDEG=float(saa),
-            LOC="ATMOS",
-            TYPE=1,
+            pos_z=sat_height,
+            th_deg=float(180.0 - th),
+            ph_deg=float(saa),
+            loc="ATMOS",
+            sensor_type=1,
         )
         for th in np.atleast_1d(np.squeeze(sza.values))
     ]
@@ -1219,17 +1222,17 @@ def sph_alb_brdf(
     smartg = Smartg(autoinit=False)
     try:
         res: xr.DataArray = smartg.run(
-            wl=atm.axes["wavelength"],
-            atm=atm,
-            surf=_rtls_surface(k0, k1p, k2p),
+            wavelength=atm["wavelength"],
+            atmosphere=atm,
+            surface=_rtls_surface(k0, k1p, k2p),
             sensor=sensors,
-            NBPHOTONS=n_ph * atm_size * len(sensors),
-            OUTPUT_LAYERS=3,
+            n_photons=n_ph * atm_size * len(sensors),
+            output_layers=3,
             flux="planar",
-            NF=int(1e3),
-            RMIN=1,
-            RMAX=1,
-        )["flux_down (0+)"].to_xarray()
+            n_icdf=int(1e3),
+            r_min=1,
+            r_max=1,
+        )["flux_down (0+)"]
     finally:
         smartg.clear_context()
 

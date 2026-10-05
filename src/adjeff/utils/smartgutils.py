@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
-from luts.luts import MLUT  # type: ignore[import-untyped]
 
 from .xrutils import ParamBatch
 
 if TYPE_CHECKING:
-    from smartg.smartg import Sensor
+    from smartg.sensor import Sensor
 
 
 def make_sensors(
@@ -21,15 +20,15 @@ def make_sensors(
 ) -> list["Sensor"]:
     """Build a list of Smart-G Sensor objects, one per angle value.
 
-    Smart-G's Sensor only accepts scalar ``THDEG``/``PHDEG``, so multiple
+    Smart-G's Sensor only accepts scalar ``th_deg``/``ph_deg``, so multiple
     angles require a list of Sensor instances.
 
     Parameters
     ----------
     angles : xr.DataArray
-        Zenith angles [°] to iterate over (``THDEG`` values).
+        Zenith angles [°] to iterate over (``th_deg`` values).
     phi_scalar : float
-        Azimuth angle [°] shared by all sensors (``PHDEG``).
+        Azimuth angle [°] shared by all sensors (``ph_deg``).
     posz : float
         Sensor altitude [km] (``POSZ``).
     loc : str, optional
@@ -40,17 +39,17 @@ def make_sensors(
     list[Sensor]
         One Smart-G ``Sensor`` instance per element in *angles*.
     """
-    from smartg.smartg import Sensor
+    from smartg.sensor import Sensor
 
     thdeg = np.atleast_1d(angles.values)
     phi = np.full_like(thdeg, phi_scalar)
     return [
-        Sensor(POSZ=posz, THDEG=float(th), PHDEG=float(ph), LOC=loc)
+        Sensor(pos_z=posz, th_deg=float(th), ph_deg=float(ph), loc=loc)
         for th, ph in zip(thdeg, phi)
     ]
 
 
-def compute_optical_depth(atm: MLUT) -> xr.DataArray:
+def compute_optical_depth(atm: xr.Dataset) -> xr.DataArray:
     """Return the total atmospheric optical depth from a Smart-G atmosphere.
 
     Optical depth is a property of the atmosphere object, not of the
@@ -59,7 +58,7 @@ def compute_optical_depth(atm: MLUT) -> xr.DataArray:
 
     Parameters
     ----------
-    atm : MLUT
+    atm : xr.Dataset
         Multi-profile Smart-G atmosphere produced by
         :func:`~adjeff.atmosphere.create_atmosphere`.
 
@@ -71,15 +70,15 @@ def compute_optical_depth(atm: MLUT) -> xr.DataArray:
     """
     from smartg.smartg import Smartg
 
-    wl = atm.axes["wavelength"]
+    wl = atm["wavelength"]
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
-        wl=wl,
-        atm=atm,
-        NBPHOTONS=1000,
-        NF=1000,
-    )["OD_atm"].to_xarray()
+        wavelength=wl,
+        atmosphere=atm,
+        n_photons=1000,
+        n_icdf=1000,
+    )["OD_atm"]
     smartg.clear_context()
 
     if len(wl) == 1 and "wavelength" not in res.dims:
@@ -203,7 +202,7 @@ def collect_batched(
     Parameters
     ----------
     res : xr.DataArray
-        Raw Smart-G output, straight from ``.to_xarray()``.
+        Raw Smart-G output, straight from ``Smartg.run``.
     batch : ParamBatch
         The batch the atmosphere was built from.
     angles : Mapping[str, tuple[str, np.ndarray]] or None, optional
