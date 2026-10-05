@@ -93,6 +93,27 @@ revérifier : la forme `k0=`, `k1p=`, `k2p=` est peut-être réparée.
 
 ## Points à valider par la mesure, pas par la lecture
 
+0. **Les données auxiliaires sont à régénérer.** Constaté le 2026-10-05 :
+   le portage du code est complet et les 448 tests hors GPU passent, mais
+   les 17 tests d'intégration échouent tous, au même endroit et en 7
+   secondes. `AerOPAC` seul suffit à reproduire, sans adjeff :
+
+   ```
+   ValueError: The scattering angles must be strictly increasing.
+       AerOPAC.native_theta -> union_theta_grid -> as_theta_grid
+   ```
+
+   Dans `aerosols/OPAC/mixtures/sulphate_sol.nc` du jeu actuel, `theta`
+   va de 180 à 0, donc décroissant : 1999 pas négatifs sur 2000. La 1.2
+   l'acceptait, la 2.0 l'interdit.
+
+   `smartg.auxdata.download(data_type="aer")` récupère le jeu au bon
+   format. **Le répertoire pointé par `SMARTG_DIR_AUXDATA` est partagé
+   avec `adjeff-article-rse`, où il est distribué comme donnée du
+   papier** : le mettre à jour en place changerait la donnée publiée.
+   Les deux versions doivent coexister le temps que l'article soit
+   soumis.
+
 1. **La convention d'azimut.** `41d81ad` corrige l'azimut du capteur
    satellite en `(vaa + 180) % 360`, établi en mesurant la fonction de
    phase Rayleigh contre l'azimut relatif. Le renommage `PHVDEG` en
