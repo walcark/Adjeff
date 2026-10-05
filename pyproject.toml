@@ -137,6 +137,12 @@ upload-testpypi = { cmd = "python -m twine upload --repository testpypi dist/*" 
 addopts = "-m 'not integration'"
 markers = [
   "integration: drives Smart-G on a CUDA GPU; excluded from the default run",
+  # The subset that reads a physical identity rather than a code path.  A
+  # renamed symbol or a moved default is caught by test_smartg_api and
+  # test_smartg_defaults in seconds; what only a number can reveal lives
+  # here, and `-m physics` runs it alone rather than behind the whole
+  # integration suite.
+  "physics: an invariant of the radiative transfer, not of the API",
 ]
 
 [tool.mypy]

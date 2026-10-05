@@ -402,6 +402,7 @@ def test_two_batched_angles_each_keep_their_own_point():
         assert got == pytest.approx(expected, rel=0.10), f"sza={sza}, vza={vza}"
 
 
+@pytest.mark.physics
 def test_the_path_reflectance_follows_the_scattering_angle():
     """The azimuth convention, settled against the phase function.
 
@@ -467,6 +468,7 @@ def _brdf_common(sza, vza, n_ph):
     )
 
 
+@pytest.mark.physics
 def test_the_brdf_sampler_is_linear_in_the_isotropic_weight():
     """With one surface interaction the result scales exactly with ``k0``.
 
@@ -492,6 +494,7 @@ def test_the_brdf_sampler_is_linear_in_the_isotropic_weight():
     np.testing.assert_allclose(raw(1.0), raw(0.5), rtol=0.05)
 
 
+@pytest.mark.physics
 def test_tdif_up_and_tdif_down_agree_at_equal_angles():
     """The 6S reciprocity the BRDF normalisation leans on.
 
@@ -523,6 +526,7 @@ def test_tdif_up_and_tdif_down_agree_at_equal_angles():
     )
 
 
+@pytest.mark.physics
 def test_a_lambertian_brdf_reproduces_the_lambertian_sampler():
     """``k1p = k2p = 0`` is a Lambertian surface, so the two must agree.
 
@@ -555,6 +559,7 @@ def test_a_lambertian_brdf_reproduces_the_lambertian_sampler():
     )
 
 
+@pytest.mark.physics
 def test_a_lambertian_brdf_reproduces_the_spherical_albedo():
     """Same acceptance criterion for the coupling term."""
     from adjeff.modules.samplers import SphAlbBrdfSampler, SphAlbSampler
