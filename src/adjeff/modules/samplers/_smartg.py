@@ -414,7 +414,16 @@ def tdif_up(
     res: xr.DataArray = smartg.run(
         wavelength=atm["wavelength"],
         atmosphere=atm,
-        sensor=Sensor(pos_z=0.0, loc="ATMOS", sensor_type=1, fov=90),
+        sensor=Sensor(
+            pos_z=0.0,
+            loc="ATMOS",
+            sensor_type=1,
+            fov=90,
+            # Explicit: Smart-G 2.0 changed the default from 0
+            # (zenith) to 180 (nadir), which silently turned this
+            # upward flux collector downward.
+            th_deg=0.0,
+        ),
         le=sat_le,
         n_photons=n_ph * atm_size,
         n_icdf=int(1e3),
@@ -482,7 +491,16 @@ def sph_alb(
     res: xr.DataArray = smartg.run(
         wavelength=atm["wavelength"],
         atmosphere=atm,
-        sensor=Sensor(pos_z=0.0, loc="ATMOS", sensor_type=1, fov=90),
+        sensor=Sensor(
+            pos_z=0.0,
+            loc="ATMOS",
+            sensor_type=1,
+            fov=90,
+            # Explicit: Smart-G 2.0 changed the default from 0
+            # (zenith) to 180 (nadir), which silently turned this
+            # upward flux collector downward.
+            th_deg=0.0,
+        ),
         output_layers=3,
         flux="planar",
         n_photons=n_ph * atm_size,

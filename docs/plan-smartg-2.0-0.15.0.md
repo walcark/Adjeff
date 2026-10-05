@@ -114,7 +114,7 @@ revérifier : la forme `k0=`, `k1p=`, `k2p=` est peut-être réparée.
    Les deux versions doivent coexister le temps que l'article soit
    soumis.
 
-1. **La convention d'azimut.** `41d81ad` corrige l'azimut du capteur
+1. ~~**La convention d'azimut.**~~ `41d81ad` corrige l'azimut du capteur
    satellite en `(vaa + 180) % 360`, établi en mesurant la fonction de
    phase Rayleigh contre l'azimut relatif. Le renommage `PHVDEG` en
    `ph_deg` peut s'accompagner d'un changement de convention : le test
@@ -137,7 +137,15 @@ revérifier : la forme `k0=`, `k1p=`, `k2p=` est peut-être réparée.
    Conséquence : `adapt_smartg_output` garde tout son sens, seule la
    conversion `MLUT.to_xarray()` en amont disparaît.
 
-3. **Le `th_deg` par défaut du `Sensor` passe de 0 à 180.** Tout appel
+3. ~~**Le `th_deg` par défaut du `Sensor` passe de 0 à 180.**~~
+   Confirmé le 2026-10-05, et c'était bien le dernier défaut : les
+   capteurs de `tdif_up` et `tdif_down` ne fixaient pas l'angle, donc ils
+   se sont retournés vers le nadir et rendaient `0.0`. Aucun contrôle
+   d'API ne pouvait l'attraper, le mot-clé existant dans les deux
+   versions ; c'est la réciprocité 6S `tdif_up(θ) ≈ tdif_down(θ)` qui l'a
+   révélé. L'angle est désormais explicite aux deux appels.
+
+   **Ancien texte :** Tout appel
    qui ne le fixait pas regarde désormais vers le nadir au lieu du
    zénith. `tdif_up` et `tdif_down` construisent un `Sensor(POSZ=0.0,
    LOC="ATMOS", TYPE=1, FOV=90)` sans angle : ces deux-là changent de
@@ -154,3 +162,29 @@ revérifier : la forme `k0=`, `k1p=`, `k2p=` est peut-être réparée.
 5. `utils/smartgutils.py`, qui rétrécit.
 6. `modules/samplers/_smartg.py`, le gros morceau.
 7. Les tests d'intégration GPU, qui sont le seul juge.
+
+## Résultat
+
+Migration terminée le 2026-10-05 : **19 tests d'intégration GPU passent**,
+448 hors GPU, lint et typage inclus.
+
+Cinq défauts ont été trouvés, dans cet ordre, chacun masqué par le
+précédent :
+
+| Défaut | Trouvé par |
+| --- | --- |
+| `theta` décroissant des espèces CAMS | `AerOPAC` isolé |
+| `afgl_exp_h8km.nc` absent du jeu 2.0 | `compute_optical_depth` isolé |
+| `Environment(ENV=, ENV_SIZE=, ALB=)` | tests GPU |
+| `Sensor(POSX=, POSY=)`, `Entity(TC=)`, `Smartg(obj3D=)` | `tests/test_smartg_api.py` |
+| `th_deg` par défaut du `Sensor`, 0 → 180 | réciprocité 6S |
+
+Les trois du milieu ont survécu au renommage automatique parce qu'il ne
+couvrait que `run(`, `Sensor(` et `make_sensors(`. `tests/test_smartg_api.py`
+compare désormais, par lecture de l'AST, chaque mot-clé passé aux quatorze
+appelables Smart-G à leur signature réelle : deux secondes au lieu de deux
+minutes trente de GPU.
+
+Le dernier n'était attrapable par aucun contrôle d'API, le mot-clé
+existant dans les deux versions avec un défaut différent. Seule une
+grandeur physique pouvait le révéler.
