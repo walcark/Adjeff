@@ -19,15 +19,16 @@ renommages.
 
 ## Ce que ça supprime d'adjeff
 
-`utils/smartgutils.py` existe en grande partie pour convertir un `MLUT`
-en `xarray`. Smart-G 2.0 rend directement un `Dataset`, donc
-`adapt_smartg_output` et une partie de `collect_batched`, livrés en
-0.14.0, perdent leur raison d'être. Smart-G fournit même l'inverse,
-`smartg.xarray.dataset_to_mlut`, pour le code qui attend encore un
-`MLUT`.
+`utils/smartgutils.py` convertit un `MLUT` en `xarray` avant de le
+normaliser. Smart-G 2.0 rend directement un `Dataset`, donc l'étape de
+conversion disparaît. `adapt_smartg_output` et `collect_batched`, eux,
+restent : le relevé ci-dessous montre que les noms de variables et de
+dimensions sont inchangés, donc le travail de normalisation reste à
+faire. Smart-G fournit l'inverse, `smartg.xarray.dataset_to_mlut`, pour
+le code qui attend encore un `MLUT`.
 
-C'est le principal bénéfice de la migration, au-delà de la levée du pin
-`geoclide <4`.
+Le bénéfice principal est ailleurs : la levée du pin `geoclide <4`, qui
+débloque `PsfAtmSampler`.
 
 ## Table de correspondance des symboles
 
@@ -98,9 +99,22 @@ revérifier : la forme `k0=`, `k1p=`, `k2p=` est peut-être réparée.
    `ph_deg` peut s'accompagner d'un changement de convention : le test
    est à refaire, pas à supposer.
 
-2. **Le contenu du `Dataset` rendu.** Les noms de variables et de
-   dimensions conditionnent tout `smartgutils.py`. À relever sur une
-   vraie sortie avant de réécrire quoi que ce soit.
+2. ~~**Le contenu du `Dataset` rendu.**~~ Relevé le 2026-10-05 sur un
+   run minimal : les noms de variables et de dimensions sont **ceux de
+   la 1.2**. Seul le conteneur change.
+
+   ```
+   TYPE   : Dataset
+   DIMS   : Zenith angles 45, Azimuth angles 90, wavelength 2, z_atm 7,
+            theta_atm 1801, iphase 2, nphamat 6
+   VARS   : I_up (TOA), Q_up (TOA), U_up (TOA), V_up (TOA), N_up (TOA),
+            direct transmission, n_atm, T_atm, OD_r, OD_p, OD_g, OD_atm,
+            OD_sca_atm, OD_abs_atm, pmol_atm, ssa_atm, phase_atm, ...
+   I_up (TOA) dims=('wavelength', 'Azimuth angles', 'Zenith angles')
+   ```
+
+   Conséquence : `adapt_smartg_output` garde tout son sens, seule la
+   conversion `MLUT.to_xarray()` en amont disparaît.
 
 3. **Le `th_deg` par défaut du `Sensor` passe de 0 à 180.** Tout appel
    qui ne le fixait pas regarde désormais vers le nadir au lieu du
