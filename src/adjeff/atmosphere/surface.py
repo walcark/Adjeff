@@ -112,7 +112,7 @@ class SurfaceFactory:
         Returns
         -------
         Environment
-            Smart-G Environment with ``ENV=5`` and an ``AlbedoMap``.
+            Smart-G Environment with ``env=5`` and an ``AlbedoMap``.
         """
         from smartg.albedo import AlbedoCst, AlbedoMap
         from smartg.surface import Environment
@@ -146,7 +146,7 @@ class SurfaceFactory:
         y_edges = np.append(y_coords - res_y / 2, 1e8)
 
         alb_map = AlbedoMap(rhos_idx, x_edges, y_edges, albs_list)
-        return Environment(ENV=5, ALB=alb_map)
+        return Environment(env=5, alb=alb_map)
 
 
 def analytical_environment(model: str, params: dict[str, float]) -> Environment:
@@ -164,8 +164,8 @@ def analytical_environment(model: str, params: dict[str, float]) -> Environment:
     Returns
     -------
     Environment
-        Configured Smart-G ``Environment`` object (``ENV=2`` for Gaussian,
-        ``ENV=1`` for disk).
+        Configured Smart-G ``Environment`` object (``env=2`` for Gaussian,
+        ``env=1`` for disk).
 
     Raises
     ------
@@ -177,16 +177,16 @@ def analytical_environment(model: str, params: dict[str, float]) -> Environment:
 
     if model == "gauss":
         return Environment(
-            ENV=2,
-            ENV_SIZE=2 * params["sigma"] ** 2,
-            ALB=AlbedoCst(params["rho_min"]),
+            env=2,
+            env_size=2 * params["sigma"] ** 2,
+            alb=AlbedoCst(params["rho_min"]),
         )
 
     if model == "disk":
         return Environment(
-            ENV=1,
-            ENV_SIZE=params["radius"],
-            ALB=AlbedoCst(params["rho_min"]),
+            env=1,
+            env_size=params["radius"],
+            alb=AlbedoCst(params["rho_min"]),
         )
 
     else:

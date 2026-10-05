@@ -659,8 +659,8 @@ def _grid_sensors(
 
     return [
         Sensor(
-            POSX=float(gx + dx),
-            POSY=float(gy + dy),
+            pos_x=float(gx + dx),
+            pos_y=float(gy + dy),
             pos_z=sat_height,
             th_deg=180.0 - vza,
             ph_deg=(vaa + 180.0) % 360.0,
@@ -843,8 +843,8 @@ def _radial_sensors(
 
     return [
         Sensor(
-            POSX=float(r * cos_perp + dx),
-            POSY=float(r * sin_perp + dy),
+            pos_x=float(r * cos_perp + dx),
+            pos_y=float(r * sin_perp + dy),
             pos_z=sat_height,
             th_deg=180.0 - vza,
             ph_deg=(vaa + 180.0) % 360.0,
@@ -1206,7 +1206,7 @@ def sph_alb_brdf(
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
-    # A planar-flux source (TYPE=1), so the output is a flux and no
+    # A planar-flux source (sensor_type=1), so the output is a flux and no
     # local estimate is involved: an `le` here would have no effect.
     sensors = [
         Sensor(
