@@ -5,6 +5,66 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.15.0]
+
+Smart-G 2.0, which renamed most of what adjeff calls.
+
+Smart-G 2.0 is a rewrite of the public API rather than a version bump:
+`Smartg.run` returns an `xarray.Dataset` instead of an `MLUT`, its
+keywords moved from capitals to snake_case, and the scene classes left
+`smartg.smartg` for `smartg.sensor`, `smartg.surface`, `smartg.albedo`
+and `smartg.objects3d`. It is built against geoclide 4, which lifts the
+bound 1.2.0 forced on adjeff and with it the break that only
+`PsfAtmSampler` ever reached.
+
+Five defects were found during the port, each hidden by the previous
+one, and the last of them is the reason this release ships two test
+files rather than one. `docs/plan-smartg-2.0-0.15.0.md` records the
+correspondence table and how each was found.
+
+### Changed
+
+- **adjeff calls Smart-G 2.0.** Every import, keyword and return type
+  follows the new API. `Smartg.run` already returns a `Dataset`, so the
+  `MLUT` conversion that opened `adapt_smartg_output` is gone;
+  the normalisation it performs stays, the variable and dimension names
+  being unchanged.
+
+- **The sensor zenith is explicit** in `tdif_up` and `tdif_down`.
+  `Sensor.th_deg` defaulted to 0, the zenith, and now defaults to 180,
+  the nadir: two flux collectors silently turned over and returned
+  zeros. Nothing in the diff showed it, and no signature check could:
+  the parameter kept its name. The 6S reciprocity
+  `tdif_up(θ) ≈ tdif_down(θ)` is what caught it.
+
+- **pycuda comes from conda in every environment.** Smart-G depends on
+  it hard, including on the cpu side, and the PyPI sdist compiles
+  against `cudaProfiler.h` and g++.
+
+### Added
+
+- **`tests/test_smartg_api.py`** reads the AST of `src/` and checks
+  every keyword adjeff passes to the fourteen Smart-G callables against
+  `inspect.signature`. Two seconds, against the two and a half minutes
+  of a GPU run, and it is what found `Entity(TC=)` and
+  `Smartg(obj3D=)` after a first rename pass had missed them.
+
+- **`tests/test_smartg_defaults.py`** freezes the thirty-one defaults
+  adjeff relies on by not passing them. A default that moves is
+  invisible in a diff and silent at runtime; this turns the next one
+  into a one second failure naming the parameter.
+
+- **The `physics` marker** on the five tests that read a physical
+  identity rather than a code path. `pytest -m physics` runs them in
+  fifty seconds, apart from the rest of the integration suite.
+
+### Upgrading
+
+Smart-G 2.0 rejects scattering angles that are not strictly increasing,
+which 1.x accepted. Any auxiliary table produced by MOPSMAP has to be
+sorted before it can be read; see the plan document for the eight CAMS
+species this affected.
+
 ## [0.14.0]
 
 What the scalar terms of the 5S model become when the ground is not
