@@ -982,18 +982,13 @@ def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
     k2p : float
         Weight of the volumetric kernel, relative to the isotropic one.
     """
-    import warnings
-
     from smartg.albedo import AlbedoCst
     from smartg.surface import RTLSSurface
 
-    # The k0/k1p/k2p keywords Smart-G 1.1 advertises raise
-    # "'tuple' object does not support item assignment": they write into
-    # the tuple default they were given.  The deprecated `kp` triple is
-    # the only path that runs, so its warning is not the caller's to see.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return RTLSSurface(kp=(AlbedoCst(k0), AlbedoCst(k1p), AlbedoCst(k2p)))
+    # Smart-G 1.1 raised on these three keywords, writing into the tuple
+    # default they were given, which is why 05fb0ae used the `kp` triple.
+    # 2.0 fixed them and deprecated `kp` in turn.
+    return RTLSSurface(k0=AlbedoCst(k0), k1p=AlbedoCst(k1p), k2p=AlbedoCst(k2p))
 
 
 def _viewing_sensors(

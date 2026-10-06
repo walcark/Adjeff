@@ -5,6 +5,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`RTLSSurface` takes its weights as three keywords again.** Smart-G
+  1.1 raised on `k0=`, `k1p=` and `k2p=`, writing into the tuple default
+  they were given, so `05fb0ae` had to pass the `kp` triple and silence
+  its deprecation warning. 2.0 fixed the three and deprecated `kp`, so
+  the workaround and the warning filter are gone.
+
 ## [0.15.0]
 
 Smart-G 2.0, which renamed most of what adjeff calls.
