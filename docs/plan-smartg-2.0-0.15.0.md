@@ -181,10 +181,37 @@ précédent :
 
 Les trois du milieu ont survécu au renommage automatique parce qu'il ne
 couvrait que `run(`, `Sensor(` et `make_sensors(`. `tests/test_smartg_api.py`
-compare désormais, par lecture de l'AST, chaque mot-clé passé aux quatorze
+compare désormais, par lecture de l'AST, chaque mot-clé passé aux quinze
 appelables Smart-G à leur signature réelle : deux secondes au lieu de deux
 minutes trente de GPU.
 
 Le dernier n'était attrapable par aucun contrôle d'API, le mot-clé
 existant dans les deux versions avec un défaut différent. Seule une
 grandeur physique pouvait le révéler.
+
+## Les données auxiliaires, régénérées
+
+Les huit tables CAMS de l'article ont été reconstruites avec pymopsmap
+le 2026-10-06, et comparées terme à terme aux originales. Deux défauts de
+`to_smartg` sont sortis de cette comparaison, corrigés dans pymopsmap
+(`3a0b69b`) :
+
+| Défaut | Effet |
+| --- | --- |
+| `wav` écrit en micromètres | Smart-G lit ces tables en nanomètres et rejetait la table, « tabulated from 0.25 to 2.25 nm » |
+| `stk = 1` au lieu de 6 | Smart-G complète par des zéros : F21, F33, F34 et F44 nuls, donc aucune polarisation transportée |
+
+Après correction, l'accord est à la précision du float32 :
+
+| Grandeur | Écart max |
+| --- | --- |
+| les six termes de `phase`, rapportés au pic de F11 | 4e-6 |
+| `OD_atm`, `OD_p`, `ssa_atm`, `phase_atm` d'un `Atm1D` | 3e-6 |
+
+Reste une différence qui **ne compte pas** : `ext` diffère d'un facteur
+qui dépend de l'humidité (8 pour le sulphate entre 0 et 95 %), les deux
+jeux ne normalisant pas par la même quantité. `dtau_ssa` ne lit `ext`
+qu'à travers `ext_tmp / ext_ref_tmp`, les deux pris à la **même**
+humidité, puis mis à l'échelle par `tau_ref` : toute normalisation
+multiplicative s'annule. À humidité fixée, la forme spectrale est
+identique à 7e-6.

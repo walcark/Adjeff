@@ -37,6 +37,11 @@ correspondence table and how each was found.
   the parameter kept its name. The 6S reciprocity
   `tdif_up(θ) ≈ tdif_down(θ)` is what caught it.
 
+- **The local estimate directions go through `LocalEstimate`.** The
+  `dict` the five kernels passed still works and warns; the class is
+  what 2.0 validates, so a bad angle list now fails at construction
+  rather than inside the kernel.
+
 - **pycuda comes from conda in every environment.** Smart-G depends on
   it hard, including on the cpu side, and the PyPI sdist compiles
   against `cudaProfiler.h` and g++.
@@ -44,12 +49,12 @@ correspondence table and how each was found.
 ### Added
 
 - **`tests/test_smartg_api.py`** reads the AST of `src/` and checks
-  every keyword adjeff passes to the fourteen Smart-G callables against
+  every keyword adjeff passes to the fifteen Smart-G callables against
   `inspect.signature`. Two seconds, against the two and a half minutes
   of a GPU run, and it is what found `Entity(TC=)` and
   `Smartg(obj3D=)` after a first rename pass had missed them.
 
-- **`tests/test_smartg_defaults.py`** freezes the thirty-one defaults
+- **`tests/test_smartg_defaults.py`** freezes the thirty-two defaults
   adjeff relies on by not passing them. A default that moves is
   invisible in a diff and silent at runtime; this turns the next one
   into a one second failure naming the parameter.

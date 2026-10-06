@@ -70,6 +70,11 @@ EXPECTED: dict[tuple[str, str], object] = {
     ("Atm1D", "no2"): True,
     ("Atm1D", "tau_r"): None,
     ("Atm1D.calc", "n_theta"): "native",
+    # Directions of the local estimate.  `zip` decides whether the two
+    # angle lists covary or form a grid, which is the shape
+    # `collect_batched` reads back.
+    ("LocalEstimate", "zip"): False,
+    ("LocalEstimate", "count_level"): None,
 }
 
 
@@ -77,11 +82,12 @@ def _callables() -> dict[str, object]:
     """Return the Smart-G callables the frozen defaults belong to."""
     from smartg.atmosphere import Atm1D
     from smartg.sensor import Sensor
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
     from smartg.surface import Environment
 
     return {
         "Sensor": Sensor.__init__,
+        "LocalEstimate": LocalEstimate.__init__,
         "Smartg": Smartg.__init__,
         "run": Smartg.run,
         "Environment": Environment.__init__,

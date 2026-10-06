@@ -125,16 +125,13 @@ def rho_atm(
     xr.DataArray
         Atmospheric reflectance with dims ``(vza, sza, wl, ...)``.
     """
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
 
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
     sat_sensor = make_sensors(180.0 - vza, (vaa + 180.0) % 360.0, posz=sat_height)
-    sun_le = {
-        "th_deg": np.atleast_1d(sza.values),
-        "phi_deg": saa,
-    }
+    sun_le = LocalEstimate(th_deg=np.atleast_1d(sza.values), phi_deg=saa)
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
@@ -402,13 +399,13 @@ def tdif_up(
         Upward diffuse transmittance with dims ``(vza, wl, ...)``.
     """
     from smartg.sensor import Sensor
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
 
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
     th_deg = np.atleast_1d(np.squeeze(vza.values))
-    sat_le = {"th_deg": th_deg, "phi_deg": saa}
+    sat_le = LocalEstimate(th_deg=th_deg, phi_deg=saa)
 
     smartg = Smartg(autoinit=False)
     res: xr.DataArray = smartg.run(
@@ -545,9 +542,9 @@ def rho_toa(
     ``"sensor index"`` axis is reshaped to ``(y, x)`` and the result is
     reindexed to the full image grid with ``NaN`` for unsampled pixels.
     """
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
 
-    sun_le = {"th_deg": sza, "phi_deg": saa}
+    sun_le = LocalEstimate(th_deg=sza, phi_deg=saa)
 
     if rho_s["rho_s"].adjeff.kind() != "arbitrary":
         raise ConfigurationError(
@@ -716,7 +713,7 @@ def rho_toa_sym(
 
     This code assumes that the input field is symmetric.
     """
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
 
     if rho_s["rho_s"].adjeff.kind() != "analytical":
         raise ConfigurationError(
@@ -725,7 +722,7 @@ def rho_toa_sym(
             f"Got kind='{rho_s['rho_s'].adjeff.kind()}'."
         )
 
-    sun_le = {"th_deg": sza, "phi_deg": saa}
+    sun_le = LocalEstimate(th_deg=sza, phi_deg=saa)
     factory = atmo.SurfaceFactory()
     surf = factory.surface(rho_s)
     env = factory.environment(rho_s)
@@ -1119,13 +1116,13 @@ def tdif_up_brdf(
         Raw two-way radiance, with ``sza`` and ``vza`` paired against
         the points of a batched call.
     """
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
 
     atm, batch, atm_size = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
     sensors = _viewing_sensors(vza, saa + raa, sat_height)
-    sun_le = {"th_deg": np.atleast_1d(np.squeeze(sza.values)), "phi_deg": saa}
+    sun_le = LocalEstimate(th_deg=np.atleast_1d(np.squeeze(sza.values)), phi_deg=saa)
 
     smartg = Smartg(autoinit=False)
     try:

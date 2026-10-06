@@ -24,7 +24,7 @@ def _targets() -> dict[str, object]:
     from smartg.atmosphere import AerOPAC, Atm1D
     from smartg.objects3d import Entity, Plane, Transformation
     from smartg.sensor import Sensor
-    from smartg.smartg import Smartg
+    from smartg.smartg import LocalEstimate, Smartg
     from smartg.surface import Environment, LambSurface, RTLSSurface
 
     return {
@@ -39,6 +39,7 @@ def _targets() -> dict[str, object]:
         "Entity": Entity.__init__,
         "Plane": Plane.__init__,
         "Transformation": Transformation.__init__,
+        "LocalEstimate": LocalEstimate.__init__,
         "Smartg": Smartg.__init__,
         "run": Smartg.run,
         "calc": Atm1D.calc,
