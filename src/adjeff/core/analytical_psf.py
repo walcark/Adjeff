@@ -1,9 +1,17 @@
-"""Implement analytical subclasses of PSFModule.
+"""Trainable analytical PSFs.
 
-Each subclass is a trainable PSFModule with ConstrainedParameter fields.
-The common to_dataarray(), grid/band init, and nn.Module wiring are all
-inherited from PSFModule — subclasses only declare their parameters,
-forward(), and param_dict().
+Classes
+-------
+    GaussPSF
+        ``exp(-r² / 2σ²)``.
+    GeneralizedGaussianPSF
+        ``exp(-(r/σ)ⁿ)``.
+    VoigtPSF
+        Pseudo-Voigt: Gaussian and Lorentzian mixed.
+    KingPSF
+        ``(1 + r² / 2σ²γ)^-γ``.
+    MoffatGeneralizedPSF
+        ``(1 + (r/α)^2β)^-γ``.
 """
 
 from __future__ import annotations
@@ -187,27 +195,19 @@ class VoigtPSF(PSFModule):
 class KingPSF(PSFModule):
     """Trainable King profile PSF kernel.
 
-    The kernel follows ``(1 + r² / (2σ²γ))^{-γ}``, producing a
-    power-law tail in ``r^{-2γ}``.
-
-    On a plane, ``∫ P(r) r dr`` converges only for ``γ > 1``: below that
-    the kernel carries no scale of its own and the grid, rather than the
-    physics, sets its normalisation.  At ``γ = 0.4`` on a 141 km grid,
-    half of the energy sits beyond 79 km.  *gamma* is therefore bounded
-    to :data:`GAMMA_BOUNDS` through a sigmoid rather than merely kept
-    positive.  The region below the bound is also where the loss surface
-    turns concave, which stalls a quasi-Newton step.
+    Its energy over the plane is finite only for ``γ > 1``, hence
+    *gamma* is kept in :data:`GAMMA_BOUNDS`.
 
     Parameters
     ----------
     grid : PSFGrid
-        Spatial sampling configuration.
+        Sampling grid.
     band : SensorBand
-        Spectral band this PSF applies to.
+        Band the PSF applies to.
     sigma : float
-        Initial core width [km].
+        Initial core width [km], in ``[1e-3, 100]``.
     gamma : float
-        Initial power-law index.  Clamped into :data:`GAMMA_BOUNDS`.
+        Initial power-law index, clipped into :data:`GAMMA_BOUNDS`.
     """
 
     #: Range the power-law index is confined to.  The lower end sits just
@@ -266,26 +266,21 @@ class KingPSF(PSFModule):
 class MoffatGeneralizedPSF(PSFModule):
     """Trainable Generalised Moffat PSF kernel.
 
-    The kernel follows ``(1 + (r/α)^{2β})^{-γ}``.  Setting *beta* = 1
-    and *gamma* = β recovers the standard Moffat profile.
-
-    The tail falls as ``r^{-2βγ}``, so the profile has finite energy on a
-    plane only for ``βγ > 1``.  That is a constraint on the product,
-    which a per-parameter bound cannot express, so it is left to the
-    caller: check it on the fitted values rather than assume it.
+    ``beta = 1`` gives the standard Moffat of index *gamma*.  The energy
+    over the plane is finite only for ``βγ > 1``, which is not enforced.
 
     Parameters
     ----------
     grid : PSFGrid
-        Spatial sampling configuration.
+        Sampling grid.
     band : SensorBand
-        Spectral band this PSF applies to.
+        Band the PSF applies to.
     alpha : float
-        Initial scale radius [km].
+        Initial scale radius [km], in ``[1e-3, 50]``.
     beta : float
-        Initial shape exponent controlling the power-law slope.
+        Initial inner exponent, in ``[1e-3, 50]``.
     gamma : float, optional
-        Initial outer power-law index, by default 1.0.
+        Initial outer index, in ``[1e-3, 50]``, 1 by default.
     """
 
     _model_name: ClassVar[str] = "MoffatGeneralized"

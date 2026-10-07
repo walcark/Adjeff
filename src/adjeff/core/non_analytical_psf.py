@@ -1,6 +1,9 @@
-"""Implement the non-analytical subclass of PSFModule.
+"""Fixed PSF kernel, typically from a radiative transfer simulation.
 
-The subclass implements the PSFModule protocol (forward + to_dataarray).
+Classes
+-------
+    NonAnalyticalPSF
+        Non-trainable PSF holding a given kernel.
 """
 
 from __future__ import annotations
@@ -16,23 +19,18 @@ from .bands import SensorBand
 
 
 class NonAnalyticalPSF(PSFModule):
-    """PSF defined by a fixed kernel tensor derived from a Smart-G output.
-
-    Parameters do not require gradients — this PSF is not trained.
-    Useful for physics-based kernels produced by radiative transfer
-    simulation rather than fitted to data.
+    """Non-trainable PSF holding a fixed kernel.
 
     Parameters
     ----------
     grid : PSFGrid
-        Spatial sampling configuration.
+        Sampling grid.
     band : SensorBand
-        Band identifier this PSF applies to.
+        Band the PSF applies to.
     kernel : np.ndarray or torch.Tensor
-        2-D array of shape ``(n, n)``.  Will be normalised to sum to 1.
+        Kernel of shape ``(grid.n, grid.n)``, normalised to sum to 1.
     source : str, optional
-        Provenance tag stored in the ``adjeff:source`` DataArray attribute,
-        by default ``"SmartG"``.
+        Provenance stored in ``adjeff:source``, ``"SmartG"`` by default.
     """
 
     _model_name: ClassVar[str] = "NonAnalytical"

@@ -1,31 +1,28 @@
-"""Core data structures, sensor bands, and PSF models for adjeff.
+"""Scenes, sensor bands and PSF models.
 
-**Image representation**
+Classes
+-------
+    ImageDict
+        One ``xr.Dataset`` per sensor band.
+    SensorBand, S2Band
+        Band enumerations: generic base and Sentinel-2.
+    PSFGrid
+        Square grid a PSF is sampled on.
+    GaussPSF, GeneralizedGaussianPSF, VoigtPSF, KingPSF, MoffatGeneralizedPSF
+        Trainable analytical PSFs.
+    NonAnalyticalPSF
+        Fixed, non-trainable kernel.
 
-- :class:`ImageDict` — multi-band scene container
-  (``dict[SensorBand → xr.Dataset]``).
-
-**Sensor bands**
-
-- :class:`SensorBand` — abstract base for band enumerations.
-- :class:`S2Band` — Sentinel-2 spectral bands.
-
-**PSF models**
-
-Analytical (trainable) PSFs inherit from :class:`PSFGrid`:
-:class:`GaussPSF`, :class:`VoigtPSF`, :class:`KingPSF`,
-:class:`MoffatGeneralizedPSF`, :class:`GeneralizedGaussianPSF`.
-
-Fixed-kernel (non-trainable): :class:`NonAnalyticalPSF`.
-
-Frozen kernels live in an :class:`xarray.DataTree`, one group per band:
-:func:`psf_tree`, :func:`freeze`, :func:`psf_kernel`, :func:`psf_params`.
-Live, gradient-tracked PSFs are a plain ``dict[SensorBand, PSFModule]``.
-
-**Image generation**
-
-:func:`gaussian_image_dict`, :func:`disk_image_dict`,
-:func:`random_image_dict`.
+Functions
+---------
+    psf_tree
+        Frozen PSFs as an ``xr.DataTree``, one group per band.
+    freeze
+        Current kernels of live PSF modules, as a tree.
+    psf_kernel, psf_params
+        Kernel and fitted parameters of one band in a tree.
+    gaussian_image_dict, disk_image_dict, random_image_dict
+        Synthetic scenes.
 """
 
 from ._psf import PSFGrid

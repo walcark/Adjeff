@@ -1,4 +1,10 @@
-"""Data wrapper for multiple images on multiple bands."""
+"""Multi-band scene container.
+
+Classes
+-------
+    ImageDict
+        One ``xr.Dataset`` per sensor band, each on its own grid.
+"""
 
 from __future__ import annotations
 
@@ -18,12 +24,11 @@ logger = get_logger(__name__)
 
 
 class ImageDict:
-    """Wrapper around ``dict[SensorBand, xr.Dataset]``, one dataset per band.
+    """One ``xr.Dataset`` per sensor band.
 
-    This wrapper allows storing multiple bands at different resolutions.
-    Datasets are progressively enriched by :class:`~adjeff.modules.SceneModule`
-    instances as they pass through a pipeline. They may carry extra parameter
-    dimensions (e.g. ``aot``, ``wl``) for multi-valued atmospheric configs.
+    Bands may differ in resolution, and datasets may carry extra dimensions
+    (``aot``, ``wl``, ...). Scene modules add variables to them along a
+    pipeline.
     """
 
     def __init__(self, band_datasets: dict[SensorBand, xr.Dataset]) -> None:
@@ -34,24 +39,20 @@ class ImageDict:
         directory: str | Path,
         var: str,
     ) -> list[Path]:
-        """Write *var* arrays to *directory* as .npy files.
+        """Write *var* to *directory*, one ``.npy`` file per 2-D slice.
 
-        All non-spatial dimensions are encoded in the filename. For instance
-        ``rho_s__aot=0.4__rh=50.0__B02.npy`` if ``aot`` and ``rh`` are present
-        as dimensions. If there are no extra (non-spatial) dims, the name will
-        have the form ``{var}__{band}.npy``
-
-        Parameters
-        ----------
-        directory : str | Path
-            Target directory to write the variable images.
-        var : str
-            Name of the internal variable to store.
+        Extra dimensions go into the file name, as in
+        ``rho_s__aot=0.4__rh=50.0__S2Band.B02.npy``.
 
         Returns
         -------
         list[Path]
-            A list of written Path objects.
+            Written files.
+
+        Raises
+        ------
+        MissingVariableError
+            If a band lacks *var*.
         """
         out_dir = Path(directory)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -131,11 +132,9 @@ class ImageDict:
                 )
 
     def shallow_copy(self) -> "ImageDict":
-        """Return a new ImageDict sharing the same DataArrays by reference.
+        """Return a copy whose new variables do not reach the original.
 
-        Each band Dataset is shallow-copied so that new variable assignments
-        on the copy do not affect the original. Existing DataArrays are shared
-        in memory and dask graphs are preserved (no compute triggered).
+        DataArrays are shared, not copied, and dask graphs are kept.
         """
         return ImageDict({band: ds.copy(deep=False) for band, ds in self._data.items()})
 

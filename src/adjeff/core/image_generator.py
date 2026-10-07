@@ -1,9 +1,13 @@
-"""Functions to generate instances of ImageDict.
+"""Synthetic scenes: Gaussian, disk or random reflectance fields.
 
-The three generators below differ only in the field they evaluate and in
-the provenance they stamp on it.  Everything around that, resolving a
-pixel count per band, laying a square grid, wrapping the values into a
-Dataset, is shared here rather than copied once per generator.
+Functions
+---------
+    gaussian_image_dict
+        Isotropic Gaussian centred on the origin.
+    disk_image_dict
+        Uniform disc centred on the origin.
+    random_image_dict
+        Uniform random values in ``[0, 1)``.
 """
 
 from collections.abc import Callable
@@ -27,33 +31,12 @@ def _resolve_n(
     n: int | dict[SensorBand, int] | None,
     extent_km: float | dict[SensorBand, float] | None,
 ) -> dict[SensorBand, int]:
-    """Resolve per-band pixel counts from either ``n`` or ``extent_km``.
-
-    Parameters
-    ----------
-    bands:
-        Bands for which a pixel count is needed.
-    res_km : float | dict
-        Resolution per band - either a scalar applied to all bands or a
-        per-band mapping.
-    n : int | dict
-        Number of pixels along one dimension — either a scalar applied to
-        all bands or a per-band mapping.
-    extent_km : float | dict
-        Physical extent of the image [km] — either a scalar applied to all
-        bands or a per-band mapping. ``n`` is derived per band as
-        ``round(extent_km / res_km)``.
-
-    Returns
-    -------
-    dict[SensorBand, int]
-        Mapping from each band to its pixel count.
+    """Return the pixel count of each band, from *n* or ``extent_km / res_km``.
 
     Raises
     ------
-    ValueError
-        If both or neither of ``n`` and ``extent_km`` are provided.
-
+    ConfigurationError
+        Unless exactly one of *n* and *extent_km* is given.
     """
     if n is None and extent_km is None:
         raise ConfigurationError("Provide exactly one of `n` or `extent_km`.")

@@ -1,4 +1,12 @@
-"""Define bands for different sensors to facilitate indexing in ImageDict."""
+"""Sensor bands, used as keys of an ImageDict.
+
+Classes
+-------
+    SensorBand
+        Base enumeration of a sensor's bands (id, central wavelength).
+    S2Band
+        Sentinel-2 bands.
+"""
 
 from enum import Enum
 
@@ -24,23 +32,7 @@ class SensorBand(Enum):
 
     @classmethod
     def from_wl(cls, wl_nm: float, tol_nm: float = 0.5) -> "SensorBand":
-        """Return the band centred on *wl_nm*.
-
-        Parameters
-        ----------
-        wl_nm : float
-            Central wavelength in nanometres, as a figure or a command
-            line names a band.
-        tol_nm : float, optional
-            How far from a band centre a request may fall.  The Sentinel-2
-            centres are tens of nanometres apart, so the default is tight
-            enough to make an approximate value an error rather than a
-            silent neighbour.
-
-        Returns
-        -------
-        SensorBand
-            The matching member.
+        """Return the band centred within *tol_nm* of *wl_nm*.
 
         Raises
         ------
@@ -57,20 +49,12 @@ class SensorBand(Enum):
         )
 
     def __cache_token__(self) -> str:
-        """Return a stable, serialisable identity for cache fingerprints.
-
-        An Enum member is not JSON-serialisable, so a cache handed one as
-        context cannot tell when it changes.  The class name and the id
-        pin the band down: two members never share both.
-        """
+        """Return a stable, serialisable identity for cache fingerprints."""
         return f"{type(self).__name__}.{self.id}"
 
 
 class S2Band(SensorBand):
-    """Sentinel-2 spectral bands.
-
-    Wavelengths (``wl_nm``) are in nanometres.
-    """
+    """Sentinel-2 bands, central wavelengths in nm."""
 
     B01 = ("B01", 443.0)
     B02 = ("B02", 490.0)

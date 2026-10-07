@@ -1,13 +1,8 @@
-"""Frozen PSF kernels as an :class:`xarray.DataTree`.
+"""Frozen PSF kernels, stored as an ``xr.DataTree``.
 
-A trained PSF is a kernel per band, each band free to carry its own grid
-and its own extra dimensions (``aot``, ``rh``, ...) from the atmospheric
-combos it was optimised over.  That is exactly what a ``DataTree`` holds:
-one group per band, no alignment imposed between groups, and a native
-zarr round-trip.
-
-Layout: one group named after ``band.id``, holding ``kernel`` plus one
-variable per fitted parameter.
+One group per band, named after ``band.id``, holds ``kernel`` and one
+variable per fitted parameter.  Groups need not share grids or sweep
+dimensions, and the tree round-trips through zarr::
 
     <DataTree>
     ├── B02
@@ -17,9 +12,20 @@ variable per fitted parameter.
             kernel  (aot, y_psf, x_psf)
             sigma   (aot)
 
-Live, gradient-tracked PSFs are a plain ``dict[SensorBand, PSFModule]``;
-they need no container of their own.  :func:`freeze` is the one-way door
-between the two.
+Functions
+---------
+    psf_tree
+        Tree from per-band kernels and parameters.
+    freeze
+        Tree from the current kernels of live PSF modules.
+    psf_kernel
+        Kernel of one band, with its parameters in attrs when scalar.
+    psf_params
+        Fitted parameters of one band.
+    tree_band_ids
+        Band ids a tree holds.
+    write_band
+        Write one band group to zarr, one chunk per combo.
 """
 
 from __future__ import annotations
@@ -115,16 +121,8 @@ def psf_kernel(tree: xr.DataTree, band: SensorBand) -> xr.DataArray:
         ) from None
     kernel: xr.DataArray = group.ds[PSF_KERNEL].copy()
 
-    # Put the fitted parameters back on the kernel, but only when the
-    # tree holds one combo: over several, each parameter is an array and
-    # no single value describes the kernel.  `psf_params` is the way to
-    # read those.  Restoring them here is what lets a kernel read back
-    # from a tree be normalised on the plane, which needs the profile it
-    # came from and not only its samples.
-    #
-    # The test is on size and not on rank: a single-combo fit still keeps
-    # one length-one dimension per swept parameter, six of them for a
-    # full atmospheric state, so nothing here is ever zero-dimensional.
+    # Restore the fitted parameters only for a single combo, where each is
+    # one value (possibly on length-one dims): plane normalisation needs them.
     fitted = {
         name: float(array.values.reshape(()))
         for name, array in group.ds.data_vars.items()
