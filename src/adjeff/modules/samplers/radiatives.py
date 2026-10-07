@@ -24,66 +24,30 @@ from .tdir_up import TdirUpSampler
 
 
 class RadiativePipeline(Pipeline):
-    """Pipeline that computes all six radiative quantities in sequence.
+    """The six 5S samplers in a row, on a CUDA GPU.
 
-    Chains six :class:`~adjeff.modules.SweepSampler` samplers that
-    produce the variables required by the 5S formula in order:
-
-    ``tdir_down`` → ``tdir_up`` → ``tdif_down`` → ``rho_atm`` →
-    ``sph_alb`` → ``tdif_up``
-
-    The two surface-dependent terms come last so that their BRDF
-    variants, when *rtls* is given, can read the four others.
-
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
+    Order: ``tdir_down, tdir_up, tdif_down, rho_atm, sph_alb, tdif_up``.
 
     Parameters
     ----------
-    atmo_config : AtmoConfig
-        Atmospheric state parameters.
-    geo_config : GeoConfig
-        Viewing/illumination geometry.
-    spectral_config : SpectralConfig
-        Spectral bands and wavelengths to compute.
+    atmo_config, geo_config, spectral_config : configs
+        Atmosphere, geometry and bands.
     remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed in all modules.
+        Suppress Rayleigh scattering.
     afgl_type : str, optional
-        AFGL standard atmosphere profile identifier,
-        by default ``"afgl_exp_h8km"``.
-    n_ph_sph_alb : int, optional
-        Photons per call for the spherical albedo module,
-        by default ``2e7``.
-    n_ph_rho_atm : int, optional
-        Photons per call for the atmospheric reflectance module,
-        by default ``2e7``.
-    n_ph_tdif_up : int, optional
-        Photons per call for the upward diffuse transmittance module,
-        by default ``3e7``.
-    n_ph_tdif_down : int, optional
-        Photons per call for the downward diffuse transmittance module,
-        by default ``3e7``.
-    cache : CacheStore or None, optional
-        Shared result cache forwarded to all modules; ``None`` disables
-        caching.
-    batch_size : int, optional
-        Atmospheric states per Smart-G call, forwarded to all modules.
-    dedup : bool, optional
-        Collapse repeated states before calling, forwarded to all modules.
+        AFGL atmosphere profile.
+    n_ph_sph_alb, n_ph_rho_atm, n_ph_tdif_up, n_ph_tdif_down : int, optional
+        Photons per call of each Monte-Carlo sampler.
+    cache, batch_size, dedup : optional
+        Passed to every sampler.
     rename : dict[str, str] or None, optional
-        Slot names the modules write instead of their declared roles,
-        forwarded to every module.  Running the pipeline twice under two
-        renames is how two surface models are compared in one scene.
+        Variables written, split among the samplers by role; two renames
+        compare two surface models in one scene.
     rtls : tuple[float, float, float] or None, optional
-        RTLS kernel weights ``(k0, k1p, k2p)`` of a non-lambertian
-        surface.  ``None``, the default, keeps the Lambertian samplers.
-        Given, it swaps **only** ``tdif_up`` and ``sph_alb`` for their
-        BRDF variants: the downward quantities never see the ground, and
-        ``rho_atm`` is a path reflectance, so none of the four others
-        depends on the surface model.  The BRDF variants read the
-        downward terms this pipeline has just produced, which is why
-        they come last.
+        RTLS weights ``(k0, k1p, k2p)``.  Given, ``sph_alb`` and
+        ``tdif_up`` come from their BRDF variants, which read the
+        downward terms sampled before them; the other four do not
+        depend on the surface.
     """
 
     def __init__(

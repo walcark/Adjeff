@@ -88,17 +88,14 @@ def create_atmosphere(
 
 
 def parse_params(params: dict[str, xr.DataArray]) -> list[dict[str, float]]:
-    """Ensure all input parameters are present with a single same dim.
+    """Return one ``{name: value}`` dict per element of the shared dimension.
 
-    Parameters
-    ----------
-    params : dict[str, xr.DataArray]
-        Input atmospheric parameters.
-
-    Returns
-    -------
-    list[dict[str, float]]
-        List of attributes name and values.
+    Raises
+    ------
+    MissingVariableError
+        If a required key is missing.
+    ConfigurationError
+        If the arrays do not share a single dimension of one size.
     """
     mandatory: list[str] = ["aot", "rh", "wl", "href", "h"]
 
@@ -145,37 +142,11 @@ def create_atmafgl(
     afgl_type: str,
     wl_ref: float,
 ) -> xr.Dataset:
-    """Calculate an Atm1D instance for a set of atmospheric parameters.
+    """Return the Smart-G profile of one parameter set.
 
-    Parameters
-    ----------
-    height : float
-        Ground elevation [km].
-    aot : float
-        Aerosol optical thickness.
-    rh : float
-        Relative humidity [%].
-    wl : float
-        Wavelength [nm].
-    zmix : float
-        Typical height of aerosol in the atmosphere.
-    species : dict[str, float]
-        Proportion of aerosol species.
-    grid : np.ndarray
-        Vertical sampling grid for scalar optical properties in Smart-G.
-    pfgrid : np.ndarray
-        Vertical sampling grid for the scattering matrix in Smart-G.
-    remove_rayleigh : bool
-        Assumes no rayleigh scattering if set to True.
-    afgl_type : str
-        Filename for the AFGL profile.
-    wl_ref : float
-        Reference wavelength for the LUT computation [nm].
-
-    Returns
-    -------
-    xr.Dataset
-        The profile table representing the Smart-G atmosphere instance.
+    *height*, *aot*, *rh*, *wl* and *zmix* are one value of ``h``,
+    ``aot``, ``rh``, ``wl`` and ``href`` (see :func:`create_atmosphere`);
+    *grid* and *pfgrid* come from :func:`grids`.
     """
     # Deferred like every other Smart-G import in the package: importing
     # smartg raises unless SMARTG_DIR_AUXDATA is set, and half of adjeff
@@ -206,33 +177,13 @@ def create_atmafgl(
 
 
 def surface_pressure(height: float) -> float:
-    """Return the surface pressure for a ground elevation.
-
-    Parameters
-    ----------
-    height : float
-        Ground elevation [km].
-
-    Returns
-    -------
-    float
-        Surface pressure [hPa].
-    """
+    """Return the standard-atmosphere surface pressure [hPa] at *height* [km]."""
     P0: float = 1013.25
     return float(P0 * (1.0 - 6.5 * height / 288.15) ** 5.255)
 
 
 def grids() -> tuple[np.ndarray, np.ndarray]:
-    """Construct vertical grids to sample optical properties in Smart-G.
-
-    Grid is used to sample scalar optical properties, and pfgrid is used
-    to sample the scattering matrix.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        The grid and pfgrid numpy arrays.
-    """
+    """Return the vertical grids [km] of the optical properties and phase matrix."""
     base = np.arange(10.0, -0.01, -0.25)
     grid = np.concatenate((np.linspace(100.0, 11.0, num=90), base))
     pfgrid = np.concatenate((np.array([100.0, 20.0]), base))

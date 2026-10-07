@@ -54,13 +54,29 @@ def radial_profile(
     max_gap: float | None = None,
     symmetric: bool = False,
 ) -> xr.DataArray:
-    """Radial profile of *da*.
+    """Return a radial statistic of *da*, on dim ``"r"``.
 
-    See :func:`_radial_profile` for the statistics; *symmetric* mirrors
-    the result around ``r = 0`` so that it can be drawn across a full
-    transect rather than on the positive half only.  The values are
-    unchanged: a radial profile is symmetric by construction, this only
-    writes the other half down.
+    Parameters
+    ----------
+    stat : {"mean", "cdf", "std", "adaptive"}, optional
+        Azimuthal mean (default), cumulated energy, azimuthal standard
+        deviation, or the mean on *n* radii denser where it varies.
+    center : tuple[float, float] or None, optional
+        ``(cx, cy)`` origin; the coordinate mean by default.
+    n_bins : int or None, optional
+        Bin count, the natural one by default; above it, ``"mean"`` and
+        ``"cdf"`` are interpolated.
+    normalize : bool, optional
+        Normalise ``"cdf"`` to 1.
+    n, max_gap : optional
+        Number of radii, and largest gap between them, of ``"adaptive"``.
+    symmetric : bool, optional
+        Mirror the profile around ``r = 0``, to draw it across a transect.
+
+    Raises
+    ------
+    AdjeffAccessorError
+        On an unknown *stat*, or ``"adaptive"`` without *n*.
     """
     profile = _radial_profile(
         da,
@@ -92,47 +108,7 @@ def _radial_profile(
     n: int | None = None,
     max_gap: float | None = None,
 ) -> xr.DataArray:
-    """Radial profile of *da*, one statistic at a time.
-
-    Parameters
-    ----------
-    stat : {"mean", "cdf", "std", "adaptive"}, optional
-        Statistic to compute (default ``"mean"``):
-
-        - ``"mean"``     — azimuthal mean per radial bin.
-        - ``"cdf"``      — cumulative area-weighted distribution.
-        - ``"std"``      — azimuthal standard deviation per bin.
-        - ``"adaptive"`` — gradient-driven sparse sampling (requires *n*).
-
-    center : tuple[float, float] or None, optional
-        ``(cx, cy)`` origin in coordinate units. Defaults to the
-        coordinate mean.
-    n_bins : int or None, optional
-        Number of radial bins. When ``None``, natural bin count is used.
-        For ``stat="mean"`` and ``"cdf"``, values above the natural count
-        are upsampled; for ``stat="std"`` it directly sets the bin count.
-        Not used for ``stat="adaptive"``.
-    normalize : bool, optional
-        Normalise the CDF output to ``[0, 1]`` (default ``True``).
-        Only relevant for ``stat="cdf"``.
-    n : int or None, optional
-        Number of gradient-driven sample positions.
-        Required when ``stat="adaptive"``.
-    max_gap : float or None, optional
-        Maximum allowed gap between consecutive adaptive samples.
-        Only used when ``stat="adaptive"``.
-
-    Returns
-    -------
-    xr.DataArray
-        1-D DataArray with dim ``"r"``.
-
-    Raises
-    ------
-    AdjeffAccessorError
-        If *stat* is not one of the four recognised options, or if
-        ``stat="adaptive"`` is requested without providing *n*.
-    """
+    """Return :func:`radial_profile` of *da*, unmirrored."""
     if stat == "mean":
         rr_np, vv_np = radial_distances(da, center=center)
         npix = natural_npix(da)
@@ -197,32 +173,17 @@ def transect(
     center: tuple[float, float] | None = None,
     n_points: int | None = None,
 ) -> xr.DataArray:
-    """Sample values along a line through the centre at a given azimuth.
+    """Return the values of the 2-D *da* along a line through its centre.
 
-    Parameters
-    ----------
-    angle : float
-        Azimuth angle [°], measured counterclockwise from the +x axis.
-        The positive side of the transect points in direction *angle*;
-        the negative side points in direction *angle* + 180°.
-    center : tuple[float, float] or None, optional
-        ``(cx, cy)`` origin in coordinate units.  Defaults to the
-        coordinate mean.
-    n_points : int or None, optional
-        Number of sample points.  Defaults to the number of pixels
-        that fit along the transect at the native resolution.
-
-    Returns
-    -------
-    xr.DataArray
-        1-D DataArray with dim ``"s"`` (signed distance from centre,
-        same units as the spatial coordinates).
+    The line points to *angle* [°, counterclockwise from +x] on its
+    positive side; the result is on dim ``"s"``, the signed distance to
+    *center* (the coordinate mean by default).  *n_points* defaults to
+    one per pixel.
 
     Raises
     ------
     AdjeffAccessorError
-        If the DataArray is not exactly 2-D ``(y, x)``.  Call
-        ``.squeeze()`` first when extra dimensions are present.
+        If *da* is not 2-D.
     """
     from scipy.interpolate import (  # type: ignore[import-untyped]
         RegularGridInterpolator,
@@ -263,24 +224,9 @@ def transect(
 
 
 def to_field(da: xr.DataArray, target_ds: xr.Dataset) -> xr.DataArray:
-    """Reconstruct a field from a radial profile, by Pchip interpolation.
+    """Return the 2-D field of the radial profile *da*, on the grid of *target_ds*.
 
-    Interpolates *da* (dim ``"r"``) at the radial distances of
-    every pixel in *target_ds*, broadcasting over all extra dimensions
-    (e.g. ``aot``, ``wavelength``).
-
-    Parameters
-    ----------
-    da : xr.DataArray
-        Radial profile, with dim ``"r"``.
-    target_ds : xr.Dataset
-        Dataset whose ``"x"`` and ``"y"`` coordinates define the output
-        grid.
-
-    Returns
-    -------
-    xr.DataArray
-        DataArray with dims ``(..., "y", "x")`` on the target grid.
+    Pchip-interpolated at each pixel's radius; extra dims are kept.
     """
     x = target_ds.coords["x"].values
     y = target_ds.coords["y"].values

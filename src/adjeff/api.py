@@ -1,21 +1,52 @@
-"""High-level convenience API for the Adjeff library.
+"""High-level API, composing the modules of adjeff.
 
-Every function here composes lower-level building blocks; nothing is
-computed that could not be written by hand with the modules themselves.
+Functions
+---------
+    load_scene, load_maja
+        Load a product into a scene.
+    make_full_config, load_config
+        Configs from scalars, or from the fields of a scene.
+    run_radiatives_from_scene, run_forward_pipeline
+        Radiative terms, or the whole forward chain down to ``rho_unif``.
+    make_model, fit_psf, apply_psf
+        Build, fit and apply a PSF model.
+    sample_psf_atm, sample_psf_atm_from_scene
+        Atmospheric PSF of Wu et al. (2024).
 
-**Loading**: :func:`load_scene`, :func:`load_maja`.
+Common parameters
+-----------------
+bands : list[SensorBand]
+    Bands to process.
+aot, rh, h, href : float, list or DataArray
+    Aerosol optical thickness, relative humidity [%], ground elevation
+    [km] and aerosol scale height [km]; a list is swept.
+sza, vza, saa, vaa : float, list or DataArray
+    Sun and viewing zenith and azimuth angles [°].
+species : dict[str, float] or None
+    Aerosol species fractions; ``{"sulphate": 1.0}`` by default.
+atmo_config, geo_config, spectral_config : configs
+    As returned by :func:`make_full_config`.
+res_km : float
+    Pixel size [km].
+n : int
+    Grid side in pixels, odd.
+remove_rayleigh : bool
+    Suppress Rayleigh scattering.
+afgl_type : str
+    AFGL atmosphere profile, ``"afgl_exp_h8km"`` by default.
+n_ph : int
+    Photons per Smart-G run.
+n_bins : int or None
+    Digitise ``aot`` and ``h`` to this many values, to cut Smart-G runs.
+dedup : bool
+    Merge repeated atmospheric states; worth it for spatial maps.
+cache : CacheStore or None
+    Shared disk cache.
+device : str
+    Torch device, ``"cuda"`` by default.
 
-**Configuration**: :func:`make_full_config` from scalars,
-:func:`load_config` from an already-loaded scene.
-
-**Pipelines**: :func:`run_radiatives_from_scene`,
-:func:`run_forward_pipeline`.
-
-**PSF**: :func:`make_model`, :func:`fit_psf`, :func:`apply_psf`,
-:func:`sample_psf_atm`, :func:`sample_psf_atm_from_scene`.
-
-Typical usage
--------------
+Example
+-------
 >>> cfg = make_full_config(bands=[S2Band.B03], aot=0.1, rh=50.0, sza=30.0, vza=0.0)
 >>> model = make_model(
 ...     Unif2Surface,
@@ -103,26 +134,10 @@ def _build_psfs(
     n: int,
     init_parameters: dict[str, float] | dict[SensorBand, dict[str, float]],
 ) -> dict[SensorBand, PSFModule]:
-    """Instantiate one live PSF module per band on a common grid.
+    """Return one *psf_type* per band, on a common ``n × n`` grid.
 
-    Parameters
-    ----------
-    psf_type : type[PSFModule]
-        PSF model class, e.g. ``KingPSF``.
-    bands : list[SensorBand]
-        Bands to build a PSF for.
-    res_km : float
-        Pixel size in km.
-    n : int
-        Grid side in pixels; must be odd and >= 3.
-    init_parameters : dict
-        Either ``{"sigma": 0.1}`` shared by every band, or
-        ``{S2Band.B02: {"sigma": 0.1}, ...}`` per band.
-
-    Returns
-    -------
-    dict[SensorBand, PSFModule]
-        Ready to hand to a ``PSFConvModule`` as ``psfs=``.
+    *init_parameters* is either shared, ``{"sigma": 0.1}``, or per band,
+    ``{S2Band.B02: {"sigma": 0.1}, ...}``.
     """
     per_band = bool(init_parameters) and isinstance(
         next(iter(init_parameters)), SensorBand
@@ -154,28 +169,7 @@ def _make_atmo_config(
     href: _Scalar = 2.0,
     species: dict[str, float] | None = None,
 ) -> AtmoConfig:
-    """Build an :class:`~adjeff.atmosphere.AtmoConfig` with sensible defaults.
-
-    Each parameter accepts a single float, a list of floats (swept as a
-    1-D DataArray), or a pre-built DataArray (e.g. for multi-dim sweeps).
-
-    Parameters
-    ----------
-    aot : float or list or DataArray, optional
-        Aerosol optical thickness (default 0.1).
-    rh : float or list or DataArray, optional
-        Relative humidity [%] (default 50.0).
-    h : float or list or DataArray, optional
-        Ground elevation [km] (default 0.0).
-    href : float or list or DataArray, optional
-        Aerosol scale height [km] (default 2.0).
-    species : dict[str, float] or None, optional
-        Aerosol species mix summing to 1.0 (default ``{"sulphate": 1.0}``).
-
-    Returns
-    -------
-    AtmoConfig
-    """
+    """Return an :class:`~adjeff.atmosphere.AtmoConfig`, with defaults."""
     if species is None:
         species = {"sulphate": 1.0}
     return AtmoConfig(
@@ -194,25 +188,7 @@ def _make_geo_config(
     vaa: _Scalar = 120.0,
     sat_height: float = 786.0,
 ) -> GeoConfig:
-    """Build a :class:`~adjeff.atmosphere.GeoConfig` with sensible defaults.
-
-    Parameters
-    ----------
-    sza : float or list or DataArray, optional
-        Sun zenith angle [°] (default 30.0).
-    vza : float or list or DataArray, optional
-        Viewing zenith angle [°] (default 0.0).
-    saa : float or list or DataArray, optional
-        Sun azimuth angle [°] (default 120.0).
-    vaa : float or list or DataArray, optional
-        Viewing azimuth angle [°] (default 120.0).
-    sat_height : float, optional
-        Satellite altitude [km] (default 786.0).
-
-    Returns
-    -------
-    GeoConfig
-    """
+    """Return a :class:`~adjeff.atmosphere.GeoConfig`, with defaults."""
     return GeoConfig(
         sza=_da(sza, "sza"),
         vza=_da(vza, "vza"),
@@ -223,13 +199,7 @@ def _make_geo_config(
 
 
 class FullConfig(TypedDict):
-    """Typed dict returned by :func:`make_full_config`.
-
-    Keys match the keyword arguments expected by
-    :class:`~adjeff.modules.samplers.RadiativePipeline` and
-    :class:`~adjeff.modules.samplers.RhoToaSymSampler`, so the dict
-    can be unpacked directly with ``**cfg``.
-    """
+    """The three configs, to unpack as ``**cfg`` into the samplers."""
 
     atmo_config: AtmoConfig
     geo_config: GeoConfig
@@ -249,44 +219,10 @@ def make_full_config(
     vaa: _Scalar = 120.0,
     sat_height: float = 786.0,
 ) -> FullConfig:
-    """Build a complete config dict from raw parameters.
+    """Return the atmosphere, geometry and spectral configs of *bands*.
 
-    Single entry point that internally calls :func:`_make_atmo_config`,
-    :func:`_make_geo_config`, and :class:`~adjeff.atmosphere.SpectralConfig`.
-    The returned dict has keys ``"atmo_config"``, ``"geo_config"``,
-    ``"spectral_config"`` and can be unpacked directly with ``**cfg`` into
-    :class:`~adjeff.modules.samplers.RadiativePipeline` and
-    :class:`~adjeff.modules.samplers.RhoToaSymSampler`.
-
-    Parameters
-    ----------
-    bands : list[SensorBand]
-        Sensor bands to simulate.
-    aot : float or list or DataArray, optional
-        Aerosol optical thickness (default 0.1).
-    rh : float or list or DataArray, optional
-        Relative humidity [%] (default 50.0).
-    h : float or list or DataArray, optional
-        Ground elevation [km] (default 0.0).
-    href : float or list or DataArray, optional
-        Aerosol scale height [km] (default 2.0).
-    species : dict[str, float] or None, optional
-        Aerosol species mix summing to 1.0 (default ``{"sulphate": 1.0}``).
-    sza : float or list or DataArray, optional
-        Sun zenith angle [°] (default 30.0).
-    vza : float or list or DataArray, optional
-        Viewing zenith angle [°] (default 0.0).
-    saa : float or list or DataArray, optional
-        Sun azimuth angle [°] (default 120.0).
-    vaa : float or list or DataArray, optional
-        Viewing azimuth angle [°] (default 120.0).
-    sat_height : float, optional
-        Satellite altitude [km] (default 786.0).
-
-    Returns
-    -------
-    FullConfig
-        A plain ``dict`` with three typed entries.
+    Parameters are those of the module docstring; *sat_height* is the
+    satellite altitude [km].
     """
     return FullConfig(
         atmo_config=_make_atmo_config(aot=aot, rh=rh, h=h, href=href, species=species),
@@ -314,13 +250,7 @@ def _run_each(
 
 
 def _map_scenes(scene: SceneT, run: Callable[[ImageDict], ImageDict]) -> SceneT:
-    """Apply *run* to *scene*, giving back whatever shape it came in.
-
-    The dispatch happens in :func:`_run_each`, whose return type is the
-    plain union: *SceneT* is constrained rather than bound, so mypy checks
-    this body once per member, and a cast written where the type is
-    already narrowed is redundant under one of them.
-    """
+    """Apply *run* to *scene*, returning one scene or a list as given."""
     return cast(SceneT, _run_each(scene, run))
 
 
@@ -334,35 +264,21 @@ def make_model(
     device: str = "cuda",
     cache: CacheStore | None = None,
 ) -> M:
-    """Instantiate a :class:`~adjeff.modules.models.PSFConvModule` subclass.
-
-    Creates a :class:`~adjeff.core.PSFGrid` and one live PSF module
-    per band, then constructs the model.
+    """Return a *model_cls* holding one live *psf_type* per band.
 
     Parameters
     ----------
     model_cls : type[PSFConvModule]
-        Concrete subclass to instantiate (e.g. ``Unif2Surface``).
+        Model, e.g. ``Unif2Surface``.
     psf_type : type[PSFModule]
-        PSF model class (e.g. ``KingPSF``, ``GaussPSF``).
-    bands : list[SensorBand]
-        Sensor bands to include.
-    res_km : float
-        Pixel size in km (passed to :class:`~adjeff.core.PSFGrid`).
-    n : int
-        Grid side in pixels — must be odd and ≥ 3.
-    init_parameters : dict[str, float] or dict[SensorBand, dict[str, float]]
-        Initial PSF parameters, either shared across bands (flat dict) or
-        per-band (nested dict keyed by :class:`~adjeff.core.SensorBand`).
-    device : str, optional
-        PyTorch device (default ``"cuda"``).
+        PSF, e.g. ``KingPSF``.
+    init_parameters : dict
+        Initial PSF parameters, shared ``{"sigma": 0.1}`` or per band
+        ``{S2Band.B02: {"sigma": 0.1}, ...}``.
     cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
+        Shared disk cache.
 
-    Returns
-    -------
-    M
-        An instance of *model_cls*.
+    The other parameters are those of the module docstring.
     """
     return model_cls(
         psfs=_build_psfs(psf_type, bands, res_km, n, init_parameters),
@@ -385,63 +301,29 @@ def run_forward_pipeline(
     rtls: tuple[float, float, float] | None = None,
     stream_dims: dict[str, int] | None = None,
 ) -> SceneT:
-    """Run the full forward pipeline: radiatives → rho_toa → rho_unif.
+    """Add the radiative terms, ``rho_toa`` and ``rho_unif`` to *scene*.
 
     Chains :class:`~adjeff.modules.samplers.RadiativePipeline`,
-    :class:`~adjeff.modules.samplers.RhoToaSymSampler`, and
-    :class:`~adjeff.modules.classic.Toa2Unif` in sequence.
-
-    The config arguments match the keys of :func:`make_full_config`, so the
-    dict can be unpacked directly::
-
-        cfg = make_full_config(bands=[S2Band.B03], aot=0.1)
-
-        # single scene
-        scene = run_forward_pipeline(scene, **cfg)
-
-        # multiple scenes — modules instantiated once, applied to each
-        scenes = run_forward_pipeline([s1, s2, s3], **cfg)
+    :class:`~adjeff.modules.samplers.RhoToaSymSampler` and
+    :class:`~adjeff.modules.classic.Toa2Unif`; a list of scenes reuses
+    the same modules.  Typically called as
+    ``run_forward_pipeline(scene, **make_full_config(...))``.
 
     Parameters
     ----------
     scene : ImageDict or list[ImageDict]
-        One scene or a list of scenes, each containing ``rho_s``.
-    atmo_config : AtmoConfig
-    geo_config : GeoConfig
-    spectral_config : SpectralConfig
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-    remove_rayleigh : bool, optional
-        Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str, optional
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    nr : int, optional
-        Radial sampling points for rho_toa (default 500).
-    n_ph : int, optional
-        Photon count per sensor for rho_toa (default ``1e5``).
+        Scene(s) holding ``rho_s``.
+    nr, n_ph : int, optional
+        Radii and photons per sensor of ``rho_toa``.
     batch_size : int, optional
-        Atmospheric states handed to Smart-G in one call inside
-        :class:`~adjeff.modules.samplers.RadiativePipeline`. A cost
-        decision only: it bounds GPU memory and never changes a value.
+        Atmospheric states per Smart-G call; changes the cost only.
     rtls : tuple[float, float, float] or None, optional
-        Ross-Li kernel weights ``(k0, k1p, k2p)`` of a non-lambertian
-        surface, forwarded to
-        :class:`~adjeff.modules.samplers.RadiativePipeline`.  ``None``,
-        the default, keeps the Lambertian samplers.  It changes only the
-        scalar terms the inversion uses, not the surface ``rho_toa`` is
-        simulated over, so the two can be varied independently.
+        RTLS weights ``(k0, k1p, k2p)`` of the radiative terms; ``None``
+        keeps them Lambertian.  ``rho_toa`` is unaffected.
     stream_dims : dict[str, int] or None, optional
-        Dimensions to stream over for memory management, e.g.
-        ``{"aot": 3}``.  When a dimension exists in the scene's DataArrays,
-        the pipeline processes that many values at a time through the full
-        chain (radiatives → rho_toa → Toa2Unif), preventing OOM on large
-        scenes.  ``None`` disables streaming.
+        Run the chain on chunks of these dims, e.g. ``{"aot": 3}``.
 
-    Returns
-    -------
-    ImageDict or list[ImageDict]
-        Same type as *scene*, enriched with ``rho_toa``, radiative
-        quantities, and ``rho_unif``.
+    The other parameters are those of the module docstring.
     """
     radiative = RadiativePipeline(
         atmo_config=atmo_config,
@@ -478,7 +360,7 @@ ARTICLE_TRAIN_SIZE: int = 1999
 
 
 def _res_from_scene(scene: ImageDict, band: SensorBand) -> float:
-    """Infer pixel size [km] from the y-coordinate spacing of *scene[band]*."""
+    """Return the pixel size [km] of *scene[band]*, from its ``y`` spacing."""
     y: xr.DataArray = scene[band].coords["y"]
     return float(abs(float(y[1]) - float(y[0])))
 
@@ -501,43 +383,14 @@ def load_scene(
     cache: CacheStore | None = None,
     dedup: bool = False,
 ) -> ImageDict:
-    """Load a scene from any :class:`~adjeff.modules.loaders.ProductLoader`.
+    """Return the scene *loader* produces, with its aerosol species.
 
-    Stores aerosol species in ``scene[band].attrs["adjeff:species"]`` for
-    every band so that :func:`load_config` can recover them later.  Species
-    are resolved in this order:
+    The species, from *species*, else ``loader.species()``, else
+    sulphate, are stored in ``attrs["adjeff:species"]`` of every band
+    for :func:`load_config`.  With *compute_radiatives*, the radiative
+    terms are added by :func:`run_radiatives_from_scene`.
 
-    1. *species* argument if provided,
-    2. ``loader.species()`` if the loader exposes that method,
-    3. ``{"sulphate": 1.0}`` as a last-resort default.
-
-    Parameters
-    ----------
-    loader : ProductLoader
-        Pre-instantiated loader (e.g. ``MajaLoader(...)``).
-    compute_radiatives : bool, optional
-        Run the radiative pipeline after loading (default ``False``).
-    n_bins : int or None, optional
-        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
-        the config, cutting the number of distinct Smart-G runs.  Ignored when
-        *compute_radiatives* is ``False``.
-    species : dict[str, float] or None, optional
-        Override aerosol species mix.
-    remove_rayleigh : bool, optional
-        Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str, optional
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-    dedup : bool, optional
-        Collapse repeated atmospheric states before calling Smart-G.
-        Worth it when the parameters are spatial maps, where many pixels
-        share a state; pure overhead when every state is distinct.
-
-    Returns
-    -------
-    ImageDict
-        Scene with ``scene[band].attrs["adjeff:species"]`` set for every band.
+    The other parameters are those of the module docstring.
     """
     scene = loader.forward()
 
@@ -577,52 +430,10 @@ def load_maja(
     afgl_type: str = "afgl_exp_h8km",
     dedup: bool = False,
 ) -> ImageDict:
-    """Load a MAJA L2A product via :func:`load_scene`.
+    """Return :func:`load_scene` of a :class:`~adjeff.modules.loaders.MajaLoader`.
 
-    Convenience wrapper that instantiates
-    :class:`~adjeff.modules.loaders.MajaLoader` and delegates to
-    :func:`load_scene`, which persists CAMS aerosol species in
-    ``scene[band].attrs["adjeff:species"]``.
-
-    Parameters
-    ----------
-    product_path : Path
-        Folder containing the MAJA product.
-    bands : list[SensorBand]
-        Bands to load.
-    res : float or list[float]
-        Target spatial resolution in km (e.g. ``0.12`` for 120 m).
-    mnt_path : Path or None, optional
-        Folder containing the DEM at 20 m resolution.  Must be provided;
-        ``None`` raises :class:`~adjeff.exceptions.ConfigurationError`.
-    href : float, optional
-        Aerosol scale height [km] (default ``2.0``).
-    as_map : bool, optional
-        When ``True``, load 2-D atmospheric parameters as full spatial maps
-        instead of spatially-averaged scalars (default ``False``).
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-    compute_radiatives : bool, optional
-        When ``True``, run the radiative pipeline after loading (default
-        ``False``).
-    n_bins : int or None, optional
-        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
-        the config, cutting the number of distinct Smart-G runs.  Ignored when
-        *compute_radiatives* is ``False``.
-    remove_rayleigh : bool, optional
-        Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str, optional
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    dedup : bool, optional
-        Collapse repeated atmospheric states before calling Smart-G.
-        Worth it when the parameters are spatial maps, where many pixels
-        share a state; pure overhead when every state is distinct.
-
-    Returns
-    -------
-    ImageDict
-        Scene with ``rho_s``, atmospheric/geometric variables, and
-        ``scene[band].attrs["adjeff:species"]`` for every band.
+    *product_path*, *res*, *mnt_path* (required), *href* and *as_map*
+    are those of the loader; the rest are those of :func:`load_scene`.
     """
     if mnt_path is None:
         from adjeff.exceptions import ConfigurationError
@@ -660,45 +471,13 @@ def run_radiatives_from_scene(
     cache: CacheStore | None = None,
     dedup: bool = False,
 ) -> SceneT:
-    """Run the radiative pipeline using configs embedded in *scene*.
+    """Add the six radiative terms to *scene*, configured from its own fields.
 
-    Unlike :func:`run_forward_pipeline` which takes explicit config objects,
-    this function reads ``aot``, ``h``, ``rh``, ``href``, ``vza``, ``vaa``,
-    ``sza``, ``saa`` directly from the scene (as produced by a
-    :class:`~adjeff.modules.loaders.ProductLoader`).
+    The atmosphere and geometry are read from each band by
+    :func:`load_config`, and a pipeline is run per band, since the
+    viewing angles differ between bands.  *scene* may be a list.
 
-    Because viewing geometry (``vza``, ``vaa``) varies across S2 bands, a
-    separate :class:`~adjeff.modules.samplers.RadiativePipeline` is built
-    and run for each band.  Results are merged back into a single scene.
-
-    Parameters
-    ----------
-    scene : ImageDict or list[ImageDict]
-        Scene(s) produced by a ProductLoader (must contain the atmospheric
-        and geometric variables listed above).
-    n_bins : int or None, optional
-        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
-        the config, cutting the number of distinct Smart-G runs.
-    species : dict[str, float] or None, optional
-        Aerosol species mix summing to 1.0.  Defaults to
-        ``{"sulphate": 1.0}`` when ``None``.
-    remove_rayleigh : bool, optional
-        Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str, optional
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-    dedup : bool, optional
-        Collapse repeated atmospheric states before calling Smart-G.
-        Worth it when the parameters are spatial maps, where many pixels
-        share a state; pure overhead when every state is distinct.
-
-    Returns
-    -------
-    ImageDict or list[ImageDict]
-        Same type as *scene*, enriched with the six radiative quantities
-        (``tdir_down``, ``tdif_down``, ``tdir_up``, ``tdif_up``,
-        ``rho_atm``, ``sph_alb``).
+    The other parameters are those of the module docstring.
     """
 
     def _run(s: ImageDict) -> ImageDict:
@@ -733,42 +512,10 @@ def sample_psf_atm(
     n_ph: int = int(1e6),
     cache: CacheStore | None = None,
 ) -> xr.DataTree:
-    """Sample the atmospheric PSF and return a frozen PSF tree.
+    """Return the PSF tree of :class:`~adjeff.reference.WuPsfSampler` (GPU).
 
-    Internally builds a constant input scene to carry the spatial grid
-    (only ``res`` and ``n`` matter to the sampler — the reflectance values
-    are irrelevant), runs
-    :class:`~adjeff.reference.WuPsfSampler`, then wraps the
-    resulting ``psf_atm`` DataArrays into a PSF tree.
-
-    Requires a CUDA GPU (delegates to Smart-G).
-
-    Parameters
-    ----------
-    bands : list[SensorBand]
-        Sensor bands to simulate.
-    res_km : float
-        Pixel size [km] — defines the Smart-G Entity sampling grid.
-    n : int
-        Grid side in pixels (must be odd and ≥ 3).
-    atmo_config : AtmoConfig
-        Atmospheric parameters (may contain swept dimensions).
-    geo_config : GeoConfig
-        Geometric parameters (sza, vza, saa, vaa must be scalar per call).
-    remove_rayleigh : bool, optional
-        Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str, optional
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    n_ph : int, optional
-        Photon count per Smart-G run (default ``1e6``).
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-
-    Returns
-    -------
-    xr.DataTree
-        One group per band, each holding a ``kernel``.
-        Extra atmospheric dimensions (``aot``, ``rh``, ...) are preserved.
+    Sampled on an ``n × n`` grid of pixel *res_km*, keeping the swept
+    atmospheric dims.  Parameters are those of the module docstring.
     """
     scene = gaussian_image_dict(
         sigma=res_km * n,
@@ -801,43 +548,23 @@ def load_config(
     n_bins: int | None = None,
     species: dict[str, float] | None = None,
 ) -> FullConfig:
-    """Build a :class:`FullConfig` from the fields stored in a scene.
-
-    Reads the atmospheric and geometric parameters from ``scene[band]``,
-    which avoids the coordinate-alignment pitfalls of building a config
-    independently from the scene it describes.  On top of that:
-
-    - **Species recovery** from ``scene[band].attrs["adjeff:species"]``
-      (written by :func:`load_scene`) when *species* is ``None``.
-    - **Spatial aggregation** (``aggregate=True``) to reduce all fields to
-      scalars via ``.mean()``, useful when a single representative
-      atmospheric state is needed.
-    - **Digitisation** (``n_bins``) of ``aot`` and ``h``, which cuts the
-      number of distinct atmospheric states to simulate.
+    """Return the configs of the atmosphere and geometry held by ``scene[band]``.
 
     Parameters
     ----------
-    scene : ImageDict
-        Scene produced by :func:`load_scene` or another loader.
-    band : SensorBand
-        Band from which to read the parameters.
     aggregate : bool, optional
-        Reduce every field to its spatial mean.  Incompatible with *n_bins*.
-    n_bins : int or None, optional
-        Digitise ``aot`` and ``h`` to *n_bins* unique values before building
-        the config, cutting the number of distinct Smart-G runs.  Incompatible
-        with *aggregate*.
+        Reduce every field to its mean; exclusive with *n_bins*.
     species : dict[str, float] or None, optional
-        Aerosol species mix.  Resolution order: argument → attrs → default.
+        Species; else those stored by :func:`load_scene`, else sulphate.
 
-    Returns
-    -------
-    FullConfig
+    The other parameters are those of the module docstring.
 
     Raises
     ------
     MissingVariableError
-        If any required variable is absent from ``scene[band]``.
+        If ``scene[band]`` lacks one of the fields.
+    ConfigurationError
+        If both *aggregate* and *n_bins* are given.
     """
     from adjeff.exceptions import ConfigurationError
 
@@ -892,47 +619,31 @@ def fit_psf(
     cache: CacheStore | None = None,
     device: str = "cuda",
 ) -> xr.DataTree:
-    """Fit a PSF model for one or more bands in one call.
+    """Fit a *psf_type* per band on disk scenes, and return the frozen tree.
 
-    Wraps the full pipeline: build disk training scenes → forward pipeline
-    → instantiate model → run optimiser stages → return frozen
-    PSF tree.
-
-    Configuration is derived from ``bands[0]`` via :func:`load_config`
-    with ``aggregate=True``.
+    The disk scenes are simulated with the mean atmosphere and geometry
+    of ``scene[bands[0]]``, then :func:`~adjeff.optim.fit` runs.
 
     Parameters
     ----------
-    scene : ImageDict
-        Reference scene with atmospheric and geometric fields.
-    bands : list[SensorBand]
-        Bands for which to fit the PSF.
     psf_type : type[PSFModule]
-        Analytical PSF class (e.g. :class:`~adjeff.core.KingPSF`).
+        PSF, e.g. :class:`~adjeff.core.KingPSF`.
     init_parameters : dict[str, float]
-        Initial parameter values shared across bands.
+        Initial PSF parameters, shared by the bands.
     model_cls : type[PSFConvModule], optional
-        Inverse model to optimise
-        (default :class:`~adjeff.modules.models.Unif2Surface`).
+        Model fitted, ``Unif2Surface`` by default.
     target_var : str or None, optional
-        Optimisation target variable.  ``None`` → ``model_cls.output_vars[0]``.
+        Variable fitted; the model's output by default.
     train_radii : list[float] or None, optional
-        Disk radii [km] for training scenes (default ``[1, 5, 50]`` km).
-    stages : list[AdamConfig | LBFGSConfig] or None, optional
-        Optimiser stages.  ``None`` → Adam (20 steps) + L-BFGS (30 steps).
+        Disk radii [km], those of the manuscript by default.
+    stages : list[OptimizerConfig] or None, optional
+        Optimiser stages, :func:`~adjeff.optim.default_stages` by default.
     res_km : float or None, optional
-        PSF grid pixel size [km].  ``None`` → inferred from *scene[bands[0]]*.
+        Pixel size [km], that of the scene by default.
     n_train : int or None, optional
-        PSF grid side in pixels for training (default 1999, must be odd).
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-    device : str, optional
-        PyTorch device (default ``"cuda"``).
+        Grid side of the disk scenes and PSFs, 1999 by default.
 
-    Returns
-    -------
-    xr.DataTree
-        Frozen PSF tree with one optimised kernel per band.
+    The other parameters are those of the module docstring.
     """
     # Read off the class, so the role rather than any instance's slot.
     _target_var: str = target_var or model_cls._output_vars[0]
@@ -981,44 +692,28 @@ def apply_psf(
     res_km: float | None = None,
     device: str = "cuda",
 ) -> ImageDict:
-    """Apply a frozen PSF tree to a scene to predict the output variable.
+    """Return *scene* with the output of *model_cls* applied with *tree*.
 
-    Two modes:
-
-    - **Direct** (``n=None``): wraps *tree* in a model and applies it
-      as-is.  The kernel size equals the one used during training.
-    - **Rebuild** (``n`` provided): reconstructs the PSF on an *n*×*n* grid
-      from the stored parameters, then applies it.  Requires *psf_type*.
+    The kernels of *tree* are used as they are, or, given *n*, rebuilt
+    as *psf_type* on an ``n × n`` grid from the parameters it stores.
 
     Parameters
     ----------
-    scene : ImageDict
-        Scene containing the variables required by *model_cls*.
     tree : xr.DataTree
-        Frozen PSF tree, typically returned by :func:`fit_psf`.
-    band : SensorBand
-        Band to apply.
+        Frozen PSF tree, e.g. from :func:`fit_psf`.
     model_cls : type[PSFConvModule], optional
-        Model class (default :class:`~adjeff.modules.models.Unif2Surface`).
+        Model applied, ``Unif2Surface`` by default.
     psf_type : type[PSFModule] or None, optional
-        PSF class for rebuild mode.  Required when *n* is provided.
-    n : int or None, optional
-        Rebuild the PSF on an *n*×*n* grid (must be odd).
+        PSF to rebuild; required with *n*.
     res_km : float or None, optional
-        Pixel size [km] for the rebuild grid.  ``None`` → inferred from
-        *scene[band]*.
-    device : str, optional
-        PyTorch device (default ``"cuda"``).
+        Pixel size of the rebuilt PSF [km], that of the scene by default.
 
-    Returns
-    -------
-    ImageDict
-        Copy of *scene* enriched with the model's output variable.
+    The other parameters are those of the module docstring.
 
     Raises
     ------
-    MissingVariableError
-        If *n* is provided without *psf_type*.
+    ConfigurationError
+        If *n* is given without *psf_type*.
     """
     from adjeff.exceptions import ConfigurationError
 
@@ -1052,34 +747,10 @@ def sample_psf_atm_from_scene(
     res_km: float | None = None,
     cache: CacheStore | None = None,
 ) -> xr.DataTree:
-    """Sample the atmospheric PSF for a given scene.
+    """Return :func:`sample_psf_atm` of *band*, at the mean state of *scene*.
 
-    Derives configuration from *scene* via :func:`load_config` with
-    ``aggregate=True`` (the PSF sampler requires scalar geometric parameters).
-
-    Parameters
-    ----------
-    scene : ImageDict
-        Reference scene with atmospheric and geometric fields for *band*.
-    band : SensorBand
-        Band of interest.
-    n : int, optional
-        PSF grid side in pixels (default 1999, must be odd).
-    remove_rayleigh : bool, optional
-        Suppress Rayleigh scattering (default ``False``).
-    afgl_type : str, optional
-        AFGL atmosphere profile (default ``"afgl_exp_h8km"``).
-    n_ph : int, optional
-        Photon count per Smart-G run (default ``1e6``).
-    res_km : float or None, optional
-        Pixel size [km].  ``None`` → inferred from *scene[band]*.
-    cache : CacheStore or None, optional
-        Shared on-disk cache (default ``None``).
-
-    Returns
-    -------
-    xr.DataTree
-        Frozen PSF tree with one ``kernel`` for *band*.
+    *res_km* defaults to the pixel size of the scene; the other
+    parameters are those of the module docstring.
     """
     cfg = load_config(scene, band, aggregate=True)
     _res_km: float = res_km or _res_from_scene(scene, band)

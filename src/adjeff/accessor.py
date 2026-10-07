@@ -1,8 +1,9 @@
-"""Define the xarray DataArray accessor for adjeff.
+"""The ``.adjeff`` accessor of DataArrays.
 
-Registers the ``adjeff`` accessor on ``xr.DataArray`` only. All metadata and
-radial-analysis utilities operate directly on the array — no ``var`` argument,
-no Dataset indirection.
+Classes
+-------
+    AdjeffDataArrayAccessor
+        adjeff metadata, grid, radial analysis and tensor conversion.
 """
 
 from __future__ import annotations
@@ -22,23 +23,14 @@ from .utils.radial import (
 
 @xr.register_dataarray_accessor("adjeff")  # type: ignore[no-untyped-call]
 class AdjeffDataArrayAccessor:
-    """Adjeff-specific utilities on :class:`xr.DataArray`.
+    """``da.adjeff``: adjeff utilities on a DataArray.
 
-    Available on every DataArray via ``da.adjeff.<method>()``.
-
-    **Metadata** — read adjeff attributes stored on the DataArray:
-    :meth:`kind`, :meth:`is_analytical`, :meth:`model`,
-    :meth:`params`, :meth:`band`.
-
-    **Spatial** — pixel size and count inferred from coordinates:
-    :attr:`res`, :attr:`n`.
-
-    **Radial analysis** — convert a 2-D image to a radial profile or
-    reconstruct a field from a profile:
-    :meth:`radial`, :meth:`transect`, :meth:`to_field`.
-
-    **Tensor / quantisation** — convert to PyTorch or discretise:
-    :meth:`to_tensor`, :attr:`dists`, :meth:`digitize`.
+    - Metadata: :meth:`kind`, :meth:`is_analytical`, :meth:`model`,
+      :meth:`params`, :meth:`band_id`.
+    - Grid: :attr:`res`, :attr:`n`, :attr:`dists`.
+    - Radial analysis: :meth:`radial`, :meth:`transect`, :meth:`to_field`.
+    - Dimensions: :meth:`tidy`, :meth:`untidy`.
+    - Conversion: :meth:`to_tensor`, :meth:`digitize`.
     """
 
     def __init__(self, da: xr.DataArray) -> None:
@@ -65,12 +57,7 @@ class AdjeffDataArrayAccessor:
         return self._da.attrs.get("adjeff:params")
 
     def band_id(self) -> str | None:
-        """Return the band id this array was produced for, or None.
-
-        The id rather than the :class:`~adjeff.core.SensorBand` itself:
-        the attribute has to survive a zarr round-trip, and an enum is
-        not JSON serialisable.
-        """
+        """Return the ``band`` attribute, a band id, or None if absent."""
         band_id = self._da.attrs.get("band")
         return str(band_id) if band_id is not None else None
 
@@ -79,15 +66,7 @@ class AdjeffDataArrayAccessor:
     # ------------------------------------------------------------------
 
     def _x_coord_name(self) -> str:
-        """Return the name of the x spatial coordinate.
-
-        Tries ``"x"`` first, then ``"x_psf"`` as a fallback for PSF kernels.
-
-        Raises
-        ------
-        AdjeffAccessorError
-            If neither ``"x"`` nor ``"x_psf"`` is present in the coordinates.
-        """
+        """Return ``"x"``, or ``"x_psf"`` for a kernel; raise if neither."""
         for name in ("x", "x_psf"):
             if name in self._da.coords:
                 return name
@@ -121,10 +100,7 @@ class AdjeffDataArrayAccessor:
         max_gap: float | None = None,
         symmetric: bool = False,
     ) -> xr.DataArray:
-        """Radial profile of this DataArray.
-
-        See :func:`adjeff.analysis.radial_profile`, which this spells.
-        """
+        """See :func:`adjeff.analysis.radial_profile`."""
         return radial_profile(
             self._da,
             stat,
@@ -142,47 +118,18 @@ class AdjeffDataArrayAccessor:
         center: tuple[float, float] | None = None,
         n_points: int | None = None,
     ) -> xr.DataArray:
-        """Sample values along a line through the centre at an azimuth.
-
-        See :func:`adjeff.analysis.transect`, which this spells.
-        """
+        """See :func:`adjeff.analysis.transect`."""
         return transect(self._da, angle, center, n_points)
 
     def to_tensor(self) -> torch.Tensor:
-        """Convert this DataArray to a float32 :class:`torch.Tensor`.
-
-        Returns
-        -------
-        torch.Tensor
-            Float32 tensor with the same shape as this DataArray.
-        """
+        """Return the values as a float32 tensor of the same shape."""
         return torch.from_numpy(self._da.values.astype(np.float32))
 
     def tidy(self) -> xr.DataArray:
         """Turn every length-one dimension into a scalar coordinate.
 
-        A scalar in a configuration is coerced to an array of length one,
-        so an output carries an ``aot``, ``rh``, ``h`` and ``href``
-        dimension even when a single atmospheric state was simulated.
-        This peels them off while keeping the values, so the array still
-        says which state produced it.
-
-        Selecting one value of a swept parameter needs no such thing:
-        ``da.sel(aot=0.4)`` already removes the dimension and keeps the
-        coordinate.  This is for the parameters that were never swept.
-
-        Returns
-        -------
-        xr.DataArray
-            The same data, with fewer dimensions and the same coordinates.
-
-        Notes
-        -----
-        A tidied array is recombined with :func:`xarray.concat`, which
-        promotes the scalar coordinate back to a dimension.  It is not
-        recombined with :func:`xarray.merge` or
-        :func:`xarray.combine_by_coords`, which need a dimension to align
-        on: call :meth:`untidy` first.
+        Recombine with :func:`xarray.concat`; call :meth:`untidy` before
+        :func:`xarray.merge` or :func:`xarray.combine_by_coords`.
 
         Examples
         --------
@@ -200,21 +147,9 @@ class AdjeffDataArrayAccessor:
         return self._da.squeeze(singleton, drop=False)
 
     def untidy(self, *names: str) -> xr.DataArray:
-        """Turn scalar coordinates back into dimensions of length one.
+        """Turn the scalar coordinates *names*, all by default, back into dims.
 
-        The inverse of :meth:`tidy`, needed before an alignment that
-        works on dimensions rather than on values.
-
-        Parameters
-        ----------
-        *names : str
-            Coordinates to expand.  Defaults to every scalar coordinate
-            that is not already a dimension.
-
-        Returns
-        -------
-        xr.DataArray
-            The same data, with one dimension per named coordinate.
+        The inverse of :meth:`tidy`.
         """
         wanted = list(names) or [
             str(name)
@@ -227,37 +162,16 @@ class AdjeffDataArrayAccessor:
 
     @property
     def dists(self) -> torch.Tensor:
-        """Per-pixel radial distances as a float32 :class:`torch.Tensor`.
-
-        The distances are computed from the spatial coordinates relative to
-        the array centre. The returned tensor has shape ``(ny, nx)``.
-
-        Returns
-        -------
-        torch.Tensor
-            Float32 tensor of shape ``(ny, nx)``.
-        """
+        """Distance of each pixel to the centre, as a float32 ``(ny, nx)`` tensor."""
         rr_np, _ = radial_distances(self._da, center=None)
         shape = (self._da.shape[-2], self._da.shape[-1])
         return torch.from_numpy(rr_np.reshape(shape))
 
     def digitize(self, n_bins: int) -> xr.DataArray:
-        """Quantise the field into *n_bins* discrete levels.
+        """Return the field snapped to the nearest of *n_bins* even levels.
 
-        Levels are evenly spaced from the field minimum to the field
-        maximum.  Each pixel is mapped to the nearest level, producing
-        a DataArray with at most *n_bins* distinct values.
-
-        Parameters
-        ----------
-        n_bins : int
-            Number of discrete output levels.
-
-        Returns
-        -------
-        xr.DataArray
-            Quantised DataArray with the same shape, dims, coords, and
-            attrs as the original.
+        Levels span the field's minimum to maximum; dims, coords and
+        attrs are kept.
         """
         data = np.asarray(self._da.data)
 
@@ -274,8 +188,5 @@ class AdjeffDataArrayAccessor:
         )
 
     def to_field(self, target_ds: xr.Dataset) -> xr.DataArray:
-        """Reconstruct a field from this radial profile.
-
-        See :func:`adjeff.analysis.to_field`, which this spells.
-        """
+        """See :func:`adjeff.analysis.to_field`."""
         return to_field(self._da, target_ds)

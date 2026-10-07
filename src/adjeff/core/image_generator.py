@@ -161,43 +161,27 @@ def gaussian_image_dict(
     n: int | dict[SensorBand, int] | None = None,
     analytical: bool = True,
 ) -> ImageDict:
-    """Create an ImageDict with a Gaussian spatial pattern.
+    """Return a scene holding an isotropic Gaussian centred on the origin.
 
-    The spatial grid resolution is defined from the band resolution (e.g.
-    10 m, 20 m for Sentinel-2 bands). The generated field follows a 2D
-    isotropic Gaussian centered at (0, 0):
-
-    rho(x, y) = rho_min + (rho_max - rho_min) * exp(-(x^2 + y^2) / sigma^2)
+    ``rho = rho_min + (rho_max - rho_min) * exp(-(x² + y²) / (2 sigma²))``
 
     Parameters
     ----------
     sigma : float
         Standard deviation [km].
-    res_km : float | dict[SensorBand, float]
-        Pixel resolution [km]. Scalar or per-band mapping.
-    rho_min : float, optional
-        Minimum reflectance value, by default 0.0.
-    rho_max : float, optional
-        Maximum reflectance value, by default 1.0.
-    bands : list of SensorBand, optional
-        List of spectral bands to generate, by default [S2Band.B02].
+    res_km : float or dict[SensorBand, float]
+        Pixel size [km], for all bands or per band.
+    rho_min, rho_max : float, optional
+        Background and peak reflectance, 0 and 1 by default.
+    bands : list[SensorBand], optional
+        Bands to generate, ``[S2Band.B02]`` by default.
     var : str, optional
-        Name of the variable stored in the Dataset, by default "rho_s".
-    extent_km : float | dict[SensorBand, float] | None
-        Physical extent of the image [km]. Scalar or per-band mapping.
-        Mutually exclusive with ``n``.
-    n : int | dict[SensorBand, int] | None
-        Number of pixels along one dimension. Scalar or per-band mapping.
-        Mutually exclusive with ``extent_km``.
-    analytical : bool
-        Whether to register this field as analytical or not, default to True.
-
-    Returns
-    -------
-    ImageDict
-        Dictionary mapping each band to its corresponding Dataset.
-        The Gaussian is centered at (0, 0) and radially symmetric.
-
+        Variable name, ``"rho_s"`` by default.
+    extent_km, n : float or int, or per-band dict, optional
+        Image side [km] or pixels per side; exactly one is required.
+    analytical : bool, optional
+        Record the model and parameters, so that samplers can redraw the
+        field exactly.  True by default.
     """
     return _analytical_image_dict(
         lambda coords: _gaussian_data(coords, sigma, rho_min, rho_max),
@@ -223,44 +207,10 @@ def disk_image_dict(
     n: int | dict[SensorBand, int] | None = None,
     analytical: bool = True,
 ) -> ImageDict:
-    """Create an ImageDict with a disk-shaped spatial pattern.
+    """Return a scene holding a uniform disk centred on the origin.
 
-    The spatial grid resolution is defined from the band resolution (e.g.
-    10 m, 20 m for Sentinel-2 bands). The generated field is a binary disk
-    centered at (0, 0):
-
-    rho(x, y) = rho_max  if sqrt(x^2 + y^2) <= radius
-                rho_min  otherwise
-
-    Parameters
-    ----------
-    radius : float
-        Radius of the disk [km].
-    res_km : float | dict[SensorBand, float]
-        Pixel resolution [km]. Scalar or per-band mapping.
-    rho_min : float, optional
-        Background reflectance, by default 0.0.
-    rho_max : float, optional
-        Reflectance value inside the disk, by default 1.0.
-    bands : list of SensorBand, optional
-        List of spectral bands to generate, by default [S2Band.B02].
-    var : str, optional
-        Name of the variable stored in the Dataset, by default "rho_s".
-    extent_km : float | dict[SensorBand, float] | None
-        Physical extent of the image [km]. Scalar or per-band mapping.
-        Mutually exclusive with ``n``.
-    n : int | dict[SensorBand, int] | None
-        Number of pixels along one dimension. Scalar or per-band mapping.
-        Mutually exclusive with ``extent_km``.
-    analytical : bool
-        Whether to register this field as analytical or not, default to True.
-
-    Returns
-    -------
-    ImageDict
-        Dictionary mapping each band to its corresponding Dataset.
-        The disk is centered at (0, 0) and has a sharp boundary.
-
+    ``rho = rho_max`` within *radius* [km], ``rho_min`` outside.  The
+    other parameters are those of :func:`gaussian_image_dict`.
     """
     return _analytical_image_dict(
         lambda coords: _disk_data(coords, radius, rho_min, rho_max),
@@ -283,36 +233,10 @@ def random_image_dict(
     extent_km: float | dict[SensorBand, float] | None = None,
     n: int | dict[SensorBand, int] | None = None,
 ) -> ImageDict:
-    """Create an ImageDict filled with uniform random float32 data.
+    """Return a scene of uniform random float32 *variables* in ``[0, 1)``.
 
-    Each band gets a Dataset whose DataArrays have dims ``["y", "x"]``
-    and shape ``(H, W)``.  All *variables* are created for every band.
-
-    Parameters
-    ----------
-    bands : list of SensorBand
-        List of spectral bands to generate.
-    variables : list[str]
-        Names of the variables stored in each Dataset.
-    res_km : float | dict[SensorBand, float]
-        Pixel resolution [km]. Scalar or per-band mapping.
-    seed : int | None
-        Optional RNG seed for reproducible data.  Required for cache
-        hits across separate runs — without a fixed seed the input hash
-        changes every time, guaranteeing a cache miss.
-    extent_km : float | dict[SensorBand, float] | None
-        Physical extent of the image [km]. Scalar or per-band mapping.
-        Mutually exclusive with ``n``.
-    n : int | dict[SensorBand, int] | None
-        Number of pixels along one dimension. Scalar or per-band mapping.
-        Mutually exclusive with ``extent_km``.
-
-    Returns
-    -------
-    ImageDict
-        Dictionary mapping each band to its corresponding Dataset,
-        filled with uniform random float32 values in ``[0, 1)``.
-
+    Without a *seed*, every run hashes differently and misses the cache.
+    The other parameters are those of :func:`gaussian_image_dict`.
     """
     rng = np.random.default_rng(seed)
     logger.debug(

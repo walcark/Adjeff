@@ -4,8 +4,10 @@ Functions
 ---------
     encircled_energy
         Fraction of PSF energy enclosed within each radius.
-    encircled_radii
+    encircled_radius
         Radius enclosing a given fraction of PSF energy.
+    encircled_radii
+        Same, for many kernels on one grid.
     fwhm
         Full width at half maximum of the PSF.
     mtf
@@ -37,11 +39,7 @@ __all__ = [
 def _as_grid(
     kernel: xr.DataArray,
 ) -> tuple[RadialBinning, torch.Tensor, float]:
-    """Return the binning of *kernel*'s grid, with values and pixel size.
-
-    The values come back clamped to non-negative, which is what every
-    energy measure below assumes.
-    """
+    """Return the binning of *kernel*'s grid, its values (>= 0) and pixel size."""
     values = torch.from_numpy(np.asarray(kernel.values, dtype=np.float32)).clamp(
         min=0.0
     )
@@ -58,37 +56,21 @@ def _as_grid(
 def encircled_energy(
     kernel: xr.DataArray, *, normalize: Literal["grid", "plane"] = "grid"
 ) -> xr.DataArray:
-    """Return the fraction of a kernel's energy within each radius.
+    """Return the energy fraction enclosed by each radius, on dim ``"r"``.
 
     Parameters
     ----------
     kernel : xr.DataArray
-        Square 2-D kernel, with either ``x_psf`` or ``x`` coordinates.
+        Square 2-D kernel, on ``x_psf`` or ``x``.
     normalize : {"grid", "plane"}, optional
-        What the curve is a fraction *of* (default ``"grid"``).
-
-        - ``"grid"`` divides by the energy the grid holds, so the curve
-          reaches one at its edge.  This is the kernel as sampled, and
-          as convolved.
-        - ``"plane"`` divides by the integral of the fitted profile over
-          the whole plane, so the curve stops at the fraction the grid
-          actually captured.  Needs an analytical kernel carrying its
-          model and parameters.
-
-    Returns
-    -------
-    xr.DataArray
-        Cumulated energy against radius, with dim ``"r"``, starting at
-        zero.  The radii are the bin edges: each value is the energy
-        enclosed by that radius, which is what makes the curve
-        invertible.
+        Divide by the energy on the grid (reaching 1 at its edge), or
+        by the plane integral of the fitted profile (analytical kernels
+        only).  ``"grid"`` by default.
 
     Raises
     ------
     ConfigurationError
-        With ``normalize="plane"`` on a kernel that carries no
-        provenance, or whose profile has no finite energy over the
-        plane.
+        For ``"plane"`` on a kernel with no finite plane energy.
     """
     grid, values, _ = _as_grid(kernel)
     curve = grid.cdf(values).numpy()
@@ -107,26 +89,10 @@ def encircled_radius(
     *,
     normalize: Literal["grid", "plane"] = "grid",
 ) -> float:
-    """Return the radius encircling *fraction* of a kernel's energy.
+    """Return the radius enclosing *fraction* of a kernel's energy.
 
-    Parameters
-    ----------
-    kernel : xr.DataArray
-        Square 2-D kernel.
-    fraction : float, optional
-        Energy fraction, between zero and one.
-    normalize : {"grid", "plane"}, optional
-        Fraction of what; see :func:`encircled_energy` (default
-        ``"grid"``).
-
-    Returns
-    -------
-    float
-        Radius, in the unit of the kernel's coordinates.  ``nan`` when
-        *fraction* lies above what the grid captured, which
-        ``normalize="plane"`` makes possible: a fitted King at an optical
-        thickness of 0.1 never reaches 0.99 of its plane energy inside a
-        240 km domain.
+    *normalize* is that of :func:`encircled_energy`.  ``nan`` when the
+    grid holds less than *fraction*, which ``"plane"`` allows.
     """
     grid, values, _ = _as_grid(kernel)
     curve = grid.cdf(values)
@@ -147,24 +113,10 @@ def encircled_radii(
     res: float,
     fractions: list[float] | None = None,
 ) -> dict[str, np.ndarray]:
-    """Return the encircled-energy radii of many kernels on one grid.
+    """Return the encircled radii of *kernels*, all on one ``n × n`` grid.
 
-    Parameters
-    ----------
-    kernels : list[torch.Tensor]
-        Square kernels, all on the same grid.
-    n : int
-        Grid side in pixels.
-    res : float
-        Pixel size.
-    fractions : list[float] or None, optional
-        Energy fractions.  Defaults to ``[0.10, 0.50, 0.99]``.
-
-    Returns
-    -------
-    dict[str, np.ndarray]
-        One array per fraction, keyed ``"EE10%"``, ``"EE50%"`` and so on,
-        in the order the kernels were given.
+    *res* is the pixel size.  One array per fraction, ``[0.10, 0.50, 0.99]``
+    by default, keyed ``"EE10%"``…, in the order of *kernels*.
     """
     if fractions is None:
         fractions = [0.10, 0.50, 0.99]
@@ -183,18 +135,9 @@ def encircled_radii(
 
 
 def fwhm(kernel: xr.DataArray) -> float:
-    """Return the full width at half maximum of a kernel.
+    """Return the full width at half maximum of a kernel peaking at its centre.
 
-    Parameters
-    ----------
-    kernel : xr.DataArray
-        Square 2-D kernel, assumed to peak at its centre.
-
-    Returns
-    -------
-    float
-        Width, in the unit of the kernel's coordinates. ``nan`` when the
-        profile never falls to half its peak inside the grid.
+    ``nan`` when the profile stays above half its peak on the grid.
     """
     grid, values, _ = _as_grid(kernel)
     profile = grid.mean(values, fill=0.0).numpy()
@@ -214,23 +157,9 @@ def fwhm(kernel: xr.DataArray) -> float:
 
 
 def mtf(kernel: xr.DataArray) -> xr.DataArray:
-    """Return the modulation transfer function of a kernel.
+    """Return the azimuthally averaged MTF of a kernel, 1 at zero frequency.
 
-    The MTF is the modulus of the Fourier transform of the PSF, normalised
-    to one at zero frequency, averaged over azimuth.
-
-    Parameters
-    ----------
-    kernel : xr.DataArray
-        Square 2-D kernel.
-
-    Returns
-    -------
-    xr.DataArray
-        MTF against spatial frequency, with dim ``"f"`` in cycles per
-        unit of the kernel's coordinates, from zero to the Nyquist
-        frequency. The first sample is the zero frequency, where the
-        MTF is one by construction.
+    On dim ``"f"``, in cycles per coordinate unit, up to Nyquist.
     """
     grid, values, res = _as_grid(kernel)
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(values.numpy())))

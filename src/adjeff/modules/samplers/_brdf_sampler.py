@@ -24,57 +24,24 @@ from ._ensure import ensure_downward
 
 
 class BrdfSampler(AtmoSampler):
-    """A Smart-G sampler over an RTLS surface, normalised by the scene.
+    """AtmoSampler over an RTLS surface, normalised by the scene.
 
-    Declaring one
-    -------------
-    Beyond what :class:`AtmoSampler` asks for, a subclass implements
-    :meth:`_normalise`, which receives the raw sweep output for one band
-    and that band's dataset and returns the 5S term.
-
-    The kernel weights travel as three floats rather than as a built
-    Smart-G surface.  A surface object in ``__init__`` would land in the
-    cache key through :meth:`SceneModule._config_dict`, where nothing
-    guarantees it hashes the same across two processes: two different
-    BRDFs could then share one entry.
+    Subclasses implement :meth:`_normalise`, turning the raw output of
+    one band into its 5S term.  The kernel weights are floats rather
+    than a Smart-G surface, so that they hash reliably in the cache key.
 
     Parameters
     ----------
-    atmo_config : AtmoConfig
-        Atmospheric state parameters.
-    geo_config : GeoConfig
-        Observation geometry.  ``saa`` sets the absolute frame and
-        ``vaa`` the relative azimuth the BRDF responds to.
-    spectral_config : SpectralConfig
-        Spectral bands and wavelengths to compute.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
     k0 : float, optional
-        Spectral albedo of the isotropic RTLS kernel.  ``k1p = k2p = 0``
-        with ``k0 = 1`` is a Lambertian surface of albedo one, which is
-        how the result is checked against the Lambertian samplers.
-    k1p : float, optional
-        Weight of the geometric kernel, relative to the isotropic one.
-    k2p : float, optional
-        Weight of the volumetric kernel, relative to the isotropic one.
-    afgl_type : str, optional
-        AFGL standard atmosphere profile identifier.
-    n_ph : int or None, optional
-        Photons per Smart-G call and per sensor.  ``None`` uses
-        ``default_n_ph``.
+        Albedo of the isotropic kernel, 1 by default.  ``k0 = 1`` with
+        ``k1p = k2p = 0`` is a white Lambertian surface.
+    k1p, k2p : float, optional
+        Geometric and volumetric kernel weights, relative to *k0*.
     n_ph_tdif_down : int or None, optional
-        Photons for ``tdif_down`` when the scene does not already carry
-        it.  ``None`` matches *n_ph*: the result is a ratio, so its
-        relative error is the quadrature sum of the two, and precision
-        spent on only one side is wasted.
-    cache : CacheStore or None, optional
-        Result cache; ``None`` disables caching.
-    batch_size : int, optional
-        Atmospheric states per Smart-G call.
-    dedup : bool, optional
-        Collapse repeated states before calling.
-    rename : dict[str, str] or None, optional
-        Slot names to read and write instead of the declared roles.
+        Photons for ``tdif_down`` when the scene lacks it; *n_ph* for
+        ``None``, since the ratio's error depends on both.
+
+    The other parameters are those of :class:`AtmoSampler`.
     """
 
     #: Reused when the scene carries them, computed otherwise.  Keyed so

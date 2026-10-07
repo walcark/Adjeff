@@ -59,22 +59,10 @@ def psf_tree(
     kernels: dict[SensorBand, xr.DataArray],
     params: dict[SensorBand, dict[str, xr.DataArray]] | None = None,
 ) -> xr.DataTree:
-    """Build a frozen PSF tree from per-band kernels.
+    """Return the tree of per-band *kernels*, with their fitted *params*.
 
-    Parameters
-    ----------
-    kernels : dict[SensorBand, xr.DataArray]
-        One kernel per band, with dims ``y_psf`` and ``x_psf`` at minimum.
-        Extra dimensions produced by a per-combo optimisation are kept.
-    params : dict[SensorBand, dict[str, xr.DataArray]] or None
-        Fitted parameter values per band, e.g.
-        ``{B02: {"sigma": DataArray(aot)}}``.  Stored beside the kernel
-        under their own names and read back by :func:`psf_params`.
-
-    Returns
-    -------
-    xr.DataTree
-        One group per band, named after ``band.id``.
+    Kernels keep any sweep dims beside ``(y_psf, x_psf)``; *params* is
+    e.g. ``{B02: {"sigma": DataArray(aot)}}``.
     """
     groups: dict[str, xr.Dataset] = {}
     for band, kernel in kernels.items():
@@ -86,21 +74,7 @@ def psf_tree(
 
 
 def freeze(modules: dict[SensorBand, PSFModule]) -> xr.DataTree:
-    """Capture the current kernels of live PSF modules into a tree.
-
-    This is the export step after training: the returned tree no longer
-    tracks gradients and can be written to zarr.
-
-    Parameters
-    ----------
-    modules : dict[SensorBand, PSFModule]
-        Live modules, typically the ones a model was optimising.
-
-    Returns
-    -------
-    xr.DataTree
-        Frozen kernels reflecting the current parameter values.
-    """
+    """Return the tree of the current kernels of live *modules*."""
     return psf_tree({band: psf.to_dataarray() for band, psf in modules.items()})
 
 
@@ -134,24 +108,7 @@ def psf_kernel(tree: xr.DataTree, band: SensorBand) -> xr.DataArray:
 
 
 def psf_params(tree: xr.DataTree, band: SensorBand) -> dict[str, xr.DataArray]:
-    """Return the fitted parameter values stored for *band*.
-
-    Every variable of the band group except the kernel is a parameter.
-    Returns an empty dict for a non-parametric PSF.
-
-    Parameters
-    ----------
-    tree : xr.DataTree
-        Frozen PSF tree.
-    band : SensorBand
-        Band of interest.
-
-    Returns
-    -------
-    dict[str, xr.DataArray]
-        ``{name: value}``, the value carrying whatever sweep dimensions
-        the optimisation produced.
-    """
+    """Return the fitted parameters of *band*, with their sweep dims; ``{}`` if none."""
     dataset = tree[band.id].ds
     return {
         str(name): dataset[name] for name in dataset.data_vars if name != PSF_KERNEL
@@ -164,12 +121,7 @@ def tree_band_ids(tree: xr.DataTree) -> list[str]:
 
 
 def write_band(dest: Path, dataset: xr.Dataset) -> None:
-    """Write one band group to zarr, chunked one combo at a time.
-
-    Used by the optimiser to flush each band as it is reconstructed
-    rather than holding every kernel in RAM at once.  Chunk size 1 on
-    every non-spatial dimension keeps a single-combo read cheap.
-    """
+    """Write one band group to zarr at *dest*, one chunk per combo."""
     dims = {str(d) for da in dataset.data_vars.values() for d in da.dims}
     chunks = {d: 1 if d not in _SPATIAL_DIMS else -1 for d in dims}
     dataset.drop_encoding().chunk(chunks).to_zarr(dest, mode="w")
