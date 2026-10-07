@@ -1,4 +1,10 @@
-"""Shared optimizer configuration dataclass."""
+"""Settings shared by every optimisation stage.
+
+Classes
+-------
+    OptimizerConfig
+        Step bounds, stopping tolerance and loss of a stage.
+"""
 
 from __future__ import annotations
 
@@ -9,18 +15,18 @@ from .loss import Loss
 
 @dataclass(frozen=True)
 class OptimizerConfig:
-    """Shared configuration for all PSF optimizer stages.
+    """Settings shared by every optimisation stage.
 
     Parameters
     ----------
     min_steps : int
-        Minimum steps before early stopping is allowed.
+        Steps run before early stopping may trigger.
     max_steps : int
-        Hard upper bound on the number of steps.
+        Maximum number of steps.
     loss_relative_tolerance : float
-        Stop when ``|Δloss / previous_loss| ≤ loss_relative_tolerance``.
+        Stop once ``|Δloss / loss|`` falls below it.
     loss : Loss
-        Loss function instance.
+        Loss the stage minimises.
     """
 
     min_steps: int

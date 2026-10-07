@@ -1,4 +1,12 @@
-"""Fit a model's PSF over every atmospheric combo of a training set."""
+"""Fit a model's PSF, band by band, over every atmospheric combo.
+
+Functions
+---------
+    fit
+        Fit every PSF and return the frozen tree.
+    default_stages
+        Adam warm-up then L-BFGS refinement.
+"""
 
 from __future__ import annotations
 
@@ -110,16 +118,11 @@ def fit(
 
     combos = list(iterate_broadcasted_dims(train_images, inputs, target, bands[0]))
 
-    # The training data was already moved to *device*, but the model was
-    # not, so every kernel was built on the CPU and copied across the bus
-    # once per landscape per step.  Moving the model carries its
-    # parameters and the radial grid buffer with it.
+    # Model and data on the same device: kernels are built there.
     model.to(device)
     initial = save_all_params(model)
 
-    # Kernels are captured as each combo finishes rather than replayed
-    # from a parameter snapshot afterwards: the snapshot only existed to
-    # rebuild what the model already held at that moment.
+    # Kernels are captured as each combo finishes.
     kernels: dict[SensorBand, list[tuple[dict[str, float], xr.DataArray]]] = {
         band: [] for band in bands
     }
@@ -222,11 +225,8 @@ def _stack(
             array = array.expand_dims({dim: [value]})
         datasets.append(array.to_dataset(name=name))
     combined: xr.DataArray = xr.combine_by_coords(datasets, combine_attrs="drop")[name]
-    # Attributes are dropped because `adjeff:params` differs from one
-    # combo to the next and a single value would be wrong for all but
-    # one.  The model name does not: it is the same kernel family
-    # throughout, and it is what tells a reader, or a plane
-    # normalisation, which profile these samples came from.
+    # Attrs are dropped, since adjeff:params differs per combo; the model
+    # name is shared and restored, as plane normalisation needs it.
     models = {
         array.attrs["adjeff:model"]
         for _, array in pieces

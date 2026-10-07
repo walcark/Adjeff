@@ -1,4 +1,10 @@
-"""Loss computation for PSF optimisation."""
+"""Loss of a model over a training set.
+
+Classes
+-------
+    Loss
+        Weighted sum of a metric over the samples, optionally masked.
+"""
 
 from dataclasses import dataclass
 from typing import Callable
@@ -14,24 +20,20 @@ from .training_set import TrainingSample, TrainingSet
 
 @dataclass
 class Loss:
-    """Weighted loss over a :class:`TrainingSet`.
+    """Weighted sum of a metric over a :class:`TrainingSet`.
 
     Parameters
     ----------
     metric : Metric
-        Which metric to use, e.g. ``Metric.RMSE_RAD``.
+        Metric to use, e.g. ``Metric.RMSE_RAD``.
     mask_on : str, float or None, optional
-        Which pixels the RAD metrics take part in.  Ignored by the plain
-        metrics, which mask on their own residual.
+        Pixels the metric is computed on:
 
-        - a **variable name** (default ``"rho_unif"``): keep the pixels
-          within the 99% radial energy of that input.  Any name the
-          training set carries is accepted.
-        - a **radius in km**: keep a disc of that radius.  Unlike the
-          energy mask, it does not move when the prediction changes,
-          which matters to a quasi-Newton optimiser that assumes a fixed
-          objective.
-        - ``None``: no mask.
+        - a variable name (default ``"rho_unif"``): pixels within the
+          99 % radial energy of that input;
+        - a radius [km]: a fixed disc, which suits L-BFGS better since
+          it does not move with the prediction;
+        - ``None``: every pixel.
     """
 
     metric: Metric

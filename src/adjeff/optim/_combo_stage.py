@@ -1,4 +1,17 @@
-"""Abstract base for single-combo optimization stages."""
+"""Shared machinery of the optimisation stages.
+
+Classes
+-------
+    _ComboStage
+        Abstract stage fitting one band at one atmospheric combo.
+
+Functions
+---------
+    project_all_params
+        Bring every constrained parameter back into its bounds.
+    save_all_params, restore_all_params
+        Snapshot and restore the PSF parameters of a model.
+"""
 
 from __future__ import annotations
 
@@ -14,17 +27,12 @@ from adjeff.modules.scene_module import TrainableSceneModule
 from ._config import OptimizerConfig
 from .training_set import TrainingSet
 
-# ---------------------------------------------------------------------------
-# Logging helpers
-# ---------------------------------------------------------------------------
-
 
 def project_all_params(model: TrainableSceneModule) -> None:
     """Bring every constrained parameter back onto its domain.
 
     Called after each optimiser step: see
-    :meth:`~adjeff.utils.ConstrainedParameter.project` for why a bound
-    enforced only inside the forward pass is not enough.
+    :meth:`~adjeff.utils.ConstrainedParameter.project`.
     """
     for module in cast(nn.Module, model).modules():
         project = getattr(module, "project", None)
@@ -33,20 +41,10 @@ def project_all_params(model: TrainableSceneModule) -> None:
 
 
 def _loss_delta(previous: float, current: float, step: int) -> float | None:
-    """Return the relative loss change in percent, or ``None`` on the first step.
-
-    A number rather than the formatted string it used to be: a log line
-    that carries it as data can be filtered on, plotted, or written out
-    as JSON, which is the whole point of logging key-values.
-    """
+    """Return the relative loss change (%), or ``None`` on the first step."""
     if step == 0 or previous >= float("inf"):
         return None
     return 100.0 * (previous - current) / max(abs(previous), 1e-9)
-
-
-# ---------------------------------------------------------------------------
-# Parameter snapshot helpers
-# ---------------------------------------------------------------------------
 
 
 def save_all_params(
@@ -72,24 +70,17 @@ def restore_all_params(
             p.copy_(saved[band_id][name])
 
 
-# ---------------------------------------------------------------------------
-# Abstract combo stage
-# ---------------------------------------------------------------------------
-
-
 class _ComboStage(abc.ABC):
-    """Abstract base for a single-combo optimization stage.
+    """Abstract stage fitting one band at one atmospheric combo.
 
-    A :class:`_ComboStage` encapsulates the optimization logic for one
-    atmospheric combo ``(aot_i, rh_i, ...)``.  It owns the per-combo state
-    (loss history, best params, step counter) and stopping logic.
-
-    Subclasses implement :meth:`_run_combo`.
+    Subclasses implement :meth:`_run_combo`, calling :meth:`_after_step`
+    after every optimiser step. :meth:`run` leaves the model on the
+    best parameters reached.
 
     Parameters
     ----------
     config : OptimizerConfig
-        Stage-specific configuration (steps, loss, tolerance).
+        Settings of the stage.
     """
 
     def __init__(self, config: OptimizerConfig) -> None:

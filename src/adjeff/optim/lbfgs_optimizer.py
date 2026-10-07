@@ -1,4 +1,12 @@
-"""L-BFGS PSF optimizer stage and convenience optimizer."""
+"""L-BFGS optimisation stage.
+
+Classes
+-------
+    LBFGSConfig
+        Settings of an L-BFGS stage.
+    LBFGSStage
+        Stage running ``torch.optim.LBFGS``, typically as a refinement.
+"""
 
 from __future__ import annotations
 
@@ -29,22 +37,20 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class LBFGSConfig(OptimizerConfig):
-    """Configuration for the L-BFGS optimizer stage.
+    """Settings of an L-BFGS stage, passed to ``torch.optim.LBFGS``.
 
     Parameters
     ----------
-    learning_rate : float
-        Step size passed to ``torch.optim.LBFGS`` (default 1.0).
-    max_iter : int
-        Maximum inner L-BFGS iterations per step (default 20).
-    history_size : int
-        Number of past gradients kept in memory (default 100).
-    tolerance_grad : float
-        Gradient norm tolerance for convergence (default 1e-10).
-    tolerance_change : float
-        Parameter change tolerance (default 1e-12).
-    line_search_fn : str
-        Line-search strategy (default ``"strong_wolfe"``).
+    learning_rate : float, optional
+        Step size, 1 by default.
+    max_iter : int, optional
+        Inner iterations per step, 20 by default.
+    history_size : int, optional
+        Past gradients kept, 100 by default.
+    tolerance_grad, tolerance_change : float, optional
+        Inner convergence tolerances on the gradient and the parameters.
+    line_search_fn : str, optional
+        Line search, ``"strong_wolfe"`` by default.
     """
 
     learning_rate: float = 1.0
@@ -98,14 +104,9 @@ class LBFGSStage(_ComboStage):
                 loss_tensor = opt.step(closure)  # type: ignore[no-untyped-call]
                 project_all_params(model)
             except IndexError:
-                # PyTorch strong-Wolfe line search can raise IndexError when
-                # the bracket collapses on a numerically flat loss surface.
-                # Treat as convergence and exit cleanly.
-                # Two channels on purpose: `warnings` is the public,
-                # catchable signal, but Python shows it once per call
-                # site, which hides how often it happens over a sweep of
-                # thousands of fits.  The log line is the one that counts
-                # them, hence `warning` and not `info`.
+                # The strong-Wolfe bracket collapses on a flat loss: treat it
+                # as convergence.  Logged as well as warned, since a warning
+                # shows only once per call site over a sweep of fits.
                 msg = "L-BFGS line search degenerated, stopping early."
                 logger.warning("fit.linesearch_stalled", detail=msg, step=self.nloop)
                 warnings.warn(msg, OptimizationWarning, stacklevel=2)

@@ -1,15 +1,13 @@
-"""Loss landscape and encircled-energy utilities for PSF parameter spaces.
+"""Loss and encircled energy over a list of PSFs, e.g. a parameter grid.
 
-Both :func:`loss_landscape` and :func:`energy_radius_landscape` accept any
-list of :class:`~adjeff.core._psf.PSFModule` instances: Gaussian, King,
-Voigt, Moffat, or any custom subclass.  The caller is responsible for
-building the parameter grid and reshaping the returned 1-D arrays.
+The caller builds the PSFs and reshapes the 1-D results onto its grid.
 
-:func:`loss_landscape` also accepts any model and any loss.  It used to
-hardcode the convolution of :class:`~adjeff.modules.models.Unif2Surface`
-and the variable names it reads, and to reach inside the loss object for
-its metric and its mask, which made the promise of the paragraph above
-false for everything but that one pair.
+Functions
+---------
+    loss_landscape
+        Loss of each PSF, averaged over the atmospheric combos.
+    energy_radius_landscape
+        Encircled-energy radii of each PSF.
 """
 
 from __future__ import annotations
@@ -37,8 +35,6 @@ from .training_set import (
 
 logger = get_logger(__name__)
 
-#: What `loss_landscape` needs of a loss: to be callable the way `fit`
-#: calls it.  `Loss` satisfies it, and so does anything else.
 LossFn = Callable[
     [Callable[[dict[str, torch.Tensor]], torch.Tensor], list[TrainingSample]],
     torch.Tensor,
@@ -143,8 +139,8 @@ def loss_landscape(
     )
 
     # Transfer all training data to the target device exactly once, before
-    # the PSF loop.  TrainingSet.__iter__ does .to() on every call, which
-    # would otherwise cause N_psf redundant host↔device transfers per tensor.
+    # the PSF loop. TrainingSet.__iter__ does .to() on every call, which
+    # would otherwise cause N_psf redundant host <-> device transfers per tensor.
     prefetched: list[list[TrainingSample]] = []
     for p in combos:
         ts = training_set(

@@ -1,4 +1,20 @@
-"""Metrics and Metric enum for PSF optimisation."""
+"""Loss metrics on tensors, for the training loop.
+
+Every metric takes ``(prediction, reference, dists, mask)`` and works on
+residuals divided by ``max(|reference|)``.
+
+Functions
+---------
+    mae, mse, rmse
+        Uniformly weighted over the domain.
+    mae_rad, mse_rad, rmse_rad
+        Weighted so that every radius carries the same total weight.
+
+Classes
+-------
+    Metric
+        Enum of the six metrics, each member callable.
+"""
 
 from enum import Enum
 from typing import Callable
@@ -13,12 +29,6 @@ MetricFn = Callable[
     [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None],
     torch.Tensor,
 ]
-
-# ---------------------------------------------------------------------------
-# Public metric functions
-# All share the same signature so Metric.__call__ can dispatch uniformly.
-# Non-RAD metrics ignore *mask_tensor*; RAD metrics use it when provided.
-# ---------------------------------------------------------------------------
 
 
 def mae(
@@ -95,15 +105,10 @@ def rmse_rad(
 
 
 def _get_scale(target: torch.Tensor) -> torch.Tensor:
-    """Return the amplitude the residual is expressed against.
+    """Return ``max(|target|)``, the amplitude residuals are divided by.
 
-    The reference alone sets it.  Taking the larger of the two, as this
-    did, made the metric depend on the prediction in two unwanted ways:
-    the scale moved while the optimiser searched, and a masked metric
-    stopped being a function of its own mask.  A prediction that goes
-    wrong far outside the mask raised the scale for everyone, and the
-    error measured on unchanged pixels inside the mask fell by two
-    orders of magnitude.
+    The reference alone sets it, so that the loss neither moves with the
+    prediction nor depends on pixels outside the mask.
     """
     return target.abs().max().clamp(min=torch.finfo(target.dtype).eps)
 
@@ -116,10 +121,10 @@ def _residual(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
 def _domain(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:
     """Return the 0/1 domain *mask_tensor* stands for.
 
-    A float field is a *source*: the domain is the pixels within its 99%
-    radial energy, which is how ``rho_unif`` has always been used here.
-    A boolean tensor is the domain itself, already decided by the caller,
-    which is what a fixed radius amounts to.
+    ``None`` is everything, a boolean tensor is the domain itself, and a float
+    field keeps the pixels within its 99 % radial energy. The domain always
+    comes from the caller: deriving it from the residual let the optimiser
+    shrink its own mask instead of fitting.
     """
     if mask_tensor is None:
         return torch.ones_like(dists)
@@ -131,28 +136,12 @@ def _domain(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tens
 def _flat_weights(
     dists: torch.Tensor, mask_tensor: torch.Tensor | None
 ) -> torch.Tensor:
-    """Return uniform weights over the domain.
-
-    These metrics used to derive their domain from the residual they
-    were measuring, which let the optimiser lower the loss by shrinking
-    its own mask rather than by fitting better.  Measured on the
-    manuscript's landscapes, that collapses the fit: the King core width
-    falls to a thirtieth of its value and the generalisation error grows
-    by a factor 2.6.  The domain now comes from the caller, like it does
-    for the radially weighted metrics.
-    """
+    """Return uniform weights over the domain."""
     return _domain(dists, mask_tensor)
 
 
 def _rad_weights(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch.Tensor:
-    """Return the radial weights, restricted to *mask_tensor*.
-
-    Two kinds of mask are accepted, told apart by their dtype.  A float
-    field is a *source*: the mask keeps the pixels within its 99% radial
-    energy, which is how ``rho_unif`` has always been used here.  A
-    boolean tensor is the mask itself, already decided by the caller,
-    which is what a fixed radius amounts to.
-    """
+    """Return the radial weights, restricted to *mask_tensor*."""
     return radial_weights(dists) * _domain(dists, mask_tensor)
 
 

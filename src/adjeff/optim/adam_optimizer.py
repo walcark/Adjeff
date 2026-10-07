@@ -1,4 +1,12 @@
-"""Adam-based PSF optimizer stage and convenience optimizer."""
+"""Adam optimisation stage.
+
+Classes
+-------
+    AdamConfig
+        Settings of an Adam stage.
+    AdamStage
+        Stage running ``torch.optim.Adam``, typically as a warm-up.
+"""
 
 from __future__ import annotations
 
@@ -27,24 +35,19 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class AdamConfig(OptimizerConfig):
-    """Configuration for the Adam optimizer stage.
+    """Settings of an Adam stage.
 
     Parameters
     ----------
-    lr : float
-        Adam learning rate (default ``1e-2``).
+    lr : float, optional
+        Learning rate, 1e-2 by default.
     """
 
     lr: float = 1e-2
 
 
 class AdamStage(_ComboStage):
-    """Single-combo optimization stage using Adam gradient descent.
-
-    Implements :meth:`_run_combo` with ``torch.optim.Adam``.  Typically
-    used as a warm-up stage before :class:`LBFGSStage`; selected by
-    :func:`~adjeff.optim.fit` for every :class:`AdamConfig` it is given.
-    """
+    """Stage running ``torch.optim.Adam``."""
 
     def __init__(self, config: AdamConfig) -> None:
         super().__init__(config)

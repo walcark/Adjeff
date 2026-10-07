@@ -1,4 +1,21 @@
-"""Set of ImageDict instances used for optimisation."""
+"""Training data, from reference scenes to per-combo tensors.
+
+Classes
+-------
+    TrainingImages
+        Reference scenes and their loss weights.
+    TrainingSet
+        Tensors of every scene at one atmospheric combo.
+    TrainingSample
+        One scene of a TrainingSet.
+
+Functions
+---------
+    iterate_broadcasted_dims
+        Every combo of the non-spatial coordinates of the scenes.
+    training_set
+        TrainingSet of one band at one combo.
+"""
 
 from collections.abc import Generator
 from dataclasses import dataclass, field
@@ -14,19 +31,7 @@ from adjeff.exceptions import ConfigurationError
 
 @dataclass(frozen=True)
 class TrainingSample:
-    """One ``(inputs, target, dist, weight)`` item from a :class:`TrainingSet`.
-
-    Parameters
-    ----------
-    inputs : dict[str, torch.Tensor]
-        Input tensors keyed by variable name (e.g. ``"rho_unif"``).
-    target : torch.Tensor
-        Target tensor (e.g. ``rho_s``).
-    dist : torch.Tensor
-        Radial distance tensor, same spatial shape as *target*.
-    weight : float
-        Per-image loss weight.
-    """
+    """Tensors of one scene at one combo, with its loss weight."""
 
     inputs: dict[str, torch.Tensor]
     target: torch.Tensor
@@ -36,23 +41,17 @@ class TrainingSample:
 
 @dataclass(frozen=True)
 class TrainingSet(Iterable["TrainingSample"]):
-    """Store input, target and distance Tensors for a single training.
+    """Tensors of every scene at one combo, moved to *device* on iteration.
 
     Parameters
     ----------
-    inputs : list[dict[str, torch.Tensor]]
-        Input tensors for each training image.
-    targets : list[torch.Tensor]
-        Target tensors for each training image.
-    dists : list[torch.Tensor]
-        Radial distance tensors for each training image.
-    weights : list[float]
-        Loss weights for each training image.
-    params : dict[str, float]
-        Atmospheric and geometric parameters used to slice the ImageDicts
-        when building this set (e.g. ``{"aot": 0.1, "rh": 50.0}``).
-    device : str
-        Device on which all tensors are moved when iterating.
+    inputs, targets, dists, weights : list
+        One entry per scene: input tensors by name, target, distance to
+        the centre, loss weight.
+    params : dict[str, float], optional
+        Combo the scenes were sliced at.
+    device : str, optional
+        Device the tensors are moved to, ``"cuda"`` by default.
     """
 
     inputs: list[dict[str, torch.Tensor]]
@@ -81,16 +80,14 @@ class TrainingSet(Iterable["TrainingSample"]):
 
 @dataclass(frozen=True)
 class TrainingImages:
-    """Collection of reference scenes with per-image loss weights.
+    """Reference scenes and their loss weights.
 
     Parameters
     ----------
     images : list[ImageDict]
-        Reference scenes used as training data.
-    weights : list[float] or None
-        Per-image loss weights, one per entry in *images*, scaling each
-        image's contribution in :class:`Loss`.  ``None`` weights them
-        equally, which is what every caller wrote by hand.
+        Reference scenes.
+    weights : list[float] or None, optional
+        One weight per scene; equal weights for ``None``.
     """
 
     images: list[ImageDict]
@@ -117,33 +114,19 @@ def iterate_broadcasted_dims(
     target_name: str,
     band: SensorBand,
 ) -> Generator[dict[str, float], None, None]:
-    """Iterate on the broadcasted dimensions of a TrainingImages.
+    """Yield every combo of the non-spatial coordinates of the scenes.
 
-    Broadcasts all input variables and the target together, then yields
-    one selector dict per combination of non-spatial coordinates.
-
-    Parameters
-    ----------
-    train : TrainingImages
-        List of ImageDict used for the training.
-    input_names : list[str]
-        Input variable names (all are broadcast together with the target).
-    target_name : str
-        Target variable name.
-    band : SensorBand
-        Sensor band of interest.
+    Inputs and target are broadcast together, scene by scene.
 
     Yields
     ------
     dict[str, float]
-        Mapping from extra-dimension name to coordinate value.
+        ``{dim: value}`` for every non-spatial dimension.
 
     Raises
     ------
-    ValueError
-        If broadcast dimensions are inconsistent across ImageDict instances.
-    ValueError
-        If ``"x"`` or ``"y"`` are absent from the broadcast dimensions.
+    ConfigurationError
+        If scenes differ in dimensions or coordinates, or lack ``x``/``y``.
     """
     dims: list[str] = []
     coords: list[xr.DataArray] = []
@@ -197,53 +180,23 @@ def training_set(
     device: str = "cuda",
     **params: float,
 ) -> TrainingSet:
-    """Return the input and target tensors for the training loop.
+    """Return the tensors of *band* at the combo *params*, for every scene.
 
-    Selects a specific atmospheric combination (via ``**params``) from each
-    ImageDict and converts to tensors.  Radial distances are derived from the
-    spatial coordinates of the target array.  Only dimensions that exist in
-    each variable are used for selection (see :func:`_safe_sel`).
-
-    Parameters
-    ----------
-    train : TrainingImages
-        List of ImageDict used for the training.
-    input_names : list[str]
-        Input variable names to extract and bundle as ``dict[str, Tensor]``.
-    target_name : str
-        Target variable name.
-    band : SensorBand
-        Sensor band of interest.
-    **params : float
-        Coordinate selectors for the atmospheric dimensions
-        (e.g. ``aot=0.1, rh=80``).
-
-    Returns
-    -------
-    TrainingSet
-        The lists of input dicts, target tensors, distance tensors, weights
-        and the ``params`` dict used for slicing.
+    A variable is sliced only on the dimensions it has.
     """
-    ipts: list[dict[str, torch.Tensor]] = [
-        {
-            name: _safe_sel(im[band][name], params).adjeff.to_tensor().to(device=device)
-            for name in input_names
-        }
-        for im in train.images
-    ]
-    tgts: list[torch.Tensor] = [
-        _safe_sel(im[band][target_name], params).adjeff.to_tensor().to(device=device)
-        for im in train.images
-    ]
-    dists: list[torch.Tensor] = [
-        _safe_sel(im[band][target_name], params).adjeff.dists.to(device=device)
-        for im in train.images
-    ]
+
+    def tensor(da: xr.DataArray) -> torch.Tensor:
+        return _safe_sel(da, params).adjeff.to_tensor().to(device=device)
+
+    targets = [_safe_sel(im[band][target_name], params) for im in train.images]
 
     return TrainingSet(
-        inputs=ipts,
-        targets=tgts,
-        dists=dists,
+        inputs=[
+            {name: tensor(im[band][name]) for name in input_names}
+            for im in train.images
+        ],
+        targets=[t.adjeff.to_tensor().to(device=device) for t in targets],
+        dists=[t.adjeff.dists.to(device=device) for t in targets],
         weights=train.per_image,
         params=dict(params),
         device=device,
