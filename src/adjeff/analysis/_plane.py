@@ -1,24 +1,17 @@
-"""How much of an analytical kernel a finite grid actually holds.
+"""Share of an analytical kernel's plane energy that a finite grid holds.
 
-An encircled-energy curve is a ratio, and the denominator is a choice.
-Dividing by what the grid holds makes every curve reach one at its edge,
-which is right when the question is how the sampled kernel behaves, since
-that is also how it is convolved.  It hides something else: two kernels
-that reach one at the same radius need not have lost the same amount of
-energy off the grid on the way.
+Normalising an encircled-energy curve by the grid total makes every
+curve reach one at the grid edge, which hides how much energy each
+kernel loses off the grid (4.4 % for a King at AOT 0.1 on a 240 km
+domain, 0.6 % at AOT 0.7).  Normalising by the plane total keeps that
+difference, but the plane total is the integral of the fitted profile:
+it exists only for an analytical kernel whose integral converges, so
+not for a Voigt.  Unsupported cases raise.
 
-Measured on the manuscript's own sweep, a King fitted at an aerosol
-optical thickness of 0.1 leaves 4.4 % of its energy outside the 240 km
-domain, against 0.6 % at 0.7.  Under grid normalisation the four curves
-converge at the edge and their ordering vanishes exactly where the
-question is asked; under plane normalisation each stops at its own
-ceiling and the separation holds all the way out.
-
-The plane total is not measurable from the samples: it is the integral of
-the fitted profile over the whole plane, so it is available only for an
-analytical kernel, and only for one whose integral converges.  A Voigt
-does not qualify, its Lorentzian part diverging logarithmically.  Both
-cases raise rather than guess.
+Functions
+---------
+    grid_share
+        Fraction of the kernel's plane energy within a given radius.
 """
 
 from __future__ import annotations
@@ -32,9 +25,6 @@ from adjeff.exceptions import ConfigurationError
 
 __all__ = ["grid_share"]
 
-#: Samples used where the radial integral has no closed form.  It is
-#: one-dimensional and smooth, so a fixed rule is enough and keeps this
-#: free of scipy.
 _QUADRATURE_STEPS = 20001
 
 
@@ -56,13 +46,7 @@ def _cum_gaussian(r: float, params: dict[str, float]) -> float:
 
 
 def _plane_total_king(params: dict[str, float]) -> float:
-    """Return the plane integral of ``(1 + r**2 / a)**-gamma``.
-
-    With ``a = 2 gamma sigma**2`` the integral is ``pi a / (gamma - 1)``,
-    which exists only for ``gamma > 1``: the profile falls as
-    ``r**(-2 gamma)`` and a two-dimensional integral needs more than
-    ``r**-2``.
-    """
+    """Return the plane integral of ``(1 + r**2 / a)**-gamma``."""
     sigma, gamma = float(params["sigma"]), float(params["gamma"])
     if gamma <= 1.0:
         raise ConfigurationError(
@@ -83,22 +67,13 @@ def _cum_king(r: float, params: dict[str, float]) -> float:
 
 
 def _plane_total_gg(params: dict[str, float]) -> float:
-    """Return the plane integral of ``exp(-(r / sigma)**n)``.
-
-    Substituting ``u = (r / sigma)**n`` gives ``2 pi sigma**2 Gamma(2/n) / n``,
-    finite for every positive *n*.
-    """
+    """Return the plane integral of ``exp(-(r / sigma)**n)``."""
     sigma, n = float(params["sigma"]), float(params["n"])
     return 2.0 * math.pi * sigma**2 * math.gamma(2.0 / n) / n
 
 
 def _cum_gg(r: float, params: dict[str, float]) -> float:
-    """Return the integral of the generalised Gaussian over a disc.
-
-    The lower incomplete gamma has no closed form here, so the radial
-    integral is evaluated numerically.  It is one-dimensional and smooth,
-    so a fixed rule is enough and keeps this free of scipy.
-    """
+    """Return the integral of the generalised Gaussian over a disc."""
     sigma, n = float(params["sigma"]), float(params["n"])
     radius = _midpoints(r)
     return float(
@@ -107,12 +82,7 @@ def _cum_gg(r: float, params: dict[str, float]) -> float:
 
 
 def _plane_total_moffat(params: dict[str, float]) -> float:
-    """Return the plane integral of ``(1 + (r / alpha)**(2 beta))**-gamma``.
-
-    Substituting ``u = (r / alpha)**(2 beta)`` gives
-    ``pi alpha**2 B(1/beta, gamma - 1/beta) / beta``, which exists only
-    for ``gamma beta > 1``.
-    """
+    """Return the plane integral of ``(1 + (r / alpha)**(2 beta))**-gamma``."""
     alpha = float(params["alpha"])
     beta, gamma = float(params["beta"]), float(params["gamma"])
     if gamma * beta <= 1.0:
@@ -136,10 +106,6 @@ def _cum_moffat(r: float, params: dict[str, float]) -> float:
     return float(2.0 * math.pi * np.trapezoid(radius * profile, radius))
 
 
-#: Plane integral and disc integral of each model adjeff can fit, keyed
-#: by the name :attr:`PSFModule._model_name` stamps on the kernel.
-#: ``Voigt`` is deliberately absent: its Lorentzian part integrates as
-#: ``log r`` and has no finite total.
 _MODELS = {
     "Gaussian": (_plane_total_gaussian, _cum_gaussian),
     "King": (_plane_total_king, _cum_king),

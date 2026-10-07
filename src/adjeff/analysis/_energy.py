@@ -1,12 +1,15 @@
-"""How much of a kernel sits where, and what it does to spatial detail.
+"""Tools for analyzing point spread functions (PSFs).
 
-The encircled energy answers the first question and the modulation
-transfer function the second.  Both were missing from the package: the
-encircled energy existed twice, once in the radial accessor and once
-rewritten inside ``optim/landscape.py`` for speed, and the MTF, which is
-the canonical way to compare a PSF against the instrument literature,
-was nowhere.  The binning itself lives in :mod:`adjeff.utils.radial`,
-shared with the radial profile.
+Functions
+---------
+    encircled_energy
+        Fraction of PSF energy enclosed within each radius.
+    encircled_radii
+        Radius enclosing a given fraction of PSF energy.
+    fwhm
+        Full width at half maximum of the PSF.
+    mtf
+        Modulation transfer function of the PSF.
 """
 
 from __future__ import annotations
@@ -86,21 +89,6 @@ def encircled_energy(
         With ``normalize="plane"`` on a kernel that carries no
         provenance, or whose profile has no finite energy over the
         plane.
-
-    Notes
-    -----
-    The two normalisations answer different questions and neither is
-    always right.  Grid normalisation describes the operator: that is the
-    kernel the convolution applies, truncation included.  Plane
-    normalisation describes the profile the fit believes in, and makes
-    the truncation visible: on the manuscript's aerosol sweep a King
-    fitted at an optical thickness of 0.1 stops at 0.956 where one at 0.7
-    stops at 0.994, a difference grid normalisation hides by sending both
-    to one.
-
-    The plane ceiling is an extrapolation. Nothing constrains the fitted
-    profile beyond the simulated domain, and it is the widest kernel
-    whose ceiling is least certain.
     """
     grid, values, _ = _as_grid(kernel)
     curve = grid.cdf(values).numpy()
@@ -139,12 +127,6 @@ def encircled_radius(
         ``normalize="plane"`` makes possible: a fitted King at an optical
         thickness of 0.1 never reaches 0.99 of its plane energy inside a
         240 km domain.
-
-    Notes
-    -----
-    The two normalisations can differ by a factor of two.  On the
-    manuscript's sweep the 90 % radius of the low-load kernel is 15.8 km
-    of what the grid holds, and 31.7 km of what the profile implies.
     """
     grid, values, _ = _as_grid(kernel)
     curve = grid.cdf(values)
@@ -211,7 +193,7 @@ def fwhm(kernel: xr.DataArray) -> float:
     Returns
     -------
     float
-        Width, in the unit of the kernel's coordinates.  ``nan`` when the
+        Width, in the unit of the kernel's coordinates. ``nan`` when the
         profile never falls to half its peak inside the grid.
     """
     grid, values, _ = _as_grid(kernel)
@@ -234,10 +216,8 @@ def fwhm(kernel: xr.DataArray) -> float:
 def mtf(kernel: xr.DataArray) -> xr.DataArray:
     """Return the modulation transfer function of a kernel.
 
-    The MTF is the modulus of the Fourier transform of the PSF,
-    normalised to one at zero frequency, averaged over azimuth.  It says
-    how much contrast survives at each spatial frequency, which is the
-    quantity instrument papers report.
+    The MTF is the modulus of the Fourier transform of the PSF, normalised
+    to one at zero frequency, averaged over azimuth.
 
     Parameters
     ----------
@@ -249,7 +229,7 @@ def mtf(kernel: xr.DataArray) -> xr.DataArray:
     xr.DataArray
         MTF against spatial frequency, with dim ``"f"`` in cycles per
         unit of the kernel's coordinates, from zero to the Nyquist
-        frequency.  The first sample is the zero frequency, where the
+        frequency. The first sample is the zero frequency, where the
         MTF is one by construction.
     """
     grid, values, res = _as_grid(kernel)

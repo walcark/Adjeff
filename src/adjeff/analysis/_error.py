@@ -1,9 +1,16 @@
-"""Compare a retrieved field with the truth, on DataArrays.
+"""Error metrics between a retrieved field and the truth, on DataArrays.
 
-``Metric`` works on tensors, which is what a training loop needs and
-what an analysis does not: every caller outside the loop repeated the
-same four ``.adjeff.to_tensor().to(device)`` conversions, and paid for a
-shape mistake with a silent broadcast rather than an error.
+Thin wrappers around :class:`~adjeff.optim.metrics.Metric`, which works
+on tensors for the training loop.
+
+Functions
+---------
+    rmse
+        Root mean square error, relative to the truth amplitude.
+    mae
+        Mean absolute error, relative to the truth amplitude.
+    bias
+        Mean signed error, in the units of the fields.
 """
 
 from __future__ import annotations
@@ -23,7 +30,11 @@ _RADIAL = {
     "mse": Metric.MSE_RAD,
     "rmse": Metric.RMSE_RAD,
 }
-_PLAIN = {"mae": Metric.MAE, "mse": Metric.MSE, "rmse": Metric.RMSE}
+_PLAIN = {
+    "mae": Metric.MAE,
+    "mse": Metric.MSE,
+    "rmse": Metric.RMSE,
+}
 
 
 def _score(

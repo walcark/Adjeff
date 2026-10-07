@@ -1,8 +1,18 @@
-"""Radial statistics of a field, and the reconstruction that undoes them.
+"""Radial statistics of a field.
 
-These were methods of the ``.adjeff`` accessor.  They are functions here
-so that the accessor stays a thin way of spelling them, and so that the
-radial binning has one implementation rather than one per caller.
+The ``.adjeff`` accessor delegates to these functions.
+
+Functions
+---------
+    radial_profile
+        Azimuthal mean, std, cumulative energy or adaptive sampling
+        against radius.
+    transect
+        Values along a line through the centre at a given azimuth.
+    to_field
+        2-D field rebuilt from a radial profile.
+    resolution
+        Pixel size, from the x coordinate spacing.
 """
 
 from __future__ import annotations
@@ -218,7 +228,6 @@ def transect(
         RegularGridInterpolator,
     )
 
-    da = da
     if da.ndim != 2:
         raise AdjeffAccessorError(
             f"transect requires a 2-D (y, x) DataArray; "
