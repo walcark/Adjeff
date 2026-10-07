@@ -563,7 +563,7 @@ known case.
   ```python
   king = Unif2Surface(kernels=tree, rename={"rho_s": "rho_s_king"})
   gauss = Unif2Surface(kernels=other, rename={"rho_s": "rho_s_gauss"})
-  scene = gauss(king(scene))      # truth and both estimates, side by side
+  scene = gauss(king(scene))  # truth and both estimates, side by side
   ```
 
   It answers a collision the article kept working around: `Unif2Surface`

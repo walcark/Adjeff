@@ -19,7 +19,7 @@ import xarray as xr
 
 from adjeff.core import ImageDict, SensorBand
 from adjeff.core._psf import PSFModule
-from adjeff.core.psf_tree import freeze, psf_kernel
+from adjeff.core.psf_tree import psf_kernel
 from adjeff.exceptions import ConfigurationError
 from adjeff.utils import CacheStore, fft_convolve_2D, fft_convolve_2D_torch
 

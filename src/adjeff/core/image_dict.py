@@ -8,11 +8,8 @@ Classes
 
 from __future__ import annotations
 
-from itertools import product
-from pathlib import Path
 from typing import Hashable
 
-import numpy as np
 import xarray as xr
 
 from adjeff.exceptions import MissingVariableError

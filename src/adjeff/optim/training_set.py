@@ -186,7 +186,8 @@ def training_set(
     """
 
     def tensor(da: xr.DataArray) -> torch.Tensor:
-        return _safe_sel(da, params).adjeff.to_tensor().to(device=device)
+        out: torch.Tensor = _safe_sel(da, params).adjeff.to_tensor().to(device=device)
+        return out
 
     targets = [_safe_sel(im[band][target_name], params) for im in train.images]
 

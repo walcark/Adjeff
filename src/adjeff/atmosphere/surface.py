@@ -24,7 +24,6 @@ import xarray as xr
 from adjeff.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
-    from smartg.objects3d import Entity
     from smartg.surface import Environment, LambSurface
 
 

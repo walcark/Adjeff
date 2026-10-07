@@ -94,16 +94,18 @@ The design philosophy is to make multi-parameter sweeps first-class: every confi
 from adjeff.core import ImageDict, S2Band
 import xarray as xr
 
-scene = ImageDict({
-    S2Band.B02: xr.Dataset({"rho_s": rho_s_b02}),  # 10 m
-    S2Band.B03: xr.Dataset({"rho_s": rho_s_b03}),  # 10 m
-    S2Band.B04: xr.Dataset({"rho_s": rho_s_b04}),  # 10 m
-    S2Band.B8A: xr.Dataset({"rho_s": rho_s_b8a}),  # 20 m
-})
+scene = ImageDict(
+    {
+        S2Band.B02: xr.Dataset({"rho_s": rho_s_b02}),  # 10 m
+        S2Band.B03: xr.Dataset({"rho_s": rho_s_b03}),  # 10 m
+        S2Band.B04: xr.Dataset({"rho_s": rho_s_b04}),  # 10 m
+        S2Band.B8A: xr.Dataset({"rho_s": rho_s_b8a}),  # 20 m
+    }
+)
 
 # Access a single band dataset
-ds_b02 = scene[S2Band.B02]           # xr.Dataset
-rho_s  = scene[S2Band.B02]["rho_s"]  # xr.DataArray
+ds_b02 = scene[S2Band.B02]  # xr.Dataset
+rho_s = scene[S2Band.B02]["rho_s"]  # xr.DataArray
 ```
 
 As modules are applied, variables accumulate inside each dataset — `rho_toa`, `tdir_down`, etc. — without ever duplicating the spatial arrays. Extra parameter dimensions (e.g. `aot`, `wl`) appear as named xarray dimensions on the result arrays.
@@ -122,12 +124,14 @@ from adjeff.core import gaussian_image_dict, disk_image_dict, random_image_dict
 bands = [S2Band.B02, S2Band.B03, S2Band.B04]
 
 # Gaussian bright target on a dark background
-scene = gaussian_image_dict(sigma=0.5, res_km=0.01, rho_min=0.05, rho_max=0.6,
-                            bands=bands, n=101)
+scene = gaussian_image_dict(
+    sigma=0.5, res_km=0.01, rho_min=0.05, rho_max=0.6, bands=bands, n=101
+)
 
 # Uniform disk
-scene = disk_image_dict(radius=1.0, res_km=0.01, rho_min=0.05, rho_max=0.6,
-                        bands=bands, n=101)
+scene = disk_image_dict(
+    radius=1.0, res_km=0.01, rho_min=0.05, rho_max=0.6, bands=bands, n=101
+)
 
 # Random spatially heterogeneous scene
 scene = random_image_dict(res_km=0.01, bands=bands, n=101)
@@ -201,7 +205,7 @@ spectral = SpectralConfig.from_bands(bands)
 ```python
 class MyModule(SceneModule):
     required_vars = ["rho_s"]
-    output_vars   = ["rho_toa"]
+    output_vars = ["rho_toa"]
 
     def _compute(self, scene: ImageDict) -> ImageDict:
         ...
@@ -255,8 +259,8 @@ loader = MajaLoader(
     mnt_path=Path("/data/mnt/"),
 )
 
-scene = loader()        # fresh scene from product
-scene = loader(scene)   # or enrich an existing one
+scene = loader()  # fresh scene from product
+scene = loader(scene)  # or enrich an existing one
 
 print(list(scene[S2Band.B02].data_vars))
 # ['rho_s', 'aot', 'rh', 'href', 'vza', 'vaa', 'sza', 'saa', 'h']
@@ -273,20 +277,40 @@ print(list(scene[S2Band.B02].data_vars))
 ```python
 from adjeff.modules import Pipeline
 from adjeff.modules.samplers import (
-    TdirDownSampler, TdirUpSampler,
-    RhoAtmSampler,   SphAlbSampler,
+    TdirDownSampler,
+    TdirUpSampler,
+    RhoAtmSampler,
+    SphAlbSampler,
 )
 
-pipeline = Pipeline([
-    TdirDownSampler(atmo_config=atmo, geo_config=geo,
-                    spectral_config=spectral, remove_rayleigh=False),
-    TdirUpSampler(atmo_config=atmo, geo_config=geo,
-                  spectral_config=spectral, remove_rayleigh=False),
-    RhoAtmSampler(atmo_config=atmo, geo_config=geo,
-                  spectral_config=spectral, remove_rayleigh=False),
-    SphAlbSampler(atmo_config=atmo, geo_config=geo,
-                  spectral_config=spectral, remove_rayleigh=False),
-])
+pipeline = Pipeline(
+    [
+        TdirDownSampler(
+            atmo_config=atmo,
+            geo_config=geo,
+            spectral_config=spectral,
+            remove_rayleigh=False,
+        ),
+        TdirUpSampler(
+            atmo_config=atmo,
+            geo_config=geo,
+            spectral_config=spectral,
+            remove_rayleigh=False,
+        ),
+        RhoAtmSampler(
+            atmo_config=atmo,
+            geo_config=geo,
+            spectral_config=spectral,
+            remove_rayleigh=False,
+        ),
+        SphAlbSampler(
+            atmo_config=atmo,
+            geo_config=geo,
+            spectral_config=spectral,
+            remove_rayleigh=False,
+        ),
+    ]
+)
 
 scene = pipeline(scene)
 ```
@@ -327,11 +351,11 @@ afterwards:
 
 ```python
 sampler = TdirDownSampler(
-    atmo_config=atmo_spatial,      # aot has dims ["x", "y"]
+    atmo_config=atmo_spatial,  # aot has dims ["x", "y"]
     geo_config=geo_spatial,
     spectral_config=spectral,
     remove_rayleigh=False,
-    dedup=True,                    # 1000x1000 image -> N distinct states
+    dedup=True,  # 1000x1000 image -> N distinct states
 )
 scene = sampler(scene)
 # tdir_down has dims (wl, x, y): the full map, computed on N points
@@ -389,7 +413,7 @@ pipeline = RadiativePipeline(
 scene = pipeline(ImageDict({b: xr.Dataset() for b in bands}))
 
 print(scene[S2Band.B02]["tdir_down"])  # dims: (wl, aot)
-print(scene[S2Band.B02]["rho_atm"])    # dims: (wl, aot)
+print(scene[S2Band.B02]["rho_atm"])  # dims: (wl, aot)
 ```
 
 `RadiativePipeline` chains the six radiative samplers in the correct order. Use individual sampler classes when only a subset is needed.
@@ -406,7 +430,7 @@ module = RhoToaSymSampler(
     geo_config=geo,
     spectral_config=spectral,
     remove_rayleigh=False,
-    nr=80,          # radial PSF samples
+    nr=80,  # radial PSF samples
     n_ph=int(1e6),  # photons per Smart-G run
 )
 scene = module(scene)  # requires rho_s
@@ -440,10 +464,10 @@ All analytical models are `torch.nn.Module` subclasses with constrained trainabl
 ```python
 from adjeff.core import GaussPSF, PSFGrid, S2Band
 
-grid   = PSFGrid(res=0.01, n=101)                         # 101×101 grid, 10 m pixels
-psf    = GaussPSF(grid=grid, band=S2Band.B02, sigma=0.3)  # sigma in km
-kernel = psf.forward()       # torch.Tensor, shape (101, 101)
-da     = psf.to_dataarray()  # xr.DataArray, dims (y_psf, x_psf)
+grid = PSFGrid(res=0.01, n=101)  # 101×101 grid, 10 m pixels
+psf = GaussPSF(grid=grid, band=S2Band.B02, sigma=0.3)  # sigma in km
+kernel = psf.forward()  # torch.Tensor, shape (101, 101)
+da = psf.to_dataarray()  # xr.DataArray, dims (y_psf, x_psf)
 ```
 
 `NonAnalyticalPSF` wraps a fixed numpy kernel (non-trainable) for applying a pre-computed PSF directly.
@@ -456,17 +480,22 @@ in the same tree, and the whole tree round-trips through zarr:
 
 ```python
 from adjeff.core import (
-    GaussPSF, PSFGrid, S2Band, freeze, psf_kernel, psf_params,
+    GaussPSF,
+    PSFGrid,
+    S2Band,
+    freeze,
+    psf_kernel,
+    psf_params,
 )
 
 modules = {
     b: GaussPSF(PSFGrid(res=0.01, n=101), b, sigma=0.3)
     for b in (S2Band.B02, S2Band.B03)
 }
-tree = freeze(modules)                  # xr.DataTree, one group per band
+tree = freeze(modules)  # xr.DataTree, one group per band
 
-kernel = psf_kernel(tree, S2Band.B02)   # xr.DataArray, dims (y_psf, x_psf)
-params = psf_params(tree, S2Band.B02)   # {"sigma": xr.DataArray}
+kernel = psf_kernel(tree, S2Band.B02)  # xr.DataArray, dims (y_psf, x_psf)
+params = psf_params(tree, S2Band.B02)  # {"sigma": xr.DataArray}
 
 tree.to_zarr("psf.zarr", mode="w")
 ```
@@ -574,7 +603,8 @@ cfg = load_config(scene, band=S2Band.B03, aggregate=True)
 
 # 3. Fit a PSF end-to-end (radiatives + training scenes + optimizer)
 tree = fit_psf(
-    scene, bands=[S2Band.B03],
+    scene,
+    bands=[S2Band.B03],
     psf_type=KingPSF,
     init_parameters={"sigma": 0.5, "gamma": 2.0},
 )
@@ -608,10 +638,10 @@ All `DataArray` objects produced by `adjeff` can be analysed via the `.adjeff` a
 ```python
 rho_s = scene[S2Band.B02]["rho_s"]
 
-profile = rho_s.adjeff.radial()               # azimuthal mean vs radius
-cdf     = rho_s.adjeff.radial("cdf")          # area-weighted CDF
-both    = rho_s.adjeff.radial(symmetric=True) # mirrored, for a full transect
-field   = profile.adjeff.to_field(ds)         # reconstruct 2D from a profile
+profile = rho_s.adjeff.radial()  # azimuthal mean vs radius
+cdf = rho_s.adjeff.radial("cdf")  # area-weighted CDF
+both = rho_s.adjeff.radial(symmetric=True)  # mirrored, for a full transect
+field = profile.adjeff.to_field(ds)  # reconstruct 2D from a profile
 ```
 
 A scalar in a configuration is stored as an array of length one, so an
@@ -620,12 +650,12 @@ atmospheric state was simulated. `tidy` turns those into scalar
 coordinates: the dimensions go, the values stay.
 
 ```python
-rho_toa.dims                       # ('sza', 'vza', 'aot', 'rh', 'href', 'h', 'y', 'x')
+rho_toa.dims  # ('sza', 'vza', 'aot', 'rh', 'href', 'h', 'y', 'x')
 tidied = rho_toa.adjeff.tidy()
-tidied.dims                        # ('y', 'x')
-float(tidied.aot)                  # 0.4, the state that produced it
+tidied.dims  # ('y', 'x')
+float(tidied.aot)  # 0.4, the state that produced it
 
-tidied.adjeff.untidy()             # back to dimensions, before a merge
+tidied.adjeff.untidy()  # back to dimensions, before a merge
 ```
 
 A tidied array recombines with `xr.concat`, which promotes the coordinate
@@ -640,11 +670,11 @@ holds what quantifies a kernel:
 ```python
 from adjeff.analysis import encircled_radius, fwhm, mtf, rmse
 
-encircled_radius(kernel, 0.5)      # radius holding half the energy [km]
-fwhm(kernel)                       # full width at half maximum [km]
-mtf(kernel)                        # contrast against spatial frequency
+encircled_radius(kernel, 0.5)  # radius holding half the energy [km]
+fwhm(kernel)  # full width at half maximum [km]
+mtf(kernel)  # contrast against spatial frequency
 
-rmse(estimated, truth, mask=15.0, radial=True)   # over a 15 km disc
+rmse(estimated, truth, mask=15.0, radial=True)  # over a 15 km disc
 ```
 
 One rule decides what belongs there: does it quantify a PSF, or a 2-D
@@ -661,11 +691,14 @@ from adjeff.utils import CacheStore
 cache = CacheStore(cache_dir="./adjeff_cache")
 
 pipeline = RadiativePipeline(
-    atmo_config=atmo, geo_config=geo, spectral_config=spectral,
-    remove_rayleigh=False, cache=cache,
+    atmo_config=atmo,
+    geo_config=geo,
+    spectral_config=spectral,
+    remove_rayleigh=False,
+    cache=cache,
 )
-scene = pipeline(scene)   # computed and cached on first run
-scene = pipeline(scene)   # loaded from cache, no GPU call
+scene = pipeline(scene)  # computed and cached on first run
+scene = pipeline(scene)  # loaded from cache, no GPU call
 ```
 
 ---
@@ -679,8 +712,8 @@ logging for the process it is imported into, so importing it installs a
 ```python
 import adjeff
 
-adjeff.setup_logging(level="info")               # readable console
-adjeff.setup_logging(level="debug", json=True)   # one JSON object per line
+adjeff.setup_logging(level="info")  # readable console
+adjeff.setup_logging(level="debug", json=True)  # one JSON object per line
 ```
 
 What that call knows, and a caller should not have to:
@@ -732,7 +765,7 @@ every line below carries them without any caller passing them down:
 from adjeff._logging import run_context
 
 with run_context(experiment="aot-sweep"):
-    ...   # every line emitted inside carries experiment=aot-sweep
+    ...  # every line emitted inside carries experiment=aot-sweep
 ```
 
 ---

@@ -9,8 +9,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 import numpy as np
 import xarray as xr
@@ -76,7 +77,7 @@ class ParamBatch:
         assigned: dict[str, xr.DataArray] = {}
 
         for name, da in renamed.items():
-            coords = {}
+            coords: dict[Hashable, Any] = {}
 
             for d in da.dims:
                 if d in cls._POSITIONAL:
