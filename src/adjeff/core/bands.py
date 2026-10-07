@@ -30,24 +30,6 @@ class SensorBand(Enum):
         """Return a simple representation of the band."""
         return f"{self.__class__.__name__}.{self.id}"
 
-    @classmethod
-    def from_wl(cls, wl_nm: float, tol_nm: float = 0.5) -> "SensorBand":
-        """Return the band centred within *tol_nm* of *wl_nm*.
-
-        Raises
-        ------
-        KeyError
-            If no band lies within *tol_nm*, listing the centres that do
-            exist.
-        """
-        for member in cls:
-            if abs(member.wl_nm - float(wl_nm)) <= tol_nm:
-                return member
-        known = ", ".join(f"{m.wl_nm:.0f}" for m in cls)
-        raise KeyError(
-            f"No {cls.__name__} within {tol_nm} nm of {wl_nm} nm. Centres are: {known}."
-        )
-
     def __cache_token__(self) -> str:
         """Return a stable, serialisable identity for cache fingerprints."""
         return f"{type(self).__name__}.{self.id}"

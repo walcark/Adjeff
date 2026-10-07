@@ -45,12 +45,6 @@ class SurfaceFactory:
     ) -> None:
         self._rho_background = rho_background
 
-    def entity(self, arr: xr.Dataset) -> Entity:
-        """Return an entity object based on input image coordinates."""
-        from smartg.objects3d import Entity
-
-        return Entity()
-
     def surface(self, arr: xr.Dataset) -> LambSurface:
         """Return a Lambertian Surface object based on the input image."""
         from smartg.albedo import AlbedoCst

@@ -78,15 +78,6 @@ class PSFConvModule(TrainableSceneModule):
             {b.id: cast(nn.Module, m) for b, m in (psfs or {}).items()}
         )
 
-    # ------------------------------------------------------------------
-    # TrainableSceneModule interface
-    # ------------------------------------------------------------------
-
-    @property
-    def is_trainable(self) -> bool:
-        """Return True when this model holds live PSF modules."""
-        return self._kernels is None
-
     @property
     def psf_modules(self) -> dict[str, PSFModule]:
         """Mapping of band IDs to PSF modules (training mode only)."""
@@ -114,20 +105,6 @@ class PSFConvModule(TrainableSceneModule):
             held = ", ".join(sorted(self._psfs)) or "none"
             raise KeyError(f"No PSF for band {band.id!r}; holds: {held}.")
         return cast(PSFModule, self._psfs[band.id]).param_dict()
-
-    def to_psf_tree(self) -> xr.DataTree:
-        """Export the current kernels to a frozen PSF tree.
-
-        Returns
-        -------
-        xr.DataTree
-            One group per band.  In inference mode the tree the model was
-            built with is returned unchanged.
-        """
-        if self._kernels is not None:
-            return self._kernels
-        modules = [cast(PSFModule, m) for m in self._psfs.values()]
-        return freeze({m.band: m for m in modules})
 
     def forward_band(
         self,

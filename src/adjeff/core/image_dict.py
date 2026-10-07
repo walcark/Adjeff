@@ -34,73 +34,6 @@ class ImageDict:
     def __init__(self, band_datasets: dict[SensorBand, xr.Dataset]) -> None:
         self._data: dict[SensorBand, xr.Dataset] = dict(band_datasets)
 
-    def write_to_directory(
-        self,
-        directory: str | Path,
-        var: str,
-    ) -> list[Path]:
-        """Write *var* to *directory*, one ``.npy`` file per 2-D slice.
-
-        Extra dimensions go into the file name, as in
-        ``rho_s__aot=0.4__rh=50.0__S2Band.B02.npy``.
-
-        Returns
-        -------
-        list[Path]
-            Written files.
-
-        Raises
-        ------
-        MissingVariableError
-            If a band lacks *var*.
-        """
-        out_dir = Path(directory)
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        written: list[Path] = []
-
-        for band in self.bands:
-            ds = self._data[band]
-            if var not in ds.data_vars:
-                raise MissingVariableError(
-                    f"Variable {var!r} is missing from band {band!r}"
-                )
-
-            da: xr.DataArray = ds[var]
-
-            # Identify non-spatial dimensions (everything except "x" and "y")
-            extra_dims = [d for d in da.dims if d not in ("x", "y")]
-
-            if not extra_dims:
-                # No extra dims — write a single file
-                filename = f"{var}__{band}.npy"
-                path = out_dir / filename
-                np.save(path, da.values)
-                written.append(path)
-            else:
-                # Iterate over the Cartesian product of extra dim coordinates
-                coord_values = [da.coords[d].values for d in extra_dims]
-                for combo in product(*coord_values):
-                    # Build selector and filename suffix
-                    selector = dict(zip(extra_dims, combo))
-                    suffix_parts = "__".join(
-                        f"{dim}={val}" for dim, val in zip(extra_dims, combo)
-                    )
-                    filename = f"{var}__{suffix_parts}__{band}.npy"
-                    path = out_dir / filename
-                    slice_da = da.sel(selector)
-                    np.save(path, slice_da.values)
-                    written.append(path)
-
-            logger.debug(
-                "scene.write_npy",
-                var=var,
-                band=band,
-                path=str(directory),
-            )
-
-        return written
-
     @property
     def bands(self) -> list[SensorBand]:
         """Sorted list of band identifiers (B02 < B03 < etc.)."""
@@ -109,10 +42,6 @@ class ImageDict:
     def variables(self, band: SensorBand) -> list[Hashable]:
         """Return the DataArray variable names present in *band*'s Dataset."""
         return list(self._data[band].data_vars)
-
-    def has_var(self, var: str) -> bool:
-        """Return True if *all* band Datasets contain *var*."""
-        return all(var in ds.data_vars for ds in self._data.values())
 
     def require_vars(self, vars: list[str]) -> None:
         """Raise an exception if any var is absent from any band Dataset.

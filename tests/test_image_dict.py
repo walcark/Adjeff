@@ -48,18 +48,6 @@ def test_variables():
     assert set(scene.variables(S2Band.B02)) == {"rho_s", "rho_toa"}
 
 
-def test_has_var_true():
-    """has_var returns True when all bands contain the variable."""
-    scene = _make_scene(variables=["rho_s"])
-    assert scene.has_var("rho_s") is True
-
-
-def test_has_var_false():
-    """has_var returns False when the variable is absent from at least one band."""
-    scene = _make_scene(variables=["rho_s"])
-    assert scene.has_var("rho_toa") is False
-
-
 def test_require_vars_pass():
     """require_vars does not raise when all required variables are present."""
     scene = _make_scene(variables=["rho_s"])
@@ -71,44 +59,3 @@ def test_require_vars_raises():
     scene = _make_scene(variables=["rho_s"])
     with pytest.raises(MissingVariableError):
         scene.require_vars(["rho_toa"])
-
-
-def test_write_to_directory_no_extra_dims(tmp_path):
-    """write_to_directory writes a single .npy file named {var}__{band}.npy."""
-    scene = _make_scene([S2Band.B02], n=8, variables=["rho_s"])
-    written = scene.write_to_directory(tmp_path / "out", "rho_s")
-    assert len(written) == 1
-    assert written[0].name == "rho_s__S2Band.B02.npy"
-    arr = np.load(written[0])
-    assert arr.shape == (8, 8)
-
-
-def test_write_to_directory_extra_dim(tmp_path):
-    """write_to_directory writes one file per extra-dimension slice."""
-    data = np.random.rand(2, 8, 8).astype(np.float32)
-    da = xr.DataArray(data, dims=["aot", "y", "x"], coords={"aot": [0.1, 0.2]})
-    ds = xr.Dataset({"rho_corrected": da})
-    scene = ImageDict({S2Band.B02: ds})
-    written = scene.write_to_directory(tmp_path / "out", "rho_corrected")
-    assert len(written) == 2
-    names = {p.name for p in written}
-    assert "rho_corrected__aot=0.1__S2Band.B02.npy" in names
-    assert "rho_corrected__aot=0.2__S2Band.B02.npy" in names
-
-
-def test_write_missing_var_raises(tmp_path):
-    """write_to_directory raises MissingVariableError for an absent variable."""
-    scene = _make_scene(variables=["rho_s"])
-    with pytest.raises(MissingVariableError):
-        scene.write_to_directory(tmp_path, "rho_toa")
-
-
-def test_progressive_enrichment():
-    """Datasets can be enriched in-place by adding new variables."""
-    scene = _make_scene(variables=["rho_s"])
-    for band in scene.bands:
-        ds = scene[band]
-        ds["rho_toa"] = xr.DataArray(
-            np.random.rand(16, 16).astype(np.float32), dims=["y", "x"]
-        )
-    assert scene.has_var("rho_toa")
