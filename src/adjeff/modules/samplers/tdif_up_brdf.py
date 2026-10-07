@@ -1,4 +1,10 @@
-"""Diffuse upward transmittance over a non-lambertian surface."""
+"""Diffuse upward transmittance over an RTLS surface.
+
+Classes
+-------
+    TdifUpBrdfSampler
+        Samples ``tdif_up``, in place of TdifUpSampler.
+"""
 
 from typing import Any, Callable, ClassVar
 

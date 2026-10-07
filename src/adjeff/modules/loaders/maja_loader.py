@@ -1,4 +1,17 @@
-"""MajaLoader: load MAJA L2A processor output products for Sentinel-2."""
+"""Loader of Sentinel-2 MAJA L2A products.
+
+Classes
+-------
+    MajaLoader
+        Reflectance, geometry, atmosphere and elevation of a MAJA product.
+
+Functions
+---------
+    downsample_res
+        Resample an array to a coarser resolution.
+    block_reduce
+        Reduce an array by non-overlapping blocks.
+"""
 
 import re
 import xml.etree.ElementTree as ET

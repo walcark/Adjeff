@@ -1,4 +1,10 @@
-"""Base class for scene source modules."""
+"""Base class of the modules that create a scene.
+
+Classes
+-------
+    SceneSource
+        SceneModule with no required input, called without a scene.
+"""
 
 from __future__ import annotations
 
@@ -16,22 +22,16 @@ if TYPE_CHECKING:
 
 
 class SceneSource(SceneModule):
-    """A SceneModule that produces an ImageDict without requiring any input.
+    """SceneModule creating a scene, e.g. by loading a product.
 
-    Unlike :class:`SceneModule` (which transforms an existing scene), a
-    ``SceneSource`` creates a scene from scratch — typically by loading data
-    from disk or an external product.  Passing a scene to :meth:`forward` is
-    optional; when omitted an empty :class:`~adjeff.core.ImageDict` with the
-    declared bands is created automatically.
-
-    Subclasses must still implement :meth:`_compute`.
+    Called without a scene, it starts from an empty one holding *bands*.
 
     Parameters
     ----------
     bands : list[SensorBand]
-        Bands that this source will populate.
-    cache : CacheStore | None
-        Optional on-disk cache.
+        Bands the source produces.
+    cache, rename : optional
+        See :class:`SceneModule`.
     """
 
     _required_vars: ClassVar[list[str]] = []

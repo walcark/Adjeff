@@ -1,4 +1,10 @@
-"""Apply the 5S radiative transfer forward model to compute TOA reflectance."""
+"""5S forward model, from uniform surface to TOA reflectance.
+
+Classes
+-------
+    Unif2Toa
+        Computes ``rho_toa`` from ``rho_unif`` and the six 5S terms.
+"""
 
 from typing import ClassVar
 
@@ -10,22 +16,11 @@ from ..scene_module import SceneModule
 
 
 class Unif2Toa(SceneModule):
-    """Forward 5S model: compute TOA reflectance from uniform reflectance.
+    """5S forward model, for a uniform Lambertian surface.
 
-    Assumes the environment reflectance equals the surface reflectance
-    (``rho_s = rho_env = rho_unif``).  This is the *forward* direction;
-    use :class:`~adjeff.modules.classic.Toa2Unif` to invert.
+        rho_toa = rho_atm + T_up T_down rho_unif / (1 - sph_alb rho_unif)
 
-    The forward formula applied per band is::
-
-        t_up = tdir_up + tdif_up
-        t_down = tdir_down + tdif_down
-        rho_toa = rho_atm + t_up * t_down * rho_unif / (1 - sph_alb * rho_unif)
-
-    Required variables (per band): ``rho_unif``, ``rho_atm``,
-    ``tdir_up``, ``tdif_up``, ``tdir_down``, ``tdif_down``, ``sph_alb``.
-
-    Produced variable: ``rho_toa``.
+    with ``T = tdir + tdif``.  Inverse of :class:`Toa2Unif`.
     """
 
     _required_vars: ClassVar[list[str]] = [

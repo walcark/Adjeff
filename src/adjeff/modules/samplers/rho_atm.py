@@ -1,4 +1,15 @@
-"""Atmospheric path reflectance (``rho_atm``) sampler using Smart-G."""
+"""Atmospheric reflectance.
+
+Classes
+-------
+    RhoAtmSampler
+        Samples ``rho_atm``.
+
+Functions
+---------
+    ensure_rho_atm
+        ``rho_atm`` of the scene, sampled if absent.
+"""
 
 from typing import Any, Callable, ClassVar
 

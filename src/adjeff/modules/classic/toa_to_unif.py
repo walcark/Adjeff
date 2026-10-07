@@ -1,4 +1,10 @@
-"""Invert the 5S radiative transfer model to retrieve uniform reflectance."""
+"""5S inverse model, from TOA to uniform surface reflectance.
+
+Classes
+-------
+    Toa2Unif
+        Computes ``rho_unif`` from ``rho_toa`` and the six 5S terms.
+"""
 
 from typing import ClassVar
 
@@ -8,23 +14,11 @@ from ..scene_module import SceneModule
 
 
 class Toa2Unif(SceneModule):
-    """Invert the 5S model: compute uniform reflectance from TOA reflectance.
+    """5S inverse model, for a uniform Lambertian surface.
 
-    Assumes the environment reflectance equals the surface reflectance
-    (``rho_s = rho_env = rho_unif``).  This is the *inverse* of
-    :class:`~adjeff.modules.classic.Unif2Toa`.
+        rho_unif = r / (sph_alb r + T_up T_down),   r = rho_toa - rho_atm
 
-    The inversion formula applied per band is::
-
-        rho_toa_star = rho_toa - rho_atm
-        t_up = tdir_up + tdif_up
-        t_down = tdir_down + tdif_down
-        rho_unif = rho_toa_star / (sph_alb * rho_toa_star + t_up * t_down)
-
-    Required variables (per band): ``rho_toa``, ``rho_atm``,
-    ``tdir_up``, ``tdif_up``, ``tdir_down``, ``tdif_down``, ``sph_alb``.
-
-    Produced variable: ``rho_unif``.
+    with ``T = tdir + tdif``.  Inverse of :class:`Unif2Toa`.
     """
 
     _required_vars: ClassVar[list[str]] = [

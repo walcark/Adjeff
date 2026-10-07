@@ -1,4 +1,10 @@
-"""Direct downward transmittance (``tdir_down``) sampler using Smart-G."""
+"""Direct downward transmittance.
+
+Classes
+-------
+    TdirDownSampler
+        Samples ``tdir_down``.
+"""
 
 from typing import Any, Callable, ClassVar
 

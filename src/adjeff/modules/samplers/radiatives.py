@@ -1,4 +1,10 @@
-"""Convenience pipeline that computes all six radiative quantities."""
+"""Pipeline sampling the six 5S terms.
+
+Classes
+-------
+    RadiativePipeline
+        The six samplers in a row, with the RTLS variants on ``rtls``.
+"""
 
 from typing import Any
 

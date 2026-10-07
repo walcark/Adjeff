@@ -1,4 +1,13 @@
-"""Base classes for all adjeff scene transformation modules."""
+"""Base classes of every scene module.
+
+Classes
+-------
+    SceneModule
+        Step reading ``required_vars`` and writing ``output_vars``, with
+        caching and provenance.
+    TrainableSceneModule
+        SceneModule that is also a ``torch.nn.Module`` holding PSFs.
+"""
 
 from __future__ import annotations
 
@@ -27,76 +36,31 @@ logger = get_logger(__name__)
 
 
 class SceneModule:
-    """Base class for all adjeff scene transforms.
+    """Step reading variables from an ImageDict and writing new ones.
 
-    Operates on :class:`~adjeff.core.ImageDict` — one
-    :class:`xr.Dataset` per sensor band.
+    Subclasses declare ``_required_vars`` (read, must exist in every
+    band), ``_output_vars`` (written, and cached) and optionally
+    ``_optional_vars`` (read when present, computed otherwise), then
+    implement :meth:`_compute`.
 
-    Subclasses must declare two :class:`~typing.ClassVar` attributes:
-
-    ``required_vars`` — variable names that *must* be present in every
-    band Dataset of the input scene.  Validated before ``_compute`` is
-    called; raises :class:`~adjeff.exceptions.MissingVariableError` on
-    any missing variable.
-
-    Example: with ``required_vars = ["rho_s"]``, this input is valid::
-
-        ImageDict(
-            {
-                S2Band.B02: Dataset(["rho_s", "rho_toa"]),
-                S2Band.B03: Dataset(["rho_s", "rho_toa"]),
-            }
-        )
-
-    but this one is not (``rho_s`` is absent)::
-
-        ImageDict(
-            {
-                S2Band.B02: Dataset(["rho_unif", "rho_toa"]),
-                S2Band.B03: Dataset(["rho_unif", "rho_toa"]),
-            }
-        )
-
-    ``output_vars`` — variable names that the module *writes* into the
-    output scene.  Used to key the disk cache: only these variables are
-    saved and restored across calls.
-
-    Example: with ``output_vars = ["rho_toa"]``, an input containing
-    ``rho_s`` becomes (``rho_s`` is preserved, ``rho_toa`` is added)::
-
-        # input
-        ImageDict({S2Band.B02: Dataset(["rho_s"]), ...})
-        # output
-        ImageDict({S2Band.B02: Dataset(["rho_s", "rho_toa"]), ...})
-
-    Execution flow (handled by :meth:`forward`)
-    --------------------------------------------
-    1. Shallow-copy the input so the caller's data is never mutated.
-    2. Validate ``required_vars`` against every band Dataset.
-    3. Compute a cache key from the module config and input hashes.
-    4. Return cached outputs if the key is found; otherwise call
-       :meth:`_compute`.
-    5. Stamp provenance metadata and persist ``output_vars`` to cache.
-    6. Replace in-memory arrays with lazy Zarr-backed views to limit
-       peak RAM usage.  **Only when a cache is configured**: with
-       ``cache=None`` every output stays in RAM, which a large sweep will
-       exhaust without warning.
+    :meth:`forward` copies the scene, checks the inputs, returns the
+    cached outputs when the cache key matches, and otherwise computes,
+    rejects non-finite values, stamps provenance and caches.  With a
+    cache, outputs are then replaced by lazy Zarr views; without one,
+    they stay in RAM.
 
     Parameters
     ----------
-    cache : CacheStore or None
-        Disk cache for computed outputs.  ``None`` disables caching, and
-        with it the lazy Zarr views of step 6: outputs are then held in
-        memory for as long as the caller keeps the scene.
+    cache : CacheStore or None, optional
+        Disk cache of the outputs.  ``None`` disables it.
+    rename : dict[str, str] or None, optional
+        Variable each role is read from or written to, when not its own
+        name, e.g. ``{"rho_toa": "rho_toa_smartg"}``.
     """
 
     _required_vars: ClassVar[list[str]] = []
     _output_vars: ClassVar[list[str]] = []
-    #: Variables the module consumes when the scene carries them and
-    #: computes itself when it does not.  They enter the cache key only
-    #: when present: declaring them in ``required_vars`` would forbid the
-    #: standalone call that produces them, while leaving them out
-    #: entirely would let two different inputs share one entry.
+    #: Read when present and then part of the cache key; computed otherwise.
     _optional_vars: ClassVar[list[str]] = []
 
     def __init__(
@@ -141,25 +105,14 @@ class SceneModule:
         return self.forward(scene)
 
     def forward(self, scene: "ImageDict") -> "ImageDict":
-        """Apply the module to *scene* and return the enriched scene.
-
-        Parameters
-        ----------
-        scene : ImageDict
-            Input scene.  Shallow-copied internally so the caller's
-            data is never mutated.
-
-        Returns
-        -------
-        ImageDict
-            Scene enriched with ``output_vars`` (computed or from
-            cache).
+        """Return a copy of *scene* with the output variables added.
 
         Raises
         ------
         MissingVariableError
-            If any band Dataset is missing a variable in
-            ``required_vars``.
+            If a band lacks a required variable.
+        ComputationError
+            If an output holds NaN or infinity.
         """
         scene = scene.shallow_copy()
         scene.require_vars(self.required_vars)
@@ -167,9 +120,7 @@ class SceneModule:
         key = self._cache_key(scene)
         log = self._log.bind(key=key[:8])
 
-        # The module name goes into the context, not only onto `log`:
-        # a warning raised by a helper three frames down carries it too,
-        # and those are the lines whose origin is hardest to guess.
+        # In the context, so that warnings from helpers carry it too.
         with (
             run_context(module=type(self).__name__),
             timed(log, "module", bands=len(scene.bands)) as outcome,
@@ -185,30 +136,22 @@ class SceneModule:
             self._reject_non_finite(scene)
             self._stamp_provenance(scene, key)
             self._cache.save_vars(key, self._role_view(scene), self._output_vars)
-            # Replace in-memory arrays with lazy Zarr-backed views so large
-            # outputs (e.g. rho_toa at all atmospheric combos) are not kept
-            # fully in RAM when the caller stores multiple scenes.
+            # Swap the outputs for lazy Zarr views, to free the RAM.
             lazy = self._cache.load_vars(key, scene.bands, self._output_vars)
             if lazy is not None:
                 self._write_roles(scene, lazy)
             return scene
 
     def _reject_non_finite(self, scene: "ImageDict") -> None:
-        """Raise when an output holds NaN or infinity, before it is cached.
+        """Raise if an output holds NaN or infinity, before it is cached.
 
-        Smart-G returns NaN rather than raising when it cannot run,
-        whether the GPU is busy or its auxiliary data is not where
-        ``SMARTG_DIR_AUXDATA`` says.  Cached, that result becomes permanent: every later
-        run reads it back and fails somewhere far away, on an
-        interpolation or a solver, with nothing pointing at a simulation
-        that ran minutes or days earlier.  Checking here costs one pass
-        over each output and turns a silent poisoning into an error at
-        the place that caused it.
+        Smart-G returns NaN instead of raising when it cannot run; cached,
+        that result would poison every later run.
 
         Raises
         ------
         ComputationError
-            If any output variable of any band holds a non-finite value.
+            Naming the variable, the band and the count.
         """
         for band in scene.bands:
             ds = scene[band]
@@ -286,26 +229,17 @@ class SceneModule:
     )
 
     def _config_dict(self) -> dict[str, object]:
-        """Return frozen configuration for cache keying.
+        """Return the configuration the cache key depends on.
 
-        Auto-detects public ``__init__`` parameters stored as same-named
-        instance attributes, excluding infrastructure params listed in
-        ``_INFRA_PARAMS`` (``cache``, ``chunks``) that do not affect
-        output values.
-
-        Subclasses with privately-stored params (e.g. ``_psfs``)
-        must override this method.
+        Every ``__init__`` parameter not in ``_INFRA_PARAMS`` is read
+        from the same-named attribute.  Override when a parameter is
+        stored under another name.
 
         Raises
         ------
         ConfigurationError
-            If a parameter is neither excluded nor readable as a
-            same-named attribute.  Auto-detection is an implicit
-            contract: storing a parameter under a private name silently
-            drops it from the key, and two runs that differ only by that
-            parameter then collide on the same cache entry.  Failing at
-            the first lookup turns that into a development error rather
-            than a wrong result read back from disk months later.
+            If a parameter has no same-named attribute, which would
+            otherwise drop it from the key silently.
         """
         sig = inspect.signature(type(self).__init__)
         wanted = [name for name in sig.parameters if name not in self._INFRA_PARAMS]
@@ -361,18 +295,10 @@ class SceneModule:
 
 
 class TrainableSceneModule(nn.Module, SceneModule):
-    """Abstract SceneModule with a differentiable per-band forward pass.
+    """SceneModule that is also a ``torch.nn.Module`` holding PSFs.
 
-    Inherits from both :class:`torch.nn.Module` (for parameter registration
-    and gradient flow) and :class:`SceneModule` (for the xarray pipeline
-    contract).  When called as ``model(scene)``, the ``nn.Module.__call__``
-    machinery is used (hooks fire, then ``forward`` is dispatched).
-
-    Subclasses must implement :meth:`forward_band` and expose their
-    per-band PSF modules via :attr:`psf_modules`.
-
-    These two additions form the contract consumed by
-    :func:`~adjeff.optim.fit`.
+    Subclasses implement :attr:`psf_modules` and :meth:`forward_band`,
+    which is what :func:`~adjeff.optim.fit` uses.
     """
 
     def __init__(
@@ -400,11 +326,7 @@ class TrainableSceneModule(nn.Module, SceneModule):
         kernel: torch.Tensor | None = None,
         **inputs: torch.Tensor,
     ) -> torch.Tensor:
-        """Differentiable per-band forward pass for the training loop.
+        """Differentiable forward pass of one band, on tensors.
 
-        *kernel* overrides the band's own PSF for one call, without
-        installing it in the model.  It is part of the contract because
-        that is what evaluating a candidate costs: mapping a loss
-        surface would otherwise have to reach into the model's private
-        state, or reimplement its forward pass.
+        *kernel*, when given, replaces the band's PSF for this call only.
         """

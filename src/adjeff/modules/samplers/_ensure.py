@@ -1,4 +1,10 @@
-"""Dependencies a sampler reuses from the scene rather than recomputing."""
+"""Terms a sampler reads from the scene or computes when missing.
+
+Functions
+---------
+    ensure_downward
+        ``tdir_down`` and ``tdif_down`` of the scene, sampled if absent.
+"""
 
 from __future__ import annotations
 

@@ -1,15 +1,17 @@
-"""Loaders for earth observation products into :class:`~adjeff.core.ImageDict`.
+"""Earth observation products read into an ImageDict.
 
-The base class is :class:`ProductLoader`, a
-:class:`~adjeff.modules.SceneSource` that always populates ``rho_s``.
-Additional variables are declared via mixins:
-
-- :class:`GeometryMixin` — adds ``vza``, ``vaa``, ``sza``, ``saa``.
-- :class:`AtmosphereMixin` — adds ``aot``, ``rh``, ``href``.
-- :class:`ElevationMixin` — adds ``h`` (surface elevation from a DEM).
-
-Concrete implementation: :class:`MajaLoader` (MAJA L2A processor
-output for Sentinel-2).
+Classes
+-------
+    ProductLoader
+        Base loader, producing ``rho_s``.
+    GeometryMixin
+        Adds ``vza``, ``vaa``, ``sza``, ``saa``.
+    AtmosphereMixin
+        Adds ``aot``, ``rh``, ``href``.
+    ElevationMixin
+        Adds ``h``, from a DEM.
+    MajaLoader
+        Sentinel-2 MAJA L2A products.
 """
 
 from .maja_loader import MajaLoader

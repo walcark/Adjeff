@@ -1,4 +1,15 @@
-"""Generic base class for PSF-convolution scene modules."""
+"""Base class of the models applying a per-band PSF convolution.
+
+Classes
+-------
+    PSFConvModule
+        Holds live PSFs (training) or a frozen PSF tree (inference).
+
+Functions
+---------
+    psf_kernel_values
+        Kernel of one band in a PSF tree, as an array.
+"""
 
 from typing import Any, ClassVar, cast
 
@@ -16,43 +27,29 @@ from ..scene_module import TrainableSceneModule
 
 
 class PSFConvModule(TrainableSceneModule):
-    """Abstract base for modules applying one PSF convolution + a formula.
+    """Base of the models convolving one variable with a per-band PSF.
 
-    Subclasses declare two class attributes:
-
-    - ``_conv_input``: name of the variable in the scene dataset to convolve
-      with the PSF kernel (e.g. ``"rho_unif"``).
-    - ``_formula``: callable that receives all ``required_vars`` as keyword
-      arguments plus ``rho_env`` (the convolution output) and returns the
-      module output.  Assign a :func:`staticmethod` so that ``self._formula``
-      does not receive ``self``.
-
-    ``_compute`` (xarray inference, handles extra dims via broadcasting) and
-    ``forward_band`` (2-D tensor training, autograd preserved) are both fully
-    derived from these two declarations, subclasses need not override either.
-
-    Training and inference are two different inputs, not two modes of one
-    object.  Pass *psfs* to optimise live :class:`PSFModule` objects, or
-    *kernels* to apply a frozen PSF tree; exactly one of the two.
+    Subclasses declare ``_conv_input``, the variable convolved, and
+    ``_formula``, a staticmethod taking the required variables and
+    ``rho_env`` (the convolution) and returning the output.  Both the
+    xarray path (:meth:`_compute`) and the tensor path
+    (:meth:`forward_band`) follow from them.
 
     Parameters
     ----------
     psfs : dict[SensorBand, PSFModule] or None
-        Live PSF modules, registered for autograd.  Required for
-        training, and the only form :meth:`forward_band` accepts.
+        Live PSFs, for training.
     kernels : xr.DataTree or None
-        Frozen PSF tree, as returned by
-        :func:`~adjeff.core.psf_tree.freeze` or the optimiser.  Inference
-        only.
-    cache : CacheStore or None, optional
-        Cache backend for the xarray inference path.
+        Frozen PSF tree, for inference.  Exactly one of the two.
+    cache, rename : optional
+        See :class:`SceneModule`.
     device : torch.device or str, optional
-        Device used for tensor convolutions (default ``"cuda"``).
+        Device of the convolutions, ``"cuda"`` by default.
 
     Raises
     ------
     ConfigurationError
-        If neither or both of *psfs* and *kernels* are given.
+        Unless exactly one of *psfs* and *kernels* is given.
     """
 
     _conv_input: ClassVar[str]
@@ -84,20 +81,12 @@ class PSFConvModule(TrainableSceneModule):
         return {k: cast(PSFModule, v) for k, v in self._psfs.items()}
 
     def psf_params(self, band: SensorBand) -> dict[str, float]:
-        """Return the current PSF parameters of *band*.
+        """Return the current PSF parameters of *band*, ``{}`` if none.
 
-        Empty when the PSF has no parameters, e.g. a kernel loaded from a
-        frozen tree or a purely numerical PSF.
-
-        Parameters
-        ----------
-        band : SensorBand
-            Band whose PSF module is read.
-
-        Returns
-        -------
-        dict[str, float]
-            Parameter name to value, as held by the module right now.
+        Raises
+        ------
+        KeyError
+            If no PSF is held for *band*.
         """
         if self._kernels is not None:
             return {}
@@ -113,20 +102,9 @@ class PSFConvModule(TrainableSceneModule):
         kernel: torch.Tensor | None = None,
         **inputs: torch.Tensor,
     ) -> torch.Tensor:
-        """Differentiable per-band forward pass (2-D tensors, autograd).
+        """Differentiable forward pass of one band, on 2-D tensors.
 
-        Only available in training mode.
-
-        Parameters
-        ----------
-        band : SensorBand
-            Band to run.
-        kernel : torch.Tensor or None, optional
-            Kernel to convolve with, overriding the band's own PSF.
-            Used to evaluate a candidate without installing it in the
-            model, which is what mapping a loss surface amounts to.
-        **inputs : torch.Tensor
-            The variables named in ``required_vars``.
+        *kernel* (when given) replaces the band's live PSF for this call.
         """
         d = self._device
         if kernel is None:
@@ -143,10 +121,6 @@ class PSFConvModule(TrainableSceneModule):
             rho_env=rho_env,
         )
 
-    # ------------------------------------------------------------------
-    # SceneModule interface
-    # ------------------------------------------------------------------
-
     def _kernel_for(self, band: SensorBand) -> xr.DataArray:
         """Return the kernel to convolve with for *band*."""
         if self._kernels is not None:
@@ -154,13 +128,10 @@ class PSFConvModule(TrainableSceneModule):
         return self.psf_modules[band.id].to_dataarray()
 
     def _compute(self, scene: ImageDict) -> ImageDict:
-        """Xarray inference, extra dims handled by broadcasting."""
+        """Apply the model on DataArrays, extra dims broadcast."""
         for band in scene.bands:
             ds = scene[band]
             source = ds[self._slot(self._conv_input)]
-            # The FFT convolution is the expensive half of an inference
-            # pass and had no line of its own: on a large scene the module
-            # was silent for as long as the convolution took.
             self._log.debug(
                 "psf.convolve",
                 band=str(band),

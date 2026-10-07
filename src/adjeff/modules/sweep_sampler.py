@@ -19,45 +19,28 @@ if TYPE_CHECKING:
 
 
 class SweepSampler(SceneModule):
-    """Extension of :class:`SceneModule` for Smart-G parameter sweeps.
+    """SceneModule whose physics runs through an xsweep batched sweep.
 
-    A sampler runs one physics function over every atmospheric state the
-    caller asks for.  Smart-G is expensive per call and takes many states
-    at once, so the states travel in groups: xsweep's ``batch`` clause
-    keeps them sweep axes — deduplicated, resumable, addressable in a
-    store — while handing the engine a whole group per call.
+    Subclasses declare:
 
-    Declaring a sampler
-    -------------------
-    Two class variables and one method:
+    - ``contract``: the xsweep contract of one call, atmospheric and
+      geometric parameters in ``batch(...)``, wavelength in ``vec(...)``,
+      e.g. ``"batch(aot, rh, h, href, sza) vec(wl) -> tdir_down(wl)"``;
+    - ``point_fn``: the physics, a function of :mod:`._smartg`;
+    - :meth:`_get_configs`: the configs the swept values come from.
 
-    ``contract`` — the xsweep contract for a single call.  Atmospheric
-    and geometric parameters go in ``batch(...)``, wavelength in
-    ``vec(...)`` since Smart-G is vectorised over it and the output
-    carries it::
-
-        contract = "batch(aot, rh, h, href, sza) vec(wl) -> tdir_down(wl)"
-
-    ``point_fn`` — the physics, a function of :mod:`._smartg`.  It
-    receives the batched parameters as 1-D arrays over ``point``, the
-    vector ones whole, and the statics as keywords.
-
-    :meth:`_get_configs` — the config objects the space is drawn from.
-
-    ``_compute`` is then inherited: it builds the space, runs the sweep
-    and writes the result into every band of the scene.
+    The inherited :meth:`_compute` runs the sweep and writes the output
+    into every band of ``spectral_config``.
 
     Parameters
     ----------
-    cache : CacheStore or None
-        Disk cache for computed outputs.  ``None`` disables caching.
-    batch_size : int
-        How many atmospheric states one Smart-G call receives.  A cost
-        decision only: the values it produces do not depend on it.
-    dedup : bool
-        Collapse repeated states before calling.  Worth it when the
-        parameters are spatial maps, where many pixels share a state;
-        pure overhead on a sweep where every state is distinct.
+    cache, rename : optional
+        See :class:`SceneModule`.
+    batch_size : int, optional
+        States per Smart-G call, 64 by default.  Changes the cost only.
+    dedup : bool, optional
+        Merge identical states before calling.  Worth it for spatial
+        maps, overhead otherwise.
     """
 
     contract: ClassVar[str]
@@ -71,10 +54,7 @@ class SweepSampler(SceneModule):
         rename: dict[str, str] | None = None,
     ) -> None:
         super().__init__(cache, rename=rename)
-        # Public names: SceneModule._config_dict() reads __init__ params
-        # off same-named attributes.  batch_size cannot change a value and
-        # dedup cannot either, but both are cheap to hash and leaving them
-        # out would mean explaining why, every time someone reads this.
+        # Public, so that _config_dict reads them.
         self.batch_size = batch_size
         self.dedup = dedup
 
@@ -89,11 +69,8 @@ class SweepSampler(SceneModule):
     def _space(self) -> xr.Dataset:
         """Collect the swept parameters from the configs into one Dataset.
 
-        Coordinates are dropped on the way in.  A config auto-assigns each
-        array its own values as a coordinate, which collides as soon as two
-        arrays share a spatial dim (``aot(x, y)`` and ``rh(x, y)`` would
-        each claim different labels for ``x``), and xsweep reads its axes
-        from the data rather than from coordinates anyway.
+        Coordinates are dropped: two arrays sharing a spatial dim would
+        otherwise claim conflicting labels for it.
         """
         wanted = set(self._contract.inputs)
         arrays: dict[str, xr.DataArray] = {}
@@ -112,15 +89,11 @@ class SweepSampler(SceneModule):
 
     @staticmethod
     def _restore_coords(arr: xr.DataArray, source: xr.Dataset) -> xr.DataArray:
-        """Give *arr* back the coordinates *source* holds for its dims.
+        """Give *arr* the coordinates *source* holds for its dims.
 
-        A sweep axis is labelled by the values swept over it, so xsweep
-        builds coordinates for every dim it produces.  For a dim that is
-        not swept — the spatial ``y`` and ``x`` a scene owns — it has
-        nothing to build them from and falls back on integer positions,
-        which no longer match the scene's own labels.  Assigning such an
-        array into the scene would realign by label and keep only the
-        overlap, leaving the rest NaN.
+        xsweep labels the dims it does not sweep (``y``, ``x``) by
+        position; assigned as they are, they would misalign with the
+        scene and leave NaN.
         """
         shared = {
             str(dim): source.coords[dim]
@@ -130,17 +103,10 @@ class SweepSampler(SceneModule):
         return arr.assign_coords(shared) if shared else arr
 
     def _sweep(self, **bound: Any) -> xr.DataArray:
-        """Run the sweep and return the single declared output.
+        """Run the sweep and return its output.
 
-        Parameters
-        ----------
-        **bound
-            Per-call context bound into the physics function rather than
-            passed as a static: the band's own scene is data, not
-            configuration, and xsweep rightly refuses to fingerprint an
-            arbitrary Dataset.  Scene identity is already keyed by
-            :meth:`SceneModule._input_hashes`, which hashes the input
-            variables through their provenance.
+        *bound* is passed to the physics as keywords, outside xsweep's
+        fingerprint: it is scene data, keyed by the input hashes.
         """
         func = type(self).point_fn
         if bound:
@@ -149,14 +115,7 @@ class SweepSampler(SceneModule):
         space = self._space()
         statics = self._statics()
 
-        # What the call is about to cost, before it is paid.  xsweep says
-        # how many points one sweep will run, but only once it starts and
-        # only for that sweep; nothing said, before a fit of five hundred
-        # combos, that it was about to make thousands of Smart-G calls.
-        # Not every sampler carries a spectral config: the ones that
-        # write into a scene's own bands read them from the scene.  The
-        # key is left out rather than reported as None, a key whose value
-        # is None being one more thing for the reader to interpret.
+        # Announce the cost before paying it.
         spectral = getattr(self, "spectral_config", None)
         plan: dict[str, Any] = {
             "states": int(np.prod([space.sizes[d] for d in space.dims]) or 1),

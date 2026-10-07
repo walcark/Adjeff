@@ -1,4 +1,10 @@
-"""Module that computes rho_toa with Smart-G (symmetric radial sampling)."""
+"""TOA reflectance of a radially symmetric surface.
+
+Classes
+-------
+    RhoToaSymSampler
+        Samples ``rho_toa`` on a few radii and rebuilds the 2-D field.
+"""
 
 from __future__ import annotations
 

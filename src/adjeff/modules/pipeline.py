@@ -1,4 +1,11 @@
-"""Pipeline for chaining :class:`SceneModule` instances."""
+"""Chain of scene modules.
+
+Classes
+-------
+    Pipeline
+        Runs modules in order, checking at construction that each
+        input is produced upstream; optionally streams over dimensions.
+"""
 
 from __future__ import annotations
 
@@ -17,27 +24,19 @@ logger = get_logger(__name__)
 
 
 class Pipeline:
-    """Ordered sequence of SceneModule instances applied to an ImageDict.
+    """Scene modules applied in order.
 
-    Validates at construction that inter-module dependencies are satisfied
-    (variables produced by prior modules are available when required).
-    Variables not produced by any module are assumed to come from the input
-    scene and are not checked at construction time.
+    At construction, every variable a module reads that another module
+    writes must be written upstream.  Other inputs are expected in the
+    scene.
 
     Parameters
     ----------
     modules : list[SceneModule]
-        Modules to chain in order.
-    stream_dims : dict[str, int] or None
-        Dimensions to stream over for memory management.  When provided,
-        the pipeline iterates over chunks of these dimensions (slicing the
-        input scene) and concatenates results.  Effective when the
-        dimension already exists in the input scene's DataArrays.
-
-        Example: ``{"aot": 3}`` processes 3 AOT values at a time through
-        the whole chain — useful when xarray modules like
-        :class:`~adjeff.modules.classic.Toa2Unif` would otherwise receive
-        arrays too large to fit in memory.
+        Modules, in order.
+    stream_dims : dict[str, int] or None, optional
+        Run the chain on chunks of these dimensions and concatenate the
+        results, to bound memory, e.g. ``{"aot": 3}``.
     """
 
     def __init__(
@@ -50,19 +49,12 @@ class Pipeline:
         self._validate_chain()
 
     def _validate_chain(self) -> None:
-        """Check that inter-module variable dependencies are satisfied.
-
-        For each module, verifies that any variable it requires that is
-        *declared as an output by some module in the pipeline* has
-        already been produced by a prior module.  Variables not declared
-        as outputs by any pipeline module are assumed to come from the
-        input scene and are not checked here.
+        """Raise if a module reads a pipeline output before it is written.
 
         Raises
         ------
-        ValueError
-            If a required variable is declared as a pipeline output but
-            not produced before it is needed.
+        ConfigurationError
+            Naming the module and the variables.
         """
         all_produced = {v for m in self._modules for v in m.output_vars}
         produced: set[str] = set()
@@ -78,11 +70,7 @@ class Pipeline:
 
     @property
     def required_vars(self) -> list[str]:
-        """Variables that must be present in the input scene.
-
-        These are variables required by at least one module that are not
-        produced by any prior module in this pipeline.
-        """
+        """Variables that must be present in the input scene."""
         produced: set[str] = set()
         needed: list[str] = []
         for mod in self._modules:
@@ -101,22 +89,7 @@ class Pipeline:
         return result
 
     def __call__(self, scene: ImageDict) -> ImageDict:
-        """Apply all modules in order and return the enriched scene.
-
-        When ``stream_dims`` is configured and the corresponding dimensions
-        are present in the scene's DataArrays, the pipeline iterates over
-        chunks of those dimensions and concatenates results.
-
-        Parameters
-        ----------
-        scene : ImageDict
-            Input scene. Each module receives the output of the previous.
-
-        Returns
-        -------
-        ImageDict
-            Scene enriched with all pipeline output variables.
-        """
+        """Apply every module in order, streaming over ``stream_dims``."""
         if self._stream_dims:
             return self._call_streaming(scene)
         return self._call_full(scene)
@@ -180,28 +153,10 @@ class Pipeline:
         dims: list[str],
         counts: list[int],
     ) -> ImageDict:
-        """Fold a Cartesian product of chunk results back into one scene.
+        """Fold the row-major grid of chunk results back into one scene.
 
-        ``chunks`` comes from :func:`itertools.product` over *dims*, so it
-        is a flat row-major grid of ``prod(counts)`` entries in which the
-        last dimension varies fastest.  Folding one dimension at a time,
-        innermost first, is what keeps a two-dimensional stream correct:
-        concatenating the flat list along a single dimension would stack
-        ``n0 * n1`` pieces on one axis instead of rebuilding the grid.
-
-        Parameters
-        ----------
-        chunks : list[ImageDict]
-            Pipeline outputs, one per point of the chunk grid.
-        dims : list[str]
-            Streamed dimension names, outermost first.
-        counts : list[int]
-            Number of chunks along each dimension, same order as *dims*.
-
-        Returns
-        -------
-        ImageDict
-            Single scene spanning the whole grid.
+        Folded one dimension at a time, innermost first, which is what a
+        grid over several dimensions needs.
         """
         for dim, count in zip(reversed(dims), reversed(counts)):
             chunks = [

@@ -1,15 +1,16 @@
-"""Trainable scene modules applying a learnable PSF convolution.
+"""Trainable models convolving a scene with a learnable PSF.
 
-Currently contains one model:
+Classes
+-------
+    Unif2Surface
+        ``rho_s`` from ``rho_unif``: PSF convolution, then the 5S formula.
 
-- :class:`Unif2Surface`: estimates surface reflectance ``rho_s``
-  from uniform reflectance ``rho_unif`` by convolving with a learnable
-  PSF and applying the 5S formula.
-
-Typical workflow::
+Example
+-------
+::
 
     model = make_model(Unif2Surface, GaussPSF, bands, res_km, n, {"sigma": 0.1})
-    tree = fit(model, train_images)  # returns a frozen PSF tree
+    tree = fit(model, train_images)
 """
 
 from .unif2surface import Unif2Surface

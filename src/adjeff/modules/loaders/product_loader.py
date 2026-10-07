@@ -1,4 +1,12 @@
-"""Base classes and mixins for EO product loaders."""
+"""Base class and mixins of the product loaders.
+
+Classes
+-------
+    ProductLoader
+        SceneSource producing ``rho_s`` from a product.
+    GeometryMixin, AtmosphereMixin, ElevationMixin
+        Each declares and loads one group of extra variables.
+"""
 
 from __future__ import annotations
 

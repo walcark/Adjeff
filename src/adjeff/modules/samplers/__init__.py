@@ -1,46 +1,37 @@
-"""Smart-G Monte-Carlo samplers for radiative transfer quantities.
+"""Smart-G samplers of the 5S terms (CUDA GPU required).
 
-All samplers extend :class:`~adjeff.modules.SweepSampler` and
-require a CUDA-capable GPU.  They compute the six quantities needed
-by the 5S radiative transfer formula::
+The six terms enter::
 
     rho_toa = rho_atm
               + (tdir_up + tdif_up) * (tdir_down + tdif_down) * rho_unif
                 / (1 - sph_alb * rho_unif)
 
-**Transmittance samplers** (analytical from optical depth):
+Classes
+-------
+    TdirDownSampler, TdirUpSampler
+        Direct transmittances, from the optical depth.
+    TdifDownSampler, TdifUpSampler
+        Diffuse transmittances, by Monte Carlo.
+    SphAlbSampler
+        Spherical albedo.
+    RhoAtmSampler
+        Atmospheric path reflectance.
+    TdifUpBrdfSampler, SphAlbBrdfSampler
+        ``tdif_up`` and ``sph_alb`` over an RTLS surface; they write the
+        same variables as their Lambertian counterparts.
+    RhoToaSymSampler
+        ``rho_toa`` of a radially symmetric surface, on a few radii.
+    RhoToaSampler
+        ``rho_toa`` of an arbitrary surface, on a pixel sub-grid.
+    RadiativePipeline
+        The six standard samplers in a row.
 
-- :class:`TdirDownSampler` — direct downward transmittance ``tdir_down``.
-- :class:`TdirUpSampler`   — direct upward transmittance ``tdir_up``.
-- :class:`TdifDownSampler` — diffuse downward transmittance ``tdif_down``.
-- :class:`TdifUpSampler`   — diffuse upward transmittance ``tdif_up``.
+Constants
+---------
+    RADIATIVE_VARS
+        Names of the six 5S terms.
 
-**Reflectance samplers** (full Monte-Carlo):
-
-- :class:`SphAlbSampler`   — atmospheric spherical albedo ``sph_alb``.
-- :class:`RhoAtmSampler`   — atmospheric path reflectance ``rho_atm``.
-
-**Non-lambertian surface**: only ``tdif_up`` and ``sph_alb`` depend on
-the surface model, the four other quantities never see the ground.
-
-- :class:`TdifUpBrdfSampler` — ``tdif_up`` over an RTLS surface.
-- :class:`SphAlbBrdfSampler` — ``sph_alb`` over an RTLS surface.
-
-Both write the slot their Lambertian counterpart writes, so nothing
-downstream changes; :class:`RadiativePipeline` swaps them on ``rtls``.
-
-**TOA reflectance samplers** (require ``rho_s`` in the scene):
-
-- :class:`RhoToaSymSampler` — radial sampling (symmetric PSF assumption).
-- :class:`RhoToaSampler`    — full 2D grid sampling (arbitrary surface).
-
-**Atmospheric PSF**: see :class:`adjeff.reference.WuPsfSampler`, which
-implements a published method and therefore lives in
-:mod:`adjeff.reference` rather than here.
-
-**Convenience pipeline**:
-
-- :class:`RadiativePipeline` — chains all six standard samplers.
+The atmospheric PSF of Wu et al. lives in :mod:`adjeff.reference`.
 """
 
 from .radiatives import RadiativePipeline

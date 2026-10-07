@@ -1,9 +1,12 @@
-"""The construction the six Smart-G radiative samplers share.
+"""Shared construction of the six radiative samplers.
 
-Each of them draws one quantity of the 5S formula over the same
-atmospheric space, differing only in what it produces, how many photons
-it needs and which geometry values Smart-G takes as constants rather than
-as sweep axes.  That much is declared; the rest lives here.
+They differ only in the term produced, the photon count, and which
+geometry values are constants rather than sweep axes.
+
+Classes
+-------
+    AtmoSampler
+        SweepSampler over the atmospheric configuration.
 """
 
 from typing import Any, ClassVar

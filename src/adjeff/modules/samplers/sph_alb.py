@@ -1,4 +1,10 @@
-"""Atmospheric spherical albedo (``sph_alb``) sampler using Smart-G."""
+"""Atmospheric spherical albedo.
+
+Classes
+-------
+    SphAlbSampler
+        Samples ``sph_alb``.
+"""
 
 from typing import Any, Callable, ClassVar
 

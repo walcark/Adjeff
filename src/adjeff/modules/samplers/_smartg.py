@@ -1,8 +1,26 @@
-"""Pure Smart-G Monte Carlo kernel functions for all radiative samplers.
+"""Smart-G physics of every sampler, as stateless functions.
 
-Each function in this module is a self-contained physics kernel: it
-receives only plain values and DataArrays, calls Smart-G, and returns
-a DataArray.  No module state is accessed.
+Each takes plain values and DataArrays, runs Smart-G, and returns a
+DataArray.
+
+Functions
+---------
+    tdir_down, tdir_up
+        Direct transmittances.
+    tdif_down, tdif_up
+        Diffuse transmittances.
+    sph_alb
+        Spherical albedo.
+    rho_atm
+        Atmospheric path reflectance.
+    rho_toa
+        TOA reflectance on a pixel sub-grid.
+    rho_toa_sym
+        TOA reflectance on radii, for a symmetric surface.
+    psf_atm
+        Atmospheric PSF, for Wu et al. (2024).
+    tdif_up_brdf, sph_alb_brdf
+        Raw coupling terms over an RTLS surface.
 """
 
 from __future__ import annotations

@@ -1,4 +1,10 @@
-"""Diffuse upward transmittance (``tdif_up``) sampler using Smart-G."""
+"""Diffuse upward transmittance.
+
+Classes
+-------
+    TdifUpSampler
+        Samples ``tdif_up``.
+"""
 
 from typing import Any, Callable, ClassVar
 

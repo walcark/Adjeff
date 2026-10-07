@@ -1,15 +1,14 @@
-"""Analytical 5S scene modules (no GPU required).
+"""Closed-form 5S models, assuming a uniform Lambertian surface (no GPU).
 
-These modules implement the closed-form 5S radiative transfer equations
-directly, without Monte-Carlo simulation:
+Both read the six radiative terms produced by
+:mod:`adjeff.modules.samplers`.
 
-- :class:`Unif2Toa` — forward model: ``rho_unif`` → ``rho_toa``.
-- :class:`Toa2Unif` — inverse model: ``rho_toa`` → ``rho_unif``.
-
-Both assume a uniform Lambertian surface
-(``rho_s = rho_env = rho_unif``) and require the six radiative
-quantities produced by :mod:`adjeff.modules.samplers` as input
-variables.
+Classes
+-------
+    Unif2Toa
+        Forward model: ``rho_unif`` to ``rho_toa``.
+    Toa2Unif
+        Inverse model: ``rho_toa`` to ``rho_unif``.
 """
 
 from .toa_to_unif import Toa2Unif

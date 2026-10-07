@@ -1,4 +1,10 @@
-"""Spherical albedo coupling term over a non-lambertian surface."""
+"""Spherical albedo coupling term over an RTLS surface.
+
+Classes
+-------
+    SphAlbBrdfSampler
+        Samples ``sph_alb``, in place of SphAlbSampler.
+"""
 
 from typing import Any, Callable, ClassVar
 

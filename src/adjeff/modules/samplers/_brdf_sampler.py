@@ -1,9 +1,12 @@
-"""What the two non-lambertian samplers share.
+"""Shared construction of the two RTLS samplers.
 
-Both draw a raw Monte-Carlo quantity over an RTLS surface and turn it
-into a 5S term by dividing out the downward transmittance.  They differ
-only in what they sweep and in the last line of algebra, so everything
-else is declared once here.
+Both sample a raw quantity over an RTLS surface, then divide out the
+downward transmittance to obtain a 5S term.
+
+Classes
+-------
+    BrdfSampler
+        SweepSampler over the atmosphere and the RTLS kernels.
 """
 
 from __future__ import annotations

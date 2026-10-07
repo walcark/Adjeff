@@ -1,4 +1,10 @@
-"""Diffuse downward transmittance (``tdif_down``) sampler using Smart-G."""
+"""Diffuse downward transmittance.
+
+Classes
+-------
+    TdifDownSampler
+        Samples ``tdif_down``.
+"""
 
 from typing import Any, Callable, ClassVar
 

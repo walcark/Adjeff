@@ -1,11 +1,13 @@
-"""Module that computes rho_toa with Smart-G (full 2D, no symmetry assumption).
+"""TOA reflectance of an arbitrary surface.
 
-Unlike :mod:`rho_toa_sym`, this module accepts an arbitrary surface
-reflectance map.  The full 2D albedo field is passed to Smart-G via an
-``AlbedoMap`` environment; sensors are placed on an ``nx × ny`` sub-grid
-starting at ``topleft_pix``.  Unsampled pixels are set to ``NaN`` (no
-interpolation); a companion boolean variable ``rho_toa_valid`` marks which
-pixels were actually computed.
+The surface is passed to Smart-G as an ``AlbedoMap``; sensors cover an
+``nx × ny`` sub-grid from ``topleft_pix``.  Other pixels are ``NaN``,
+and ``rho_toa_valid`` marks the computed ones.
+
+Classes
+-------
+    RhoToaSampler
+        Samples ``rho_toa`` on a pixel sub-grid.
 """
 
 from __future__ import annotations

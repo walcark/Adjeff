@@ -1,37 +1,28 @@
-"""Scene transformation modules for the adjeff radiative pipeline.
+"""Scene modules: read variables from an ImageDict and add new ones.
 
-The module system is organized in four abstraction levels, from base
-classes to domain-specific implementations:
+Classes
+-------
+    SceneModule
+        Base step: checks inputs, caches outputs, stamps provenance.
+    SceneSource
+        Step creating a scene from nothing (no required input).
+    TrainableSceneModule
+        Step holding trainable PSFs, as a ``torch.nn.Module``.
+    SweepSampler
+        Step whose physics runs through an xsweep batched sweep.
+    Pipeline
+        Chain of steps, checked at construction.
 
-**1. Base classes**
-
-- :class:`SceneModule` — core contract: validates inputs against
-  ``required_vars``, checks the disk cache, calls ``_compute``, and
-  stamps provenance on outputs.  Every module inherits from it.
-- :class:`SceneSource` — variant of :class:`SceneModule` that creates a
-  scene from scratch (no required input variables).
-- :class:`TrainableSceneModule` — extends :class:`SceneModule` with
-  :class:`torch.nn.Module` for gradient-tracked PSF optimisation.
-- :class:`SweepSampler` — extends :class:`SceneModule` with an
-  :mod:`xsweep` batched sweep, used by all Smart-G samplers.
-
-**2. Pipeline**
-
-- :class:`Pipeline` — chains :class:`SceneModule` instances and
-  validates at construction time that each module's ``required_vars``
-  are produced by its predecessors.
-
-**3. Sub-packages** (in order of complexity)
-
-- :mod:`adjeff.modules.classic` — analytical 5S formulas, no GPU:
-  :class:`~adjeff.modules.classic.Toa2Unif`,
-  :class:`~adjeff.modules.classic.Unif2Toa`.
-- :mod:`adjeff.modules.models` — trainable model:
-  :class:`~adjeff.modules.models.Unif2Surface` (5S formula + learnable
-  PSF convolution).
-- :mod:`adjeff.modules.samplers` — Smart-G Monte-Carlo samplers
-  (GPU required): :class:`~adjeff.modules.samplers.RadiativePipeline`
-  and the individual transmittance / reflectance samplers.
+Sub-packages
+------------
+    classic
+        Closed-form 5S forward and inverse models.
+    models
+        Trainable PSF-convolution models.
+    samplers
+        Smart-G Monte-Carlo samplers of the 5S terms (GPU).
+    loaders
+        Earth observation products read into an ImageDict.
 """
 
 from .pipeline import Pipeline
