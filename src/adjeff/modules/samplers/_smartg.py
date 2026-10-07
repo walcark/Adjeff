@@ -105,44 +105,7 @@ def rho_atm(
     vaa: float,
     sat_height: float,
 ) -> xr.DataArray:
-    """Compute the atmospheric reflectance (path radiance) with Smart-G.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [°], 1-D.
-    sza : xr.DataArray
-        Solar zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call.
-    saa : float
-        Solar azimuth angle(s) [°].
-    vaa : float
-        Viewing azimuth angle(s) [°].
-    sat_height : float
-        Satellite altitude [km].
-
-    Returns
-    -------
-    xr.DataArray
-        Atmospheric reflectance with dims ``(vza, sza, wl, ...)``.
-    """
+    """Atmospheric path reflectance, on dims ``(vza, sza, wl, ...)``."""
     from smartg.smartg import LocalEstimate, Smartg
 
     atm, batch, atm_size = _make_atmosphere(
@@ -190,36 +153,7 @@ def tdir_down(
     remove_rayleigh: bool,
     n_ph: int = int(1e2),
 ) -> xr.DataArray:
-    """Compute the direct downward transmittance analytically.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    sza : xr.DataArray
-        Solar zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh optical depth is set to zero.
-    n_ph : int, optional
-        Number of photons for the optical depth retrieval, by default 100.
-
-    Returns
-    -------
-    xr.DataArray
-        Direct downward transmittance with dims ``(sza, wl, ...)``.
-    """
+    """Direct downward transmittance ``exp(-OD / cos(sza))``."""
     atm, batch, _ = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
@@ -251,36 +185,7 @@ def tdir_up(
     remove_rayleigh: bool,
     n_ph: int = int(1e2),
 ) -> xr.DataArray:
-    """Compute the direct upward transmittance analytically.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh optical depth is set to zero.
-    n_ph : int, optional
-        Number of photons for the optical depth retrieval, by default 100.
-
-    Returns
-    -------
-    xr.DataArray
-        Direct upward transmittance with dims ``(vza, wl, ...)``.
-    """
+    """Direct upward transmittance ``exp(-OD / cos(vza))``."""
     atm, batch, _ = _make_atmosphere(
         wl, aot, rh, h, href, species, afgl_type, remove_rayleigh
     )
@@ -310,40 +215,7 @@ def tdif_down(
     saa: float,
     sat_height: float,
 ) -> xr.DataArray:
-    """Compute the downward diffuse transmittance with Smart-G.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    sza : xr.DataArray
-        Solar zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call.
-    saa : float
-        Solar azimuth angle(s) [°].
-    sat_height : float
-        Satellite altitude [km].
-
-    Returns
-    -------
-    xr.DataArray
-        Downward diffuse transmittance with dims ``(sza, wl, ...)``.
-    """
+    """Diffuse downward transmittance, on dims ``(sza, wl, ...)``."""
     from smartg.smartg import Smartg
 
     atm, batch, atm_size = _make_atmosphere(
@@ -363,7 +235,11 @@ def tdif_down(
     )["flux_down (0+)"]
     smartg.clear_context()
 
-    return collect_batched(res, batch, angles={"sensor index": ("sza", sza.values)})
+    return collect_batched(
+        res,
+        batch,
+        angles={"sensor index": ("sza", sza.values)},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -384,38 +260,7 @@ def tdif_up(
     n_ph: int,
     saa: float,
 ) -> xr.DataArray:
-    """Compute the upward diffuse transmittance with Smart-G.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [°], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call.
-    saa : float
-        Solar azimuth angle(s) [°].
-
-    Returns
-    -------
-    xr.DataArray
-        Upward diffuse transmittance with dims ``(vza, wl, ...)``.
-    """
+    """Diffuse upward transmittance, on dims ``(vza, wl, ...)``."""
     from smartg.sensor import Sensor
     from smartg.smartg import LocalEstimate, Smartg
 
@@ -468,34 +313,7 @@ def sph_alb(
     remove_rayleigh: bool,
     n_ph: int,
 ) -> xr.DataArray:
-    """Compute the spherical albedo of the atmosphere with Smart-G.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call.
-
-    Returns
-    -------
-    xr.DataArray
-        Spherical albedo with dims ``(wl, ...)``.
-    """
+    """Spherical albedo of the atmosphere, on dims ``(wl, ...)``."""
     from smartg.sensor import Sensor
     from smartg.smartg import Smartg
 
@@ -553,12 +371,11 @@ def rho_toa(
     n_alb: int,
     rho_background: float | Literal["mean", "min", "zero"] = "mean",
 ) -> xr.DataArray:
-    """Compute TOA reflectance from an arbitrary 2D surface reflectance map.
+    """TOA reflectance of an arbitrary surface, on an ``nx × ny`` sub-grid.
 
-    Sensors are placed on an ``nx × ny`` sub-grid (row-major: y-outer,
-    x-inner) starting at ``topleft_pix``.  After Smart-G the flat
-    ``"sensor index"`` axis is reshaped to ``(y, x)`` and the result is
-    reindexed to the full image grid with ``NaN`` for unsampled pixels.
+    Sensors cover the sub-grid from *topleft_pix*, row-major; the other
+    pixels are ``NaN``.  *n_alb* and *rho_background* set the
+    ``AlbedoMap`` (see :class:`~adjeff.atmosphere.SurfaceFactory`).
     """
     from smartg.smartg import LocalEstimate, Smartg
 
@@ -727,9 +544,10 @@ def rho_toa_sym(
     nr: int,
     n_ph: int,
 ) -> xr.DataArray:
-    """Compute the TOA reflectance from the surface reflectance.
+    """TOA reflectance of a radially symmetric surface.
 
-    This code assumes that the input field is symmetric.
+    Sampled on *nr* radii chosen where the profile varies most, then
+    rebuilt in 2-D.  The scene ``rho_atm`` replaces the sampled one.
     """
     from smartg.smartg import LocalEstimate, Smartg
 
@@ -810,11 +628,7 @@ def rho_toa_sym(
 
     result = batch.unstack(result)
 
-    # Add pre-computed rho_atm to avoid simulation noise. It carries the
-    # sza/vza axes of the sweep that produced it, while this call is at one
-    # geometry, so the matching entry is selected rather than broadcast in:
-    # broadcasting would give the return two dims the contract never
-    # declares, and the result would be placed against the wrong axes.
+    # Add pre-computed rho_atm to avoid simulation noise.
     rho_atm = rho_s["rho_atm"]
     for dim, value in (("sza", sza), ("vza", vza)):
         if dim in rho_atm.dims:
@@ -985,21 +799,7 @@ def psf_atm(
 
 
 def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
-    """Return a Smart-G Ross-Thick Li-Sparse surface.
-
-    The kernel weights travel as plain floats rather than as a built
-    surface: a Smart-G object in a sampler's signature would end up in
-    the cache key, where nothing guarantees it hashes the same twice.
-
-    Parameters
-    ----------
-    k0 : float
-        Spectral albedo of the isotropic kernel.
-    k1p : float
-        Weight of the geometric kernel, relative to the isotropic one.
-    k2p : float
-        Weight of the volumetric kernel, relative to the isotropic one.
-    """
+    """Return a Smart-G RTLS surface of kernel weights *k0*, *k1p*, *k2p*."""
     from smartg.albedo import AlbedoCst
     from smartg.surface import RTLSSurface
 
@@ -1012,29 +812,11 @@ def _rtls_surface(k0: float, k1p: float, k2p: float) -> Any:
 def _viewing_sensors(
     vza: xr.DataArray, azimuth: float, sat_height: float
 ) -> list["Sensor"]:
-    """Return one Smart-G source per viewing zenith angle.
+    """Return one source per *vza*, travelling along ``azimuth + 180``.
 
-    A satellite at azimuth ``vaa`` sits along ``vaa`` from the ground
-    point it observes, so in forward mode its photons travel along
-    ``vaa + 180``.  Declaring ``ph_deg= vaa`` instead mirrors the
-    geometry through the principal plane, which reverses the trend of
-    the path reflectance with the relative azimuth: 25 percent at
-    ``raa = 0`` and nothing at ``raa = 90``, where both are the same
-    scattering angle.  See
-    ``test_the_path_reflectance_follows_the_scattering_angle``.
-
-    This matches :func:`_grid_sensors`, and **not**
-    :func:`~adjeff.utils.smartgutils.make_sensors` as ``rho_atm`` calls
-    it.
-
-    Parameters
-    ----------
-    vza : xr.DataArray
-        Viewing zenith angles [deg].
-    azimuth : float
-        Viewing azimuth ``vaa`` [deg], before the 180 degree reversal.
-    sat_height : float
-        Satellite altitude [km].
+    The reversal matters: ``ph_deg = vaa`` mirrors the geometry through
+    the principal plane.  As in :func:`_grid_sensors`, unlike
+    :func:`~adjeff.utils.smartgutils.make_sensors`.
     """
     from smartg.sensor import Sensor
 
@@ -1068,66 +850,11 @@ def tdif_up_brdf(
     k1p: float,
     k2p: float,
 ) -> xr.DataArray:
-    """Sample the two-way surface-reflected radiance over an RTLS surface.
+    """Raw two-way radiance over an RTLS surface, one reflection.
 
-    Photons leave the satellite along ``vza``, reflect **once** on the
-    surface and are collected toward the sun by local estimate.  By
-    reciprocity this is the sun-to-surface-to-satellite path, so the
-    return is::
-
-        raw = rho_eff * T(vza) * T_up(sza)
-
-    with ``rho_eff`` the RTLS reflectance for the pair.  Turning it into
-    a transmittance needs the downward quantities, which live in the
-    scene; :class:`~adjeff.modules.samplers.TdifUpBrdfSampler` does that
-    division.  ``RMIN = RMAX = 1`` keeps exactly one surface
-    interaction, which removes the surface-atmosphere coupling instead
-    of correcting for it afterwards, and keeps the result linear in the
-    kernel weights.
-
-    Unlike :func:`tdif_up`, this depends on **both** angles: a BRDF
-    breaks the reciprocity that let the Lambertian case collapse them
-    into one.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    sza : xr.DataArray
-        Solar zenith angles [deg], 1-D.
-    vza : xr.DataArray
-        Viewing zenith angles [deg], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call and per sensor.
-    saa : float
-        Solar azimuth angle [deg], setting the absolute frame.
-    raa : float
-        Relative azimuth ``vaa - saa`` [deg].  It is what the BRDF
-        actually depends on, so it is named rather than derived.
-    sat_height : float
-        Satellite altitude [km].
-    k0, k1p, k2p : float
-        RTLS kernel weights, see :func:`_rtls_surface`.
-
-    Returns
-    -------
-    xr.DataArray
-        Raw two-way radiance, with ``sza`` and ``vza`` paired against
-        the points of a batched call.
+    ``raw = rho_eff T(vza) T(sza)``; :class:`TdifUpBrdfSampler` turns it
+    into ``tdif_up``.  *raa* is ``vaa - saa``; *k0*, *k1p*, *k2p* are
+    the RTLS weights.
     """
     from smartg.smartg import LocalEstimate, Smartg
 
@@ -1181,52 +908,9 @@ def sph_alb_brdf(
     k1p: float,
     k2p: float,
 ) -> xr.DataArray:
-    """Sample the flux returned to the surface by one RTLS reflection.
+    """Raw flux returned to the ground after one RTLS reflection.
 
-    Photons leave the sun direction as a planar flux, reflect **once**
-    on the surface, and the flux coming back down at ground level is
-    read.  Normalised by the downward transmittance it gives the
-    coupling term the 5S formula writes as ``sph_alb`` for a Lambertian
-    surface; :class:`~adjeff.modules.samplers.SphAlbBrdfSampler` does
-    that division.
-
-    Only ``sza`` is swept: the quantity is a hemispheric integral, so
-    there is no viewing direction to carry.
-
-    Parameters
-    ----------
-    wl : xr.DataArray
-        Wavelengths [nm], 1-D.
-    aot : xr.DataArray
-        Aerosol optical thickness, 1-D.
-    rh : xr.DataArray
-        Relative humidity [%], 1-D.
-    h : xr.DataArray
-        Ground elevation [km], 1-D.
-    href : xr.DataArray
-        Reference height of the aerosol vertical profile [km], 1-D.
-    sza : xr.DataArray
-        Solar zenith angles [deg], 1-D.
-    species : dict[str, float]
-        OPAC aerosol species and fractional contributions.
-    afgl_type : str
-        AFGL standard atmosphere profile identifier.
-    remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
-    n_ph : int
-        Number of photons per Smart-G call and per sensor.
-    saa : float
-        Solar azimuth angle [deg].
-    sat_height : float
-        Altitude the photons are launched from [km].
-    k0, k1p, k2p : float
-        RTLS kernel weights, see :func:`_rtls_surface`.
-
-    Returns
-    -------
-    xr.DataArray
-        Raw downward flux at ground, with ``sza`` paired against the
-        points of a batched call.
+    :class:`SphAlbBrdfSampler` turns it into ``sph_alb``.
     """
     from smartg.sensor import Sensor
     from smartg.smartg import Smartg
