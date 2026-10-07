@@ -1,12 +1,22 @@
-"""Radial-analysis helper functions for 2D image arrays.
+"""Radial binning of 2-D fields, shared by the radial analysis.
 
-Provides the low-level building blocks the radial analysis rests on:
+Classes
+-------
+    RadialBinning
+        Pixels grouped by radius once, reduced many times.
 
-1) radial_distances : compute flat (r, v) arrays from a Dataset variable.
-2) natural_npix     : maximum bin count that guarantees no empty radial bins.
-3) RadialBinning    : group pixels by radius once, reduce values many times.
-4) annulus_areas    : the area each bin stands for, and cumulate over them,
-                      always read at the bin edges rather than at its centre.
+Functions
+---------
+    radial_distances
+        Flat radii and values of a field.
+    natural_npix
+        Largest bin count leaving no bin empty.
+    edges_from_centres
+        Bin edges implied by bin centres.
+    annulus_areas
+        Area of each annulus.
+    cumulate
+        Radial profile integrated over the disc.
 """
 
 from __future__ import annotations
@@ -22,10 +32,8 @@ from .._logging import get_logger
 
 logger = get_logger(__name__)
 
-#: How far past a profile's last radius the reconstruction may reach
-#: before it is worth a warning rather than a debug line, as a fraction.
-#: The corners of a square grid overshoot by 0.4 % structurally; a
-#: profile covering half its target overshoots by 100 %.
+#: Extrapolation beyond the last radius, as a fraction, above which a
+#: warning is logged.  Square-grid corners alone overshoot by 0.4 %.
 OVERSHOOT_WARNS = 0.05
 
 
@@ -34,28 +42,10 @@ def _sample_radial_from_cdf(
     n: int,
     max_gap: float | None = None,
 ) -> np.ndarray:
-    """Return radii sampled adaptively via inverse-CDF of a radial profile.
+    """Return *n* radii, denser where the profile varies most.
 
-    Generates *n* points concentrated where ``|df/dr|`` is large (pure
-    gradient-based sampling, no DC bias).  If *max_gap* is provided, extra
-    uniform points are inserted in any interval that exceeds that distance,
-    guaranteeing a minimum spatial coverage in flat regions.
-
-    Parameters
-    ----------
-    profile : xr.DataArray
-        1-D DataArray with dim ``"r"`` (e.g. output of ``.adjeff.radial()``).
-    n : int
-        Number of gradient-driven sample radii.
-    max_gap : float or None, optional
-        Maximum allowed distance between two consecutive samples, in the same
-        units as ``profile.coords["r"]``.  When ``None`` no gap constraint is
-        applied.
-
-    Returns
-    -------
-    np.ndarray
-        Sorted array of radii (length >= *n* when *max_gap* is active).
+    Sampled by inverting the CDF of ``|df/dr|``; with *max_gap*, points
+    are added so that no two consecutive radii are further apart.
     """
     r = profile.coords["r"].values.astype(np.float64)
     v = profile.values.astype(np.float64)
@@ -90,40 +80,13 @@ def _profile_to_field(
     xx: np.ndarray,
     yy: np.ndarray,
 ) -> np.ndarray:
-    """Reconstruct 2-D field from a 1-D radial profile via Pchip interpolation.
-
-    Parameters
-    ----------
-    r : np.ndarray
-        Sorted 1-D radii of the profile, shape ``(N,)``.
-    values : np.ndarray
-        Profile values at each radius, shape ``(N,)``.
-    xx : np.ndarray
-        2-D x-coordinate grid, shape ``(ny, nx)``.
-    yy : np.ndarray
-        2-D y-coordinate grid, shape ``(ny, nx)``.
-
-    Returns
-    -------
-    np.ndarray
-        Reconstructed field, shape ``(ny, nx)``.
-    """
+    """Return the 2-D field on ``(xx, yy)`` of a radial profile, by Pchip."""
     rr = np.sqrt(xx**2 + yy**2)
-
-    # Deduplicate radii (keep first occurrence)
     _, unique_idx = np.unique(r, return_index=True)
     r_u = r[unique_idx]
     v_u = values[unique_idx]
 
-    # A Pchip continued past its last knot follows the slope it ended on,
-    # which for a decaying profile heads for zero and then through it.
-    # Worth saying, but not always worth a warning: a profile binned from
-    # a square grid stops at the centre of its outermost annulus, so the
-    # four corner pixels always sit half a bin beyond it.  That is four
-    # pixels out of forty thousand, reaching 0.4 % past the last knot,
-    # and a warning that fires on the ordinary case teaches the reader to
-    # ignore it.  The level follows how far the extrapolation reaches,
-    # not whether it happens at all.
+    # Pchip extrapolates past the last radius: warn only when it goes far.
     outside = rr > r_u[-1]
     if outside.any():
         overshoot = float(rr.max()) / float(r_u[-1]) - 1.0
@@ -149,24 +112,11 @@ def radial_distances(
     *,
     center: tuple[float, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return flat float32 radial-distance and value arrays.
+    """Return the flat float32 radii and values of a field.
 
-    Parameters
-    ----------
-    source : xr.DataArray or xr.Dataset
-        Input array or Dataset. When a Dataset is provided, *var_name* is
-        required to select the variable.
-    var_name : str or None, optional
-        Variable name to extract from *source* when it is a Dataset.
-    center : tuple[float, float] or None, optional
-        ``(cx, cy)`` origin. Defaults to the coordinate mean.
-
-    Returns
-    -------
-    rr : np.ndarray
-        Flat float32 array of radial distances, shape ``(n_pixels,)``.
-    vv : np.ndarray
-        Flat float32 array of pixel values, shape ``(n_pixels,)``.
+    A kernel (dims ``y_psf``, ``x_psf``) is centred on 0; a field on its
+    coordinate mean, unless *center* ``(cx, cy)`` is given.  *var_name*
+    selects the variable of a Dataset.
     """
     if isinstance(source, xr.Dataset):
         if var_name is None:
@@ -195,21 +145,7 @@ def natural_npix(
     source: xr.DataArray | xr.Dataset,
     var_name: str | None = None,
 ) -> int:
-    """Return the maximum bin count that keeps bin width >= 1 pixel.
-
-    Parameters
-    ----------
-    source : xr.DataArray or xr.Dataset
-        Input array or Dataset. When a Dataset is provided, *var_name* is
-        required to select the variable.
-    var_name : str or None, optional
-        Variable name to extract from *source* when it is a Dataset.
-
-    Returns
-    -------
-    int
-        Maximum number of radial bins with no empty bins guaranteed.
-    """
+    """Return the largest bin count keeping every bin one pixel wide."""
     if isinstance(source, xr.Dataset):
         if var_name is None:
             raise ValueError("var_name is required when source is an xr.Dataset")
@@ -225,24 +161,7 @@ def _natural_bins(side: int) -> int:
 
 
 def edges_from_centres(centres: "torch.Tensor") -> "torch.Tensor":
-    """Return the bin edges a set of bin *centres* implies.
-
-    Edges sit halfway between consecutive centres; the outer two are
-    extrapolated by half a step and the innermost is clamped at zero,
-    since a radius cannot be negative.
-
-    Parameters
-    ----------
-    centres : torch.Tensor
-        Bin centre radii, shape ``(n_bins,)``, increasing.
-
-    Returns
-    -------
-    torch.Tensor
-        Edges, shape ``(n_bins + 1,)``.
-    """
-    import torch
-
+    """Return the ``n + 1`` edges halfway between *centres*, the first >= 0."""
     step = centres[1:] - centres[:-1]
     edges = torch.empty(centres.numel() + 1, dtype=centres.dtype)
     edges[1:-1] = 0.5 * (centres[:-1] + centres[1:])
@@ -252,55 +171,35 @@ def edges_from_centres(centres: "torch.Tensor") -> "torch.Tensor":
 
 
 def annulus_areas(edges: "torch.Tensor") -> "torch.Tensor":
-    """Return the area of the annulus each bin covers.
-
-    Parameters
-    ----------
-    edges : torch.Tensor
-        Bin edges, shape ``(n_bins + 1,)``.
-
-    Returns
-    -------
-    torch.Tensor
-        Annulus areas, shape ``(n_bins,)``.
-    """
+    """Return the area of each annulus between consecutive *edges*."""
     return math.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
 
 
 class RadialBinning:
-    """Pixels grouped by their distance to a centre, computed once.
-
-    The pixel to bin mapping and the bin counts depend on the geometry
-    alone, not on the values, so a caller that reduces many fields on one
-    grid (a landscape scan, a profile and its standard deviation) builds
-    this once and calls the reductions repeatedly.
+    """Pixels grouped by distance to a centre, for repeated reductions.
 
     Parameters
     ----------
     radius : torch.Tensor
-        Flat distances, shape ``(n_pixels,)``.  Any unit; the radii that
-        come back out are in that same unit.
+        Flat distances, any unit.
     n_bins : int
         Number of bins.
     r_max : float or None, optional
-        Distance the outermost edge sits at.  Defaults to the largest
-        distance in *radius*.  Pixels beyond it fall into the last bin,
-        so pass only distances inside *r_max* when that would skew it.
+        Outer edge, the largest distance by default; beyond it, pixels
+        fall into the last bin.
 
     Attributes
     ----------
     edges : torch.Tensor
-        Bin edges, shape ``(n_bins + 1,)``.
+        ``n_bins + 1`` bin edges.
     midpoints : torch.Tensor
-        True bin midpoints, shape ``(n_bins,)``.
+        Bin midpoints.
     centres : torch.Tensor
-        Midpoints with the first one pulled to zero, shape ``(n_bins,)``.
-        A radial profile starts at the centre pixel, so this is the
-        abscissa to plot and interpolate against.
-    counts : torch.Tensor
-        Number of pixels per bin, shape ``(n_bins,)``.
-    filled : torch.Tensor
-        Boolean mask of the bins that got at least one pixel.
+        Midpoints with the first at 0: the abscissa of a profile.
+    counts, filled : torch.Tensor
+        Pixels per bin, and whether the bin caught any.
+    area : torch.Tensor
+        Area of each annulus.
     """
 
     def __init__(
@@ -310,8 +209,6 @@ class RadialBinning:
         *,
         r_max: float | None = None,
     ) -> None:
-        import torch
-
         self.n_bins = n_bins
         top = float(radius.max()) if r_max is None else float(r_max)
         self.edges = torch.linspace(0.0, top, n_bins + 1)
@@ -329,22 +226,7 @@ class RadialBinning:
 
     @classmethod
     def on_square_grid(cls, n: int, res: float) -> "RadialBinning":
-        """Return the binning of a square grid centred on itself.
-
-        Parameters
-        ----------
-        n : int
-            Grid side in pixels.
-        res : float
-            Pixel size, in the unit the radii come out in.
-
-        Returns
-        -------
-        RadialBinning
-            Binning with the natural bin count for that side.
-        """
-        import torch
-
+        """Return the natural binning of an ``n × n`` grid of pixel *res*."""
         half = (n // 2) * res
         coords = np.linspace(-half, half, n, dtype=np.float32)
         xx, yy = np.meshgrid(coords, coords)
@@ -353,30 +235,12 @@ class RadialBinning:
 
     def sum(self, values: "torch.Tensor") -> "torch.Tensor":
         """Return the sum of *values* per bin, shape ``(n_bins,)``."""
-        import torch
-
         return torch.bincount(self.index, weights=values.ravel(), minlength=self.n_bins)
 
     def mean(
         self, values: "torch.Tensor", fill: float = float("nan")
     ) -> "torch.Tensor":
-        """Return the azimuthal mean of *values* per bin.
-
-        Parameters
-        ----------
-        values : torch.Tensor
-            Values to average, one per pixel.
-        fill : float, optional
-            Value written where a bin caught no pixel.  Defaults to
-            ``nan``; pass ``0.0`` when the result feeds an integral.
-
-        Returns
-        -------
-        torch.Tensor
-            Shape ``(n_bins,)``.
-        """
-        import torch
-
+        """Return the mean of *values* per bin, *fill* in empty bins."""
         total = self.sum(values)
         out = torch.full((self.n_bins,), fill, dtype=torch.float32)
         out[self.filled] = total[self.filled] / self.counts[self.filled]
@@ -384,8 +248,6 @@ class RadialBinning:
 
     def std(self, values: "torch.Tensor", fill: float = float("nan")) -> "torch.Tensor":
         """Return the azimuthal standard deviation of *values* per bin."""
-        import torch
-
         mean = self.sum(values)[self.filled] / self.counts[self.filled]
         mean_sq = self.sum(values**2)[self.filled] / self.counts[self.filled]
         out = torch.full((self.n_bins,), fill, dtype=torch.float32)
@@ -393,50 +255,12 @@ class RadialBinning:
         return out
 
     def cdf(self, values: "torch.Tensor", *, normalize: bool = True) -> "torch.Tensor":
-        """Return the energy cumulated over radius, read at the edges.
-
-        The abscissa is :attr:`edges`, not :attr:`centres`: what an
-        annulus contributes is enclosed by its outer edge, so that is the
-        radius the running total belongs to.  The curve therefore starts
-        at zero, at radius zero, and carries one more point than there
-        are bins.
-
-        Parameters
-        ----------
-        values : torch.Tensor
-            Values to integrate, one per pixel.
-        normalize : bool, optional
-            Divide by the total, so that the curve reaches one at the
-            edge of the grid (default ``True``).
-
-        Returns
-        -------
-        torch.Tensor
-            Shape ``(n_bins + 1,)``, aligned on :attr:`edges`.
-        """
+        """Return the energy enclosed by each of :attr:`edges`, from 0."""
         profile = self.mean(values, fill=0.0).clamp(min=0.0)
         return cumulate(profile, self.edges, normalize=normalize)
 
     def radius_at(self, cdf: "torch.Tensor", fraction: float) -> float:
-        """Return the radius enclosing *fraction* of the energy.
-
-        Interpolates inside the bin the fraction falls in, rather than
-        snapping to an edge: against a King profile of known encircled
-        energy that is the difference between seven percent of error and
-        two tenths of one.
-
-        Parameters
-        ----------
-        cdf : torch.Tensor
-            Cumulated energy from :meth:`cdf`, shape ``(n_bins + 1,)``.
-        fraction : float
-            Energy fraction, between zero and one.
-
-        Returns
-        -------
-        float
-            Radius, in the unit the distances came in.
-        """
+        """Return the radius enclosing *fraction* of a :meth:`cdf`, interpolated."""
         return float(np.interp(fraction, cdf.numpy(), self.edges.numpy()))
 
 
@@ -446,25 +270,7 @@ def cumulate(
     *,
     normalize: bool = True,
 ) -> "torch.Tensor":
-    """Integrate a radial *profile* over the disc, annulus by annulus.
-
-    Parameters
-    ----------
-    profile : torch.Tensor
-        Azimuthal mean per bin, shape ``(n_bins,)``.
-    edges : torch.Tensor
-        Bin edges, shape ``(n_bins + 1,)``.
-    normalize : bool, optional
-        Divide by the total (default ``True``).
-
-    Returns
-    -------
-    torch.Tensor
-        Cumulated energy, shape ``(n_bins + 1,)``, starting at zero: the
-        value at index ``i`` is the energy enclosed by ``edges[i]``.
-    """
-    import torch
-
+    """Return the energy enclosed by each of *edges*, from 0, of a radial profile."""
     cdf = torch.zeros(profile.numel() + 1, dtype=profile.dtype)
     cdf[1:] = torch.cumsum(profile * annulus_areas(edges), dim=0)
     if normalize and cdf[-1] > 0:

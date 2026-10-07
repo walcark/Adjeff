@@ -1,4 +1,10 @@
-"""Disk cache for expensive module computations."""
+"""Disk cache of scene module outputs.
+
+Classes
+-------
+    CacheStore
+        Zarr entries keyed by a content hash, written atomically.
+"""
 
 from __future__ import annotations
 
@@ -18,19 +24,12 @@ logger = get_logger(__name__)
 
 
 class CacheStore:
-    """Zarr-backed content-hash cache for a SceneModule output.
-
-    Cache entries are stored as Zarr stores keyed by a content hash of
-    the module configuration and the input provenance.
-
-    Writes are atomic: data is written to a temporary directory then
-    renamed to the final path to prevent partial-write corruption.
+    """Zarr cache of scene module outputs, one store per key and band.
 
     Parameters
     ----------
-    cache_dir:
-        Root directory for cache storage.  Pass ``None`` to disable caching
-        (all operations become no-ops).
+    cache_dir : str, Path or None, optional
+        Root directory; ``None`` disables caching.
     """
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:
@@ -52,23 +51,10 @@ class CacheStore:
         scene: "ImageDict",
         variables: list[str],
     ) -> None:
-        """Save *variables* DataArrays for each band to Zarr under *key*.
+        """Write *variables* of every band under *key*, atomically.
 
-        Only *variables* are saved, allowing the caller to persist only
-        the data produced by the module.
-
-        Writes are atomic: data is written to a temporary directory then
-        renamed to the final path to prevent partial-write corruption.
-
-        Parameters
-        ----------
-        key : str
-            Content hash identifying this cache entry.
-        scene : ImageDict
-            ImageDict whose band Datasets are the data source.
-        variables : list[str]
-            Variable names to persist.
-
+        Chunked one value per non-spatial dim, so that reading one combo
+        reads one slice.
         """
         if not self.enabled:
             return
@@ -76,17 +62,11 @@ class CacheStore:
 
         for band in scene.bands:
             ds = scene[band]
-            # The cache decides its own chunking, so any encoding an
-            # array carries from the file it was read back from has to
-            # go: `to_zarr` honours `encoding["chunks"]` over the dask
-            # chunks below, and refuses the write when the two disagree.
+            # Drop the encoding read back from disk: to_zarr would prefer
+            # its chunks to the ones set below, and refuse the mismatch.
             subset = ds[variables].drop_encoding()
             dest = self._cache_dir / key / f"{band}.zarr"
             dest.parent.mkdir(parents=True, exist_ok=True)
-
-            # Chunk size 1 along every non-spatial dimension so that
-            # selecting a single atmospheric combo (aot, rh, …) reads only
-            # the required slice rather than the full array.
             spatial = {"x", "y"}
             chunks = {str(d): 1 if str(d) not in spatial else -1 for d in subset.dims}
 
@@ -111,28 +91,9 @@ class CacheStore:
         bands: list[SensorBand],
         variables: list[str],
     ) -> dict[SensorBand, dict[str, xr.DataArray]] | None:
-        """Return cached DataArrays or None on cache miss.
+        """Return ``{band: {var: DataArray}}`` lazily, or ``None`` on a miss.
 
-        Band ids must be provided because the cache doesn't know the bands
-        for which the object was saved. Returns None if any var or any band
-        is missing.
-
-        Parameters
-        ----------
-        key : str
-            Content hash to look up.
-        bands : list[str]
-            Band identifiers to load.
-        variables : list[str]
-            Variable names to retrieve.
-
-        Returns
-        -------
-        dict or None
-            ``{band: {var: DataArray}}`` on hit, ``None`` on miss.
-            ``_adjeff_provenance`` attributes are restored alongside DataArrays
-            to preserve the provenance chain.
-
+        A missing band, an unreadable store or a missing variable is a miss.
         """
         if not self.enabled or self._cache_dir is None:
             return None
@@ -154,21 +115,12 @@ class CacheStore:
                 )
                 return None
 
-            # A truncated entry (interrupted write, output_vars changed
-            # since it was written) must read as a miss.  Returning the
-            # variables that happen to be there would hand the caller a
-            # scene silently short of an output, flagged as a cache hit.
             absent = [var for var in variables if var not in ds]
             if absent:
                 logger.debug("cache.miss", key=key[:8], band=str(band), missing=absent)
                 return None
             result[band] = {var: ds[var] for var in variables}
 
-        # Kept at debug although the plan called for info: `module.done`
-        # already carries `cached=`, at info, once per module.  This fires
-        # twice per module, the second time when the outputs are reloaded
-        # as lazy views, so promoting it would report the same fact three
-        # times.
         logger.debug("cache.hit", key=key[:8], bands=len(bands), vars=variables)
         return result if result else None
 

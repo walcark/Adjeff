@@ -69,10 +69,6 @@ from adjeff.optim import (
 from adjeff.reference import WuPsfSampler
 from adjeff.utils import CacheStore
 
-# ---------------------------------------------------------------------------
-# Internal helper
-# ---------------------------------------------------------------------------
-
 __all__ = [
     "FullConfig",
     # Loading
@@ -149,11 +145,6 @@ def _da(val: _Scalar, dim: str) -> xr.DataArray:
         return val
     arr = np.atleast_1d(np.asarray(val, dtype=float))
     return xr.DataArray(arr, dims=[dim])
-
-
-# ---------------------------------------------------------------------------
-# Config factories
-# ---------------------------------------------------------------------------
 
 
 def _make_atmo_config(
@@ -306,10 +297,6 @@ def make_full_config(
     )
 
 
-# ---------------------------------------------------------------------------
-# Model factory
-# ---------------------------------------------------------------------------
-
 M = TypeVar("M", bound=PSFConvModule)
 
 #: One scene or a batch of them.  Constrained rather than bound, so that
@@ -382,11 +369,6 @@ def make_model(
         device=device,
         cache=cache,
     )
-
-
-# ---------------------------------------------------------------------------
-# Forward pipeline
-# ---------------------------------------------------------------------------
 
 
 def run_forward_pipeline(
@@ -488,25 +470,11 @@ def run_forward_pipeline(
     return _map_scenes(scene, pipeline)
 
 
-# ---------------------------------------------------------------------------
-# Species / stage constants (used by new API functions)
-# ---------------------------------------------------------------------------
-
 _SPECIES_ATTR = "adjeff:species"
 _DEFAULT_SPECIES: dict[str, float] = {"sulphate": 1.0}
 _DEFAULT_LOSS = Loss(Metric.RMSE_RAD)
-
-#: Training landscapes of the manuscript: three disk radii in km, on a
-#: 1999 pixel grid.  They are the article's choice, not a property of the
-#: method, and `fit_psf` only defaults to them so that a first call has
-#: something to run on.
 ARTICLE_TRAIN_RADII_KM: tuple[float, ...] = (1.0, 5.0, 50.0)
 ARTICLE_TRAIN_SIZE: int = 1999
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers (new API)
-# ---------------------------------------------------------------------------
 
 
 def _res_from_scene(scene: ImageDict, band: SensorBand) -> float:
@@ -520,11 +488,6 @@ def _to_scalar(v: xr.DataArray | float) -> float:
     if isinstance(v, xr.DataArray):
         return float(v.values.flat[0])
     return float(v)
-
-
-# ---------------------------------------------------------------------------
-# load_scene — generic loader with species persistence
-# ---------------------------------------------------------------------------
 
 
 def load_scene(
@@ -598,11 +561,6 @@ def load_scene(
         )
 
     return scene
-
-
-# ---------------------------------------------------------------------------
-# Loaders
-# ---------------------------------------------------------------------------
 
 
 def load_maja(
@@ -693,11 +651,6 @@ def load_maja(
     )
 
 
-# ---------------------------------------------------------------------------
-# Scene-based radiative pipeline
-# ---------------------------------------------------------------------------
-
-
 def run_radiatives_from_scene(
     scene: SceneT,
     n_bins: int | None = None,
@@ -769,11 +722,6 @@ def run_radiatives_from_scene(
     return _map_scenes(scene, _run)
 
 
-# ---------------------------------------------------------------------------
-# PSF sampling
-# ---------------------------------------------------------------------------
-
-
 def sample_psf_atm(
     bands: list[SensorBand],
     res_km: float,
@@ -841,10 +789,6 @@ def sample_psf_atm(
     out = sampler(scene)
     return psf_tree({band: out[band]["psf_atm"] for band in out.bands})
 
-
-# ---------------------------------------------------------------------------
-# load_config
-# ---------------------------------------------------------------------------
 
 _REQUIRED_VARS = ["aot", "h", "rh", "href", "vza", "vaa", "sza", "saa"]
 
@@ -931,11 +875,6 @@ def load_config(
         saa=_field("saa"),
         species=_species,
     )
-
-
-# ---------------------------------------------------------------------------
-# fit_psf
-# ---------------------------------------------------------------------------
 
 
 def fit_psf(
@@ -1031,11 +970,6 @@ def fit_psf(
     return fit(model, train_images, stages=_stages, device=device)
 
 
-# ---------------------------------------------------------------------------
-# apply_psf
-# ---------------------------------------------------------------------------
-
-
 def apply_psf(
     scene: ImageDict,
     tree: xr.DataTree,
@@ -1105,11 +1039,6 @@ def apply_psf(
 
     model.eval()
     return model(scene)  # type: ignore[no-any-return]
-
-
-# ---------------------------------------------------------------------------
-# sample_psf_atm_from_scene
-# ---------------------------------------------------------------------------
 
 
 def sample_psf_atm_from_scene(

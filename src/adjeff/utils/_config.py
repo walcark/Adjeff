@@ -1,8 +1,19 @@
-"""Define the base class for atmospheric and geometric parameters.
+"""Base of the configuration models.
 
-The class ensures that both scalar parameters, spatial distribution
-of parameters (2D images) or just sensibility study of parameters
-can be passed in a similar way to any module that uses those classes.
+Every field is stored as a DataArray, so that a scalar, a sweep and a
+spatial map are passed the same way.
+
+Classes
+-------
+    _Config
+        Frozen pydantic model of DataArray fields.
+    ConfigProtocol
+        What the samplers read from a config.
+
+Functions
+---------
+    to_arr
+        Validator turning a scalar, list or DataArray into a DataArray.
 """
 
 from __future__ import annotations
@@ -36,24 +47,16 @@ def to_arr(
     ge: Optional[float] = None,
     le: Optional[float] = None,
 ) -> Callable[[Parameter], xr.DataArray]:
-    """Before validator for the xr.DataArray in _Config.
+    """Return a validator turning a field into a DataArray within ``[ge, le]``.
 
-    Ensure that even float, int or array-like inputs are converted in
-    a valid xr.DataArray.
-
-    Parameters
-    ----------
-    field_name : str
-        The name of the field to register.
-    ge : float
-        The minimal value of the xr.DataArray.
-    le : float
-        The maximal value of the xr.DataArray.
+    A scalar or a 1-D array becomes a DataArray on dim *field_name*; a
+    DataArray must name its dims.
 
     Raises
     ------
     ValueError
-        If an input array with more than 2 dimensions is used.
+        On implicit dims, an unnamed array of more than 1 dim, or a
+        value out of bounds.
     """
 
     def _validate(v: Parameter) -> xr.DataArray:
@@ -65,8 +68,7 @@ def to_arr(
                     f"'{field_name}': DataArray has implicit dimensions "
                     f"{default_dims} Please provide explicit dimension names."
                 )
-            # Assign coords for 1D dims that have none, so label-based
-            # selection (sel, isel by label) works out of the box.
+            # Label a bare 1-D dim with its values, so that .sel works.
             if da.ndim == 1 and da.dims[0] not in da.coords:
                 da = da.assign_coords({str(da.dims[0]): da.values})
         elif isinstance(v, (float, int)):
@@ -91,12 +93,7 @@ def to_arr(
 
 
 class _Config(BaseModel):
-    """Base Pydantic model for the atmosphere / Geometric parameters.
-
-    The parameters are defined as xr.DataArray, this enable to define them
-    as both scalars, 2D maps or just varying parameters for sensibility
-    studies.
-    """
+    """Frozen pydantic model whose fields are DataArrays, or not."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
@@ -117,12 +114,7 @@ class _Config(BaseModel):
 
     @property
     def _stable_hash_repr(self) -> dict[str, object]:
-        """Return a primitive-only repr suitable for stable cache keying.
-
-        Converts DataArray fields to plain Python lists so that
-        ``joblib.hash`` produces the same result regardless of the Python
-        environment (e.g. CPU vs GPU builds).
-        """
+        """Fields as plain Python values, for a cache key stable across builds."""
         result: dict[str, object] = {
             k: v.values.tolist() for k, v in self._arrays.items()
         }

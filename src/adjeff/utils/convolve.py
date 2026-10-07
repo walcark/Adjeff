@@ -1,8 +1,11 @@
-"""FFT-based 2D convolution with PyTorch GPU acceleration.
+"""Linear 2-D convolution by FFT, on tensors or DataArrays.
 
-:func:`fft_convolve_2D_torch` operates on :class:`torch.Tensor` objects.
-:func:`fft_convolve_2D` wraps it for :class:`xr.DataArray` inputs,
-broadcasting over arbitrary extra dimensions via ``xr.apply_ufunc``.
+Functions
+---------
+    fft_convolve_2D
+        Convolution of DataArrays, over any extra dims.
+    fft_convolve_2D_torch
+        Convolution of 2-D tensors, differentiable.
 """
 
 from typing import Literal, cast
@@ -21,38 +24,11 @@ def fft_convolve_2D(
     conv_type: str = "valid",
     device: torch.device | str = "cuda",
 ) -> xr.DataArray:
-    """Perform a 2D convolution on xarray DataArrays using PyTorch FFT.
+    """Convolve *in1* ``(y, x)``, with the kernel *in2* ``(y_psf, x_psf)``.
 
-    Wrapper around :func:`fft_convolve_2D_torch` that handles arbitrarily
-    many extra dimensions in ``in1`` (e.g. ``aot``, ``wl``) by sweeping
-    over them via ``xr.apply_ufunc`` and reconstructing the output with
-    the same shape and coordinates. The following naming conventions are
-    required:
-
-    - Spatial dimensions of ``in1`` must be named ``"y"`` and ``"x"``.
-    - Spatial dimensions of ``in2`` (the kernel) must be named ``"y_psf"``
-      and ``"x_psf"``.
-
-    Parameters
-    ----------
-    in1 : xr.DataArray
-        Input array. May have extra dimensions beyond ``(y, x)``.
-    in2 : xr.DataArray
-        Convolution kernel with spatial dims ``(y_psf, x_psf)``.
-    padding : {"constant", "reflect", "replicate"}
-        Padding method. Only `"constant"` uses `const_padding_values`.
-    const_padding_values : float, optional
-        Value used for constant padding (default 0.0).
-    conv_type : {"valid", "same"}, optional
-        Output size mode.
-    device : torch.device or str, optional
-        Device to perform computation on (default ``"cuda"``).
-
-    Returns
-    -------
-    xr.DataArray
-        The convolved array with the same extra dimensions as ``in1``.
-
+    Extra dims of *in1* are looped over; the output keeps them and the
+    coordinates of *in1*.  See :func:`fft_convolve_2D_torch` for the
+    other parameters; *device* is the torch device used.
     """
 
     def _convolve_slice(arr: np.ndarray, k: np.ndarray) -> np.ndarray:
@@ -99,40 +75,17 @@ def fft_convolve_2D_torch(
     const_padding_values: float = 0.0,
     conv_type: str = "valid",
 ) -> torch.Tensor:
-    """Compute a **true linear 2D FFT convolution** between two torch tensors.
+    """Return the linear convolution of the ``(N, N)`` *in1* by the ``(K, K)`` *in2*.
 
-    Unlike a standard FFT-based convolution, which is circular and can produce
-    wrap around artifacts at the tensor edges, the linear convolution is
-    computed by:
-
-    1) Extending the input to avoid wrap-around,
-    2) Zero-padding the kernel to match the extended input,
-    3) Multiplying in the Fourier domain (rFFT -> iFFT),
-    4) Cropping the result according to `conv_type`.
-
-    This method is GPU-efficient and minimizes temporary allocations.
+    *in1* is extended by ``K - 1`` with *padding*, so the FFT product
+    does not wrap around.
 
     Parameters
     ----------
-    in1 : torch.Tensor
-        2D input tensor of shape (N, N).
-    in2 : torch.Tensor
-        2D convolution kernel of shape (K, K).
     padding : {"constant", "reflect", "replicate"}
-        How to pad the input before FFT. Only `"constant"` uses
-        `const_padding_values`.
-    const_padding_values : float, optional
-        Constant value used when `padding="constant"` (default 0.0).
+        Extension of *in1*; ``"constant"`` uses *const_padding_values*.
     conv_type : {"valid", "same"}, optional
-        Determines output size: `"valid"`: only positions where the
-        kernel fully overlaps input (N-K+1 × N-K+1), and `"same"`
-        output has the same shape as input (N × N).
-
-    Returns
-    -------
-    torch.Tensor
-        The convolved 2D tensor, with shape determined by ``conv_type``.
-
+        Output of size ``N - K + 1``, or ``N``.
     """
     n = in1.shape[0]  # input size
     k = in2.shape[0]  # kernel size
@@ -169,7 +122,6 @@ def fft_convolve_2D_torch(
         )
 
     # Kernel padded — use F.pad so the gradient flows through in2.
-    # In-place assignment into a fresh tensor severs the autograd graph.
     in2_ext = torch.nn.functional.pad(in2, (0, ext_fft - k, 0, ext - k))
 
     # FFT-based linear conv

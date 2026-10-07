@@ -1,10 +1,14 @@
-"""xarray utilities for adjeff internal use.
+"""xarray helpers.
 
-- :class:`ParamBatch` — broadcasts and flattens atmospheric parameter
-  DataArrays for a Smart-G batch call, then restores the original
-  dimensional structure after the simulation.
-- :func:`square_grid`, :func:`grid` — build centered ``(x, y)``
-  coordinate objects for 2D scene grids.
+Classes
+-------
+    ParamBatch
+        Atmospheric parameters flattened for one Smart-G call, and restored.
+
+Functions
+---------
+    square_grid
+        Centred ``(x, y)`` coordinates of a square grid.
 """
 
 from __future__ import annotations
@@ -19,45 +23,28 @@ import xarray as xr
 
 @dataclass
 class ParamBatch:
-    """Flattened atmospheric parameters ready for a Smart-G batch call.
+    """Atmospheric parameters broadcast and flattened onto one ``index`` dim.
 
-    Built by :meth:`from_dataarrays`.  Exposes the flat parameter dict
-    for :func:`~adjeff.atmosphere.create_atmosphere` and an
-    :meth:`unstack` method that reconstructs the full dimensional
-    structure from Smart-G output — including transparent handling of the
-    ``"index"`` rename introduced by deduplication.
+    Built by :meth:`from_dataarrays`; :meth:`unstack` restores the dims
+    on a Smart-G output.
     """
 
     _DEDUP_TMP: ClassVar[str] = "_index_tmp"
-    #: Dim a batched xsweep call stacks its points along.  Mirrors
-    #: ``xsweep.delivery.GROUP_DIM``, which is reserved rather than
-    #: configurable, so the two cannot drift apart silently.
+    #: Dim a batched xsweep call stacks its points along, as
+    #: ``xsweep.delivery.GROUP_DIM``.
     GROUP_DIM: ClassVar[str] = "point"
-    #: Dims whose entries are aligned rather than swept: several variables
-    #: vary together along them, so they carry integer positions instead of
-    #: their own values.  Using the values would build a duplicate index
-    #: (``rh = [50, 50, 50]``) and break the broadcast.
+    #: Dims along which arrays vary together: labelled by position, since
+    #: their values may repeat and break the broadcast.
     _POSITIONAL: ClassVar[tuple[str, ...]] = (_DEDUP_TMP, GROUP_DIM)
     _flat: dict[str, xr.DataArray]
     _index_coord: xr.DataArray  # MultiIndex coord for unstack
 
     @classmethod
     def from_dataarrays(cls, **arrs: xr.DataArray) -> Self:
-        """Broadcast and flatten DataArrays into a common dimension.
+        """Broadcast *arrs* together and stack them onto ``index``.
 
-        This common dimension name is ``index``. Handles the deduplication
-        case where some args already carry a dim named ``"index"`` produced
-        by the bundle's deduplication machinery. In that case the existing
-        index is temporarily renamed to avoid a name conflict with the new
-        flat index, and the :meth:`AtmoBatch.unstack` method renames it back
-        transparently after the computation.
-
-        Parameters
-        ----------
-        **arrs : xr.DataArray
-            Named DataArrays (``wl``, ``aot``, ``rh``, ``h``, etc.). Each must
-            be 1-D along its own named dim — or already have been deduplicated
-            onto a single ``"index"`` dim by the bundle.
+        An existing ``index`` dim (from deduplication) is set aside and
+        restored by :meth:`unstack`.
         """
         # Rename any existing "index" dimension
         renamed: dict[str, xr.DataArray] = {}
@@ -70,10 +57,6 @@ class ParamBatch:
 
             renamed[name] = da.rename(dims_to_rename)
 
-        # Assign coords so unstack restores actual parameter values. Dims
-        # listed in _POSITIONAL carry aligned entries rather than a swept
-        # axis, so they get integer positions instead: that is what lets all
-        # arrays share identical coords along them and xr.broadcast succeed.
         assigned: dict[str, xr.DataArray] = {}
 
         for name, da in renamed.items():
@@ -107,22 +90,7 @@ class ParamBatch:
         return self._index_coord
 
     def unstack(self, res: xr.DataArray) -> xr.DataArray:
-        """Unstack the ``"index"`` dim and restore the dedup index if present.
-
-        Parameters
-        ----------
-        res : xr.DataArray
-            DataArray with ``dim="index"`` already set (with ``index_coord``
-            as coordinate).  May also have leading angular dims like ``"vza"``
-            or ``"sza"``.
-
-        Returns
-        -------
-        xr.DataArray
-            Array with ``"index"`` unstacked back to the original parameter
-            dimensions. If deduplication introduced a ``_index_tmp`` dimension,
-            it is renamed back to ``"index"``.
-        """
+        """Unstack ``index`` of *res* back onto the parameter dims."""
         res = res.unstack("index")
         if self._DEDUP_TMP in res.dims:
             res = res.rename({self._DEDUP_TMP: "index"})
@@ -130,40 +98,12 @@ class ParamBatch:
 
 
 def square_grid(n: int, res: float) -> xr.Coordinates:
-    """Create centered ``(x, y)`` coordinates for a square grid.
-
-    Parameters
-    ----------
-    n : int
-        Number of pixels per dimension.
-    res : float
-        Pixel size in coordinate units (km for adjeff scenes).
-
-    Returns
-    -------
-    xr.Coordinates
-        Centered ``x`` and ``y`` coordinate arrays.
-    """
+    """Return centred coordinates of an ``n × n`` grid of pixel *res*."""
     return grid(nx=n, ny=n, res=res)
 
 
 def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
-    """Create centered ``(x, y)`` coordinates for a rectangular grid.
-
-    Parameters
-    ----------
-    nx : int
-        Number of pixels on the ``x`` dimension.
-    ny : int
-        Number of pixels on the ``y`` dimension.
-    res : float
-        Pixel size in coordinate units (km for adjeff scenes).
-
-    Returns
-    -------
-    xr.Coordinates
-        Centered ``x`` and ``y`` coordinate arrays.
-    """
+    """Create centered ``(x, y)`` coordinates for a rectangular grid."""
     halfx = nx * res * 0.5
     halfy = ny * res * 0.5
     x = np.linspace(-halfx + res * 0.5, halfx - res * 0.5, nx)

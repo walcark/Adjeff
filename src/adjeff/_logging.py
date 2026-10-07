@@ -1,30 +1,20 @@
-"""How adjeff emits log lines, and why it goes through the standard library.
+"""Logging of adjeff, through the standard library.
 
-structlog is the writing API here, not the transport.  Left to its
-defaults it is both: ``PrintLoggerFactory`` writes straight to stdout,
-outside :mod:`logging` altogether, and ``BoundLoggerFilteringAtNotset``
-filters nothing, so every ``debug`` line prints and no level setting can
-stop it.  That is a pipeline of its own, disjoint from the one every
-dependency uses, and it has two consequences that were measured rather
-than guessed.
+Loggers are structlog wrappers around :func:`logging.getLogger`, so that
+one level governs adjeff and its dependencies, and the application's
+handlers receive everything.  Nothing prints until :func:`setup_logging`
+is called; :func:`structlog.configure` is never touched.
 
-A caller who raises adjeff's level does not quiet ``zarr``, and a caller
-who quiets ``zarr`` does not raise ``xsweep``: over one forward run,
-``xsweep`` emitted twenty-one ``INFO`` records carrying the point counts,
-the cache decisions and the elapsed time of every sweep, and adjeff
-showed none of them.  And there being no level to set at all, the six
-notebooks that document this package all begin by redirecting structlog
-to ``/dev/null``.
-
-So the loggers built here wrap :func:`logging.getLogger`, and adjeff
-speaks through the same transport as everything it depends on.  One level
-governs the lot, a caller's own handlers receive adjeff's lines in their
-own format, and importing adjeff prints nothing until someone asks it to.
-:func:`adjeff.setup_logging` is that asking.
-
-Nothing here touches :func:`structlog.configure`.  Configuring the
-process globally is the application's decision, and a library that makes
-it for them takes away the one they were entitled to.
+Functions
+---------
+    get_logger
+        Logger of an adjeff module.
+    setup_logging
+        Send adjeff's and its dependencies' logs to the console.
+    timed
+        Log the start, end and duration of a block.
+    run_context
+        Bind fields onto every line logged inside a block.
 """
 
 from __future__ import annotations
@@ -39,21 +29,13 @@ import structlog
 
 __all__ = ["get_logger", "run_context", "setup_logging", "timed"]
 
-#: Root of adjeff's logger namespace.  Everything the package emits hangs
-#: below it, so one call sets the level for all of it.
+#: Root of adjeff's logger namespace.
 ROOT = "adjeff"
 
-#: Loggers that report on the same work adjeff is doing, and follow its
-#: level.  ``xsweep`` runs the sweeps, and says over one forward run what
-#: this package was asked to start saying: point counts, cache decisions
-#: and the elapsed time of every call.
+#: Loggers that follow adjeff's level: they report on the same work.
 COMPANIONS = ("xsweep",)
 
-#: Loggers that talk about their own internals rather than about the run.
-#: Over one forward run they accounted for a hundred and seventy of the
-#: two hundred and five records that reached the standard library, all of
-#: them ``DEBUG``, none of them about the science.  Capped rather than
-#: silenced: a warning from any of them is worth reading.
+#: Loggers capped at *noisy_level*: chatty about their own internals.
 NOISY = (
     "zarr",
     "numcodecs",
@@ -65,11 +47,8 @@ NOISY = (
     "fsspec",
 )
 
-#: Run before the record reaches :mod:`logging`.  ``merge_contextvars``
-#: is what lets a caller bind a run id once and have every line below
-#: carry it, and ``ProcessorFormatter.wrap_for_formatter`` hands the
-#: event dict on intact so the final rendering is the handler's choice,
-#: made in :func:`adjeff.setup_logging` or by the application.
+#: Applied before the record reaches :mod:`logging`; the rendering is
+#: left to the handler.
 _PROCESSORS: list[Any] = [
     structlog.contextvars.merge_contextvars,
     structlog.stdlib.add_log_level,
@@ -79,29 +58,16 @@ _PROCESSORS: list[Any] = [
     structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
 ]
 
-#: Name carried by the handler :func:`setup_logging` installs, so
-#: that calling it twice replaces rather than doubles.
+#: Name of the handler :func:`setup_logging` installs, so it is replaced.
 _HANDLER_NAME = "adjeff-console"
 
 logging.getLogger(ROOT).addHandler(logging.NullHandler())
 
 
 def get_logger(name: str) -> Any:
-    """Return the logger a module of adjeff writes through.
+    """Return a structlog logger writing through :mod:`logging`.
 
-    Parameters
-    ----------
-    name : str
-        Usually ``__name__``.  Names outside adjeff's namespace are
-        re-homed under it, so that one level setting reaches everything
-        the package emits.
-
-    Returns
-    -------
-    structlog.stdlib.BoundLogger
-        Bound logger delegating to :mod:`logging`.  It takes key-value
-        pairs and :meth:`bind` like any structlog logger, and its records
-        reach whatever handlers the application has installed.
+    *name*, usually ``__name__``, is placed under ``adjeff`` if outside.
     """
     if name != ROOT and not name.startswith(ROOT + "."):
         name = f"{ROOT}.{name}"
@@ -119,42 +85,23 @@ def setup_logging(
     noisy_level: str | int = "warning",
     quiet: tuple[str, ...] = NOISY,
 ) -> None:
-    """Send adjeff's log lines, and its dependencies', to the console.
+    """Send adjeff's and its dependencies' logs, and warnings, to the console.
 
-    A library has no business configuring logging for the process it is
-    imported into, so adjeff does not, and prints nothing until this is
-    called.  What it owes the caller instead is a way to turn logging on
-    that takes one line rather than twenty, which is what this is.
-
-    Calling it twice replaces the handler rather than adding a second, so
-    a notebook cell can be re-run without doubling every line.
+    A second call replaces the handler rather than adding one.
 
     Parameters
     ----------
     level : str or int, optional
-        Level for adjeff and for the loggers listed in :data:`COMPANIONS`,
-        which report on the same work (default ``"info"``).
+        Level of adjeff and :data:`COMPANIONS`, ``"info"`` by default.
     json : bool, optional
-        Render one JSON object per line instead of the console format
-        (default ``False``).  For a run whose output is collected rather
-        than watched.
+        One JSON object per line instead of the console format.
     noisy_level : str or int, optional
-        Ceiling for the loggers in *quiet* (default ``"warning"``).
+        Level of the loggers in *quiet* and of warnings, ``"warning"``.
     quiet : tuple of str, optional
-        Loggers to cap at *noisy_level*.  Defaults to :data:`NOISY`, the
-        ones measured to talk about their own internals; pass your own
-        tuple to widen or narrow it, or an empty one to cap nothing.
-
-    Notes
-    -----
-    Python's :mod:`warnings` are routed here too, so a
-    ``ResourceWarning`` from a Smart-G call lands in the same stream as
-    everything else rather than on stderr in another format.
+        Loggers capped at *noisy_level*, :data:`NOISY` by default.
 
     Examples
     --------
-    >>> import adjeff
-    >>> adjeff.setup_logging(level="info")  # doctest: +SKIP
     >>> adjeff.setup_logging(level="debug", json=True)  # doctest: +SKIP
     """
     renderer: Any = (
@@ -209,37 +156,11 @@ def _as_level(level: str | int) -> int:
 
 @contextmanager
 def timed(log: Any, event: str, **fields: Any) -> Iterator[dict[str, Any]]:
-    """Bracket a unit of work with a start line and a done line.
+    """Log ``<event>.start``, then ``<event>.done`` with ``duration_s``.
 
-    The done line carries ``duration_s``, which no log in this package
-    used to. A measured run spent 94 % of its time between two lines with
-    nothing said in between, and every line it did emit arrived only once
-    the work was over: the start line is what tells a caller that
-    something is running, and the duration is what tells them whether to
-    wait for the next one.
-
-    Parameters
-    ----------
-    log : structlog.stdlib.BoundLogger
-        Logger to write through.
-    event : str
-        Event name, without a suffix. ``"module"`` produces
-        ``module.start`` and ``module.done``.
-    **fields
-        Key-value pairs attached to both lines.
-
-    Yields
-    ------
-    dict[str, Any]
-        Mutable dict whose contents are added to the done line. Use it
-        for anything only known once the work is finished, such as
-        whether the result came from cache.
-
-    Notes
-    -----
-    A failure re-raises after emitting ``<event>.failed`` with the
-    duration and the exception type, so a run that dies mid-way still
-    says where and how long it got.
+    The yielded dict is added to the done line, for what is only known
+    at the end.  On failure, ``<event>.failed`` is logged and the
+    exception re-raised.
     """
     log.info(f"{event}.start", **fields)
     started = time.perf_counter()
@@ -265,28 +186,7 @@ def timed(log: Any, event: str, **fields: Any) -> Iterator[dict[str, Any]]:
 
 @contextmanager
 def run_context(**fields: Any) -> Iterator[None]:
-    """Bind *fields* onto every line emitted inside the block.
-
-    ``merge_contextvars`` is already in the processor chain, so a run id
-    bound here reaches every line below without any caller passing it
-    down. This is what makes a run of five hundred combos readable: the
-    band and the combo stop being repeated by hand at each call site and
-    stop being absent from the lines nobody remembered to pass them to.
-
-    Parameters
-    ----------
-    **fields
-        Key-value pairs to bind, e.g. ``run_id``, ``band``, ``combo``.
-
-    Yields
-    ------
-    None
-
-    Notes
-    -----
-    Only the keys bound here are unbound on exit, so nesting works and an
-    outer context survives an inner one.
-    """
+    """Bind *fields* onto every line logged inside the block; nestable."""
     tokens = structlog.contextvars.bind_contextvars(**fields)
     try:
         yield

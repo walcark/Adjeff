@@ -1,4 +1,23 @@
-"""PyTorch utilities: constrained parameters, transforms, radial helpers."""
+"""Bounded trainable parameters, and radial weights and masks.
+
+Classes
+-------
+    Transform
+        Protocol of an increasing bijection from the real line.
+    ExpTransform
+        Real line to ``(0, inf)``.
+    SigmoidTransform
+        Real line to ``(a, b)``.
+    ConstrainedParameter
+        Trainable parameter kept within bounds.
+
+Functions
+---------
+    radial_weights
+        Weights giving every radius the same total weight.
+    radial_mask
+        Pixels within a fraction of a field's radial energy.
+"""
 
 from typing import Protocol, cast
 
@@ -12,12 +31,7 @@ logger = get_logger(__name__)
 
 
 class Transform(Protocol):
-    """Map an unconstrained parameter to a physical one, and back.
-
-    An optimiser walks the unconstrained space; the model reads the
-    constrained value.  Any strictly increasing bijection will do, which
-    is what :class:`ConstrainedParameter` checks for.
-    """
+    """Strictly increasing bijection from the real line to a parameter's domain."""
 
     def forward(self, p: torch.Tensor) -> torch.Tensor:
         """Map an unconstrained parameter to its constrained form."""
@@ -29,12 +43,7 @@ class Transform(Protocol):
 
 
 class ExpTransform:
-    """Map the whole line onto the strictly positive half of it.
-
-    Use this when the parameter must be positive and has no upper limit
-    of its own.  The mapping itself is
-    :class:`torch.distributions.transforms.ExpTransform`.
-    """
+    """``exp``: the real line to ``(0, inf)``."""
 
     def __init__(self) -> None:
         self._t = _transforms.ExpTransform()
@@ -49,21 +58,15 @@ class ExpTransform:
 
 
 class SigmoidTransform:
-    """Map the whole line onto the open interval ``(a, b)``.
-
-    Composes :class:`torch.distributions.transforms.SigmoidTransform`
-    with an affine rescaling onto ``(a, b)``.
+    """Scaled sigmoid: the real line to ``(a, b)``.
 
     Parameters
     ----------
-    a : float
-        Lower bound.
-    b : float
-        Upper bound.
+    a, b : float
+        Bounds.
     eps : float, optional
-        Margin kept away from either bound when inverting, since the
-        inverse diverges there.  The default is deliberately far coarser
-        than the machine epsilon torch would use: see :meth:`inverse`.
+        Margin from the bounds when inverting, 1e-6 by default.  Coarser
+        than machine precision on purpose, see :meth:`inverse`.
     """
 
     def __init__(self, a: float, b: float, eps: float = 1e-6) -> None:
@@ -71,7 +74,10 @@ class SigmoidTransform:
         self.b = b
         self.eps = eps
         self._t = _transforms.ComposeTransform(
-            [_transforms.SigmoidTransform(), _transforms.AffineTransform(a, b - a)]
+            [
+                _transforms.SigmoidTransform(),
+                _transforms.AffineTransform(a, b - a),
+            ]
         )
 
     def forward(self, p: torch.Tensor) -> torch.Tensor:
@@ -79,43 +85,29 @@ class SigmoidTransform:
         return cast(torch.Tensor, self._t(p))
 
     def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-        """Return the unconstrained parameter *theta* comes from.
-
-        *theta* is pulled *eps* inside the interval first.  Inverting at
-        the bound itself is infinite, and inverting near it is worse than
-        useless: torch clamps at the machine epsilon, which puts the
-        lower bound of a ``(1, 5)`` interval at ``p = -87``, where the
-        sigmoid derivative is ``1e-38``.  A parameter projected there is
-        as dead as one left outside the interval, which is the very
-        failure :meth:`ConstrainedParameter.project` exists to prevent.
-        At ``eps = 1e-6`` the bound sits at ``p = -15.2``, where the
-        derivative is still ``2e-7`` and float32 can work with it.
-        """
+        """Return the unconstrained parameter *theta* comes from."""
         inside = torch.clamp(theta, self.a + self.eps, self.b - self.eps)
         return cast(torch.Tensor, self._t.inv(inside))
 
 
 class ConstrainedParameter(nn.Module):
-    """Trainable parameter constrained via Sigmoid or Log transforms.
+    """Trainable parameter kept in ``[min_val, max_val]`` through a transform.
 
-    Guarantees that the parameter stays within specified bounds in
-    the optimization space.
+    The optimiser moves an unconstrained value ``p``; :attr:`value` is
+    ``transform(p)``.
 
     Parameters
     ----------
     init_value : torch.Tensor
-        Initial value in constrained space.
+        Initial value, in the domain; clamped into bounds with a warning.
     transform : Transform
-        Any strictly increasing bijection whose inverse is finite at
-        *min_val* and *max_val*.
-    min_val : float
-        Minimum allowed value.
-    max_val : float
-        Maximum allowed value.
-    requires_grad : bool
-        Whether the parameter is trainable.
-    name : str, optional
-        Parameter name for logging/debug.
+        Increasing bijection, finite at both bounds.
+    min_val, max_val : float
+        Bounds.
+    requires_grad : bool, optional
+        Whether the parameter is trained, True by default.
+    name : str or None, optional
+        Name used in logs and errors.
     """
 
     p_min: torch.Tensor
@@ -137,15 +129,7 @@ class ConstrainedParameter(nn.Module):
         self.min_val = min_val
         self.max_val = max_val
 
-        # The bounds of the unconstrained space are the images of the
-        # physical ones, which only means anything for a transform that
-        # is strictly increasing.  Rather than admit a fixed list of
-        # transforms, check the property the bounds actually need.
-        # Registered rather than assigned: `forward` clamps the parameter
-        # against them and `project` does so in place, so a bound left
-        # behind on the host when the model moves to a GPU puts a
-        # mixed-device pair into every step.  Non-persistent, being
-        # derived from `min_val` and `max_val` rather than learned.
+        # Bounds in unconstrained space; buffers, so they follow .to(device).
         self.register_buffer(
             "p_min", transform.inverse(torch.tensor(min_val)), persistent=False
         )
@@ -185,19 +169,10 @@ class ConstrainedParameter(nn.Module):
 
     @torch.no_grad()
     def project(self) -> None:
-        """Bring the raw parameter back onto its domain.
+        """Clamp ``p`` into bounds; call after every optimiser step.
 
-        Call this after every optimiser step.  Clamping inside
-        :meth:`forward` bounds the *value* but not the raw parameter, and
-        a step large enough to send the raw parameter far past a bound
-        leaves it there for good: the derivative of ``clamp`` is zero
-        outside the interval, so the gradient dies and no later step can
-        bring it back.  The constrained value looks perfectly plausible
-        the whole time, which is what makes it worth guarding against.
-
-        Projecting keeps the raw parameter *on* the boundary instead of
-        behind it, where the transform is still differentiable and a
-        descent direction still exists.
+        Past a bound, ``clamp`` in :meth:`forward` has a zero gradient
+        and ``p`` would never come back.
         """
         self.p.clamp_(self.p_min, self.p_max)
 
@@ -208,14 +183,7 @@ class ConstrainedParameter(nn.Module):
 
     @property
     def scalar(self) -> float:
-        """Return the current constrained value as a plain number.
-
-        Reading :attr:`value` into a `float` detaches implicitly and
-        torch warns about it, rightly: it is the point where a value
-        leaves the graph, and doing it by accident inside a training loop
-        is a real mistake.  Anything that only wants the number says so
-        here.
-        """
+        """Constrained value, as a float detached from the graph."""
         return float(self.value.detach())
 
     @torch.no_grad()
@@ -227,22 +195,9 @@ class ConstrainedParameter(nn.Module):
 
 
 def radial_weights(dists: torch.Tensor) -> torch.Tensor:
-    """Compute inverse-perimeter radial weights.
+    """Return ``1 / (2 pi r)`` per pixel, so that every radius weighs the same.
 
-    Each pixel is assigned weight ``1 / (2π · max(r_min, r))`` so that
-    integrating over the image gives equal importance to every radial
-    distance.  The centre pixel (r=0) receives the same weight as the
-    nearest non-zero-distance pixel to avoid division by zero.
-
-    Parameters
-    ----------
-    dists : torch.Tensor
-        Per-pixel radial distances, any shape.
-
-    Returns
-    -------
-    torch.Tensor
-        Weights tensor, same shape as *dists*.
+    The centre takes the weight of the nearest pixel beyond 1e-3.
     """
     dists_non_zero = dists[dists > 0]
     if dists_non_zero.numel() == 0:
@@ -256,25 +211,10 @@ def radial_weights(dists: torch.Tensor) -> torch.Tensor:
 def radial_mask(
     tensor: torch.Tensor, rr: torch.Tensor, threshold: float
 ) -> torch.Tensor:
-    """Return a boolean mask retaining pixels within a radial CDF threshold.
+    """Return the pixels within *threshold* of the radial energy of ``|tensor|``.
 
-    Pixels are sorted by increasing distance from the centre.  The cumulative
-    sum of ``|tensor|`` is computed radially; the mask keeps all pixels whose
-    cumulative contribution is below *threshold* of the total energy.
-
-    Parameters
-    ----------
-    tensor : torch.Tensor
-        2D (or flat) field whose energy distribution drives the mask.
-    rr : torch.Tensor
-        Per-pixel radial distances, same shape as *tensor*.
-    threshold : float
-        CDF fraction to retain (e.g. ``0.99`` keeps 99 % of the energy).
-
-    Returns
-    -------
-    torch.Tensor
-        Boolean tensor, same shape as *tensor*.
+    *rr* gives the distance of each pixel; the mask has the shape of
+    *tensor*.
     """
     with torch.no_grad():
         values: torch.Tensor = tensor.flatten()

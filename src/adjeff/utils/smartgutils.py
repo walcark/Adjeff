@@ -1,4 +1,18 @@
-"""Utility helpers for Smart-G input construction and output normalisation."""
+"""Building Smart-G inputs and normalising its outputs.
+
+Functions
+---------
+    make_sensors
+        One sensor per zenith angle.
+    compute_optical_depth
+        Total optical depth of an atmosphere.
+    adapt_smartg_output
+        Squeeze, rename, label and expand a Smart-G output.
+    pair_angles_with_points
+        Keep, per point of a batched call, its own angle.
+    collect_batched
+        Batched Smart-G output, unstacked onto the swept dims.
+"""
 
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
@@ -18,27 +32,7 @@ def make_sensors(
     posz: float,
     loc: str = "ATMOS",
 ) -> list["Sensor"]:
-    """Build a list of Smart-G Sensor objects, one per angle value.
-
-    Smart-G's Sensor only accepts scalar ``th_deg``/``ph_deg``, so multiple
-    angles require a list of Sensor instances.
-
-    Parameters
-    ----------
-    angles : xr.DataArray
-        Zenith angles [°] to iterate over (``th_deg`` values).
-    phi_scalar : float
-        Azimuth angle [°] shared by all sensors (``ph_deg``).
-    posz : float
-        Sensor altitude [km] (``POSZ``).
-    loc : str, optional
-        Smart-G location flag, by default ``"ATMOS"``.
-
-    Returns
-    -------
-    list[Sensor]
-        One Smart-G ``Sensor`` instance per element in *angles*.
-    """
+    """Return one Smart-G sensor per zenith angle [°]."""
     from smartg.sensor import Sensor
 
     thdeg = np.atleast_1d(angles.values)
@@ -50,23 +44,9 @@ def make_sensors(
 
 
 def compute_optical_depth(atm: xr.Dataset) -> xr.DataArray:
-    """Return the total atmospheric optical depth from a Smart-G atmosphere.
+    """Return the total optical depth at the ground, by wavelength.
 
-    Optical depth is a property of the atmosphere object, not of the
-    Monte-Carlo simulation.  A minimal photon count (1000) is used so
-    the call is fast; the returned ``OD_atm`` value is exact regardless.
-
-    Parameters
-    ----------
-    atm : xr.Dataset
-        Multi-profile Smart-G atmosphere produced by
-        :func:`~adjeff.atmosphere.create_atmosphere`.
-
-    Returns
-    -------
-    xr.DataArray
-        Total optical depth at the surface level (``z_atm=0``), with
-        the ``"wavelength"`` dimension.
+    A property of the atmosphere: the few photons of the run do not affect it.
     """
     from smartg.smartg import Smartg
 
@@ -95,31 +75,11 @@ def adapt_smartg_output(
     coords: dict[str, np.ndarray | xr.DataArray] | None = None,
     expand: dict[str, np.ndarray | xr.DataArray] | None = None,
 ) -> xr.DataArray:
-    """Normalize a Smart-G output DataArray.
+    """Normalise a Smart-G output, whose dims depend on its inputs.
 
-    This is necessary because Smart-G output sometimes has a global shape
-    that is hard to guess. For instance, some dimensions may or may not be
-    in the output results dimensions depending on the size of the parameters
-    passes to ``Smartg.run()``. Operations to perform on the outputs are:
-
-    1) squeezing: drop a dimension of size 1 that should not be in the output
-    2) renaming: rename a dimension name (ex: Zenith angles -> vza)
-    3) assigning coordinates: in order to keep track of the parameters used
-       for the computations.
-    4) expanding: expand the array with a new dimension, when Smart-G does
-       not built the dimension for a parameter used in computations.
-
-    Parameters
-    ----------
-    squeeze : list[str] or None, optional
-        Dims to squeeze and drop if present (e.g. ``"Azimuth angles"``).
-    rename : dict[str, str] or None, optional
-        Smart-G dim name → target name. Only applied if the source dim
-        exists.
-    coords : dict[str, np.ndarray or xr.DataArray] or None, optional
-        Coordinates to assign after renaming.
-    expand : dict[str, np.ndarray or xr.DataArray] or None, optional
-        Target dim → values. Expands the dim if absent from the result.
+    Applied in order, each only where it applies: *squeeze* drops
+    length-one dims, *rename* renames dims, *coords* labels them, and
+    *expand* adds the dims Smart-G left out.
     """
     for dim in squeeze or []:
         if dim in res.dims:
@@ -145,28 +105,8 @@ def adapt_smartg_output(
 def pair_angles_with_points(res: xr.DataArray, *angles: str) -> xr.DataArray:
     """Keep, for each point of a batched call, the angle it asked for.
 
-    Smart-G evaluates every requested direction for every atmosphere it
-    is handed, so a batched call comes back as the cross product of the
-    angle axis with the point axis.  Only the diagonal is meaningful:
-    point ``i`` asked for angle ``i``.  Without this the caller receives
-    an extra axis it never declared, and xsweep rejects the return as
-    the wrong shape for one point.
-
-    A call outside a batch has no point dim and is returned unchanged,
-    angle axes included, since those are then genuine sweep axes.
-
-    Parameters
-    ----------
-    res : xr.DataArray
-        Unstacked Smart-G output, carrying the angle axes and, when the
-        call was batched, the point axis.
-    *angles : str
-        Names of the angle dims to pair, e.g. ``"vza"``, ``"sza"``.
-
-    Returns
-    -------
-    xr.DataArray
-        Same array with each paired angle dim consumed.
+    Smart-G returns every angle for every point; only the diagonal is
+    meaningful.  Outside a batch, *res* is returned unchanged.
     """
     if ParamBatch.GROUP_DIM not in res.dims:
         return res
@@ -186,38 +126,19 @@ def collect_batched(
     angles: Mapping[str, tuple[str, np.ndarray]] | None = None,
     drop: Sequence[str] = (),
 ) -> xr.DataArray:
-    """Turn one batched Smart-G output into what a sweep contract expects.
+    """Return a batched Smart-G output on the dims of the sweep contract.
 
-    A batched call hands Smart-G one wavelength per flattened parameter
-    state, so the ``"wavelength"`` axis it returns is the batch index,
-    not a wavelength.  Naming it as such is the whole of the work: once
-    it carries ``batch.index_coord`` it can be unstacked back into the
-    parameter dims, and every remaining axis is placed by its label
-    rather than by its position.
-
-    This replaces the older idiom of transposing the result and
-    rebuilding a DataArray from ``res.values``, which was correct only
-    as long as the final diagonal pick hid a wrong axis order.
+    The ``"wavelength"`` axis of a batched call is the batch index: it
+    is labelled as such and unstacked.
 
     Parameters
     ----------
-    res : xr.DataArray
-        Raw Smart-G output, straight from ``Smartg.run``.
-    batch : ParamBatch
-        The batch the atmosphere was built from.
     angles : Mapping[str, tuple[str, np.ndarray]] or None, optional
-        Smart-G dim name → the ``(name, values)`` it should carry, e.g.
-        ``{"Zenith angles": ("vza", vza.values)}``.  Each renamed dim is
-        expanded when Smart-G collapsed it, then paired against the
-        point axis on the way out.
+        Smart-G dim to ``(name, values)``, e.g.
+        ``{"Zenith angles": ("vza", vza.values)}``; each is then paired
+        against the points.
     drop : Sequence[str], optional
-        Smart-G dims to squeeze away, e.g. ``"Azimuth angles"``.
-
-    Returns
-    -------
-    xr.DataArray
-        Result carrying the swept parameter dims, with each angle in
-        *angles* consumed against the point axis of a batched call.
+        Smart-G dims to squeeze, e.g. ``"Azimuth angles"``.
     """
     angles = angles or {}
     res = adapt_smartg_output(
