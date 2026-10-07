@@ -1,4 +1,10 @@
-"""Define a configuration for atmospheric parameters."""
+"""Aerosol and molecular parameters.
+
+Classes
+-------
+    AtmoConfig
+        AOT, humidity, ground elevation, aerosol scale height and species mix.
+"""
 
 from __future__ import annotations
 
@@ -13,20 +19,20 @@ from adjeff.utils._config import _Config, to_arr
 
 
 class AtmoConfig(_Config):
-    """Pydantic model for the atmosphere parameters.
+    """Aerosol and molecular parameters.
 
     Parameters
     ----------
     aot : xr.DataArray
         Aerosol optical thickness.
     h : xr.DataArray
-        Ground elevation [km].
+        Ground elevation [km], in ``[0, 10]``.
     rh : xr.DataArray
         Relative humidity [%].
     href : xr.DataArray
-        Reference height of the exponential aerosol vertical profile.
+        Scale height of the exponential aerosol profile [km].
     species : dict[str, float]
-        Dictionnary of species concentrations.
+        OPAC species and their fractions, summing to 1.
     """
 
     aot: Annotated[xr.DataArray, Before(to_arr("aot", ge=0.0))]

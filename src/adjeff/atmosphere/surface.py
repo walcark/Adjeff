@@ -1,8 +1,17 @@
-"""Methods to instantiate Smart-G surface objects from a ground image.
+"""Smart-G surface and environment of an adjeff scene.
 
-Ground images in adjeff are either arbitrary (real image, complex scene)
-or analytical (gaussian, disk) shapes. The following methods instantiate
-both the Smart-G ``Environment`` and ``Surface`` from this knowledge.
+An analytical scene (Gaussian, disc) maps to a built-in Smart-G
+environment. An arbitrary one is encoded as an ``AlbedoMap``.
+
+Classes
+-------
+    SurfaceFactory
+        Builds the ``LambSurface`` and ``Environment`` of a scene.
+
+Functions
+---------
+    analytical_environment
+        Built-in Smart-G environment of a Gaussian or disc surface.
 """
 
 from __future__ import annotations
@@ -20,17 +29,14 @@ if TYPE_CHECKING:
 
 
 class SurfaceFactory:
-    """Class that computes Smart-G surface-related objects.
+    """Builds the Smart-G surface and environment of a scene.
 
     Parameters
     ----------
-    rho_background : float | "mean" | "min" | "zero"
-        Reflectance passed to ``LambSurface`` for arbitrary fields — used by
-        Smart-G for photons that leave the ``AlbedoMap`` region.  A float
-        sets it explicitly; the string options derive it from the field:
-        ``"mean"`` (spatial average), ``"min"`` (background value),
-        ``"zero"`` (absorbing boundary).  Default is ``"mean"``.
-        Ignored for analytical surfaces (their ``rho_min`` is used instead).
+    rho_background : float or {"mean", "min", "zero"}, optional
+        Reflectance outside the ``AlbedoMap`` of an arbitrary scene: a
+        value, or the field's mean, its minimum, or zero.  Ignored for an
+        analytical scene.  ``"mean"`` by default.
     """
 
     def __init__(
@@ -91,28 +97,17 @@ class SurfaceFactory:
         arr: xr.Dataset,
         n_alb: int = 1000,
     ) -> Environment:
-        """Return an ``AlbedoMap`` Environment from an arbitrary 2D surface.
+        """Return an ``AlbedoMap`` environment for an arbitrary scene.
 
-        The reflectance field is quantised into *n_alb* discrete levels
-        (linspace from min to max).  Each pixel is mapped to the index of
-        its nearest level, producing the index grid consumed by Smart-G's
-        ``AlbedoMap``.
-
-        Quantisation is vectorised via :func:`numpy.searchsorted` so it
-        scales to large images (e.g. 1999 × 1999) without a Python loop.
+        The reflectance is quantised to the nearest of *n_alb* levels
+        spread evenly between its minimum (clipped at 0) and maximum.
 
         Parameters
         ----------
         arr : xr.Dataset
-            Scene dataset containing the ``"rho_s"`` variable with ``x``
-            and ``y`` spatial coordinates (adjeff convention: dims ``(y, x)``).
-        n_alb : int
-            Number of discrete albedo levels (default 1000).
-
-        Returns
-        -------
-        Environment
-            Smart-G Environment with ``env=5`` and an ``AlbedoMap``.
+            Scene holding ``"rho_s"`` on dims ``(y, x)``.
+        n_alb : int, optional
+            Number of reflectance levels, 1000 by default.
         """
         from smartg.albedo import AlbedoCst, AlbedoMap
         from smartg.surface import Environment
@@ -150,27 +145,20 @@ class SurfaceFactory:
 
 
 def analytical_environment(model: str, params: dict[str, float]) -> Environment:
-    """Return the Smart-G Environment for an analytical surface.
+    """Return the built-in Smart-G environment of an analytical surface.
 
     Parameters
     ----------
-    model : str
-        Surface model identifier — ``"gauss"`` or ``"disk"``.
+    model : {"gauss", "disk"}
+        Surface model.
     params : dict[str, float]
-        Shape parameters as returned by the adjeff accessor (e.g.
-        ``"sigma"``, ``"rho_min"`` for a Gaussian; ``"radius"``,
-        ``"rho_min"`` for a disk).
-
-    Returns
-    -------
-    Environment
-        Configured Smart-G ``Environment`` object (``env=2`` for Gaussian,
-        ``env=1`` for disk).
+        Its parameters: ``sigma`` (Gaussian) or ``radius`` (disc), and
+        ``rho_min``.
 
     Raises
     ------
     NotImplementedError
-        If *model* is not ``"gauss"`` or ``"disk"``.
+        For any other model.
     """
     from smartg.albedo import AlbedoCst
     from smartg.surface import Environment

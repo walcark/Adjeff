@@ -1,4 +1,18 @@
-"""Functions to instantiate a multi-profile atmosphere."""
+"""Multi-profile Smart-G atmosphere.
+
+Functions
+---------
+    create_atmosphere
+        Merged Smart-G atmosphere, one profile per parameter set.
+    parse_params
+        Check the parameters and split them into one dict per profile.
+    create_atmafgl
+        Smart-G profile of one parameter set.
+    surface_pressure
+        Surface pressure at a ground elevation.
+    grids
+        Vertical grids Smart-G samples the optical properties on.
+"""
 
 from typing import cast
 
@@ -19,45 +33,31 @@ def create_atmosphere(
     remove_rayleigh: bool = False,
     wl_ref_nm: float = 560.0,
 ) -> xr.Dataset:
-    """Create a multi-profile Smart-G atmosphere from atmospheric parameters.
+    """Return a multi-profile Smart-G atmosphere.
 
-    Each parameter DataArray must share the same single named dimension
-    (e.g. ``"index"``).  One :class:`~smartg.atmosphere.Atm1D` instance
-    is built per element along that dimension; all instances are then merged
-    into a single ``xarray.Dataset`` via ``multi_profiles``.
+    One profile is built per element along the dimension shared by the
+    parameters, then all are merged with ``multi_profiles``.
 
     Parameters
     ----------
     atmo_params : dict[str, xr.DataArray]
-        Mapping of parameter names to 1-D DataArrays.  Required keys:
-        ``"wl"`` (wavelength [nm]), ``"aot"`` (aerosol optical thickness),
-        ``"rh"`` (relative humidity [%]), ``"h"`` (ground elevation [km]),
-        ``"href"`` (reference height of the aerosol profile [km]).
+        1-D arrays on one shared dimension, with keys ``"wl"`` [nm],
+        ``"aot"``, ``"rh"`` [%], ``"h"`` [km] and ``"href"`` [km].
     species : dict[str, float]
-        OPAC aerosol species and their fractional contributions.
-        Values must sum to 1.
+        OPAC species and their fractions, summing to 1.
     afgl_type : str, optional
-        Identifier of the AFGL standard atmosphere profile file,
-        by default ``"afgl_exp_h8km"``.
+        AFGL standard atmosphere profile, ``"afgl_exp_h8km"`` by default.
     remove_rayleigh : bool, optional
-        If ``True``, Rayleigh optical depth is set to zero, by default
-        ``False``.
+        Set the Rayleigh optical thickness to zero.
     wl_ref_nm : float, optional
-        Reference wavelength [nm] used to scale the aerosol optical
-        thickness, by default 560.0.
-
-    Returns
-    -------
-    xr.Dataset
-        A merged multi-profile Smart-G atmosphere ready for simulation.
+        Wavelength the AOT refers to [nm], 560 by default.
 
     Raises
     ------
     MissingVariableError
-        If any of the required keys is absent from *atmo_params*.
+        If a required key is missing.
     ConfigurationError
-        If the DataArrays do not share a single common dimension or if
-        their sizes differ.
+        If the arrays do not share a single dimension of one size.
     """
     from smartg.smartg import multi_profiles
 

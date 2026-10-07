@@ -1,4 +1,10 @@
-"""Define a configuration for geometric parameters."""
+"""Sun and sensor geometry.
+
+Classes
+-------
+    GeoConfig
+        Zenith and azimuth angles of sun and sensor, and satellite height.
+"""
 
 from __future__ import annotations
 
@@ -12,20 +18,16 @@ from adjeff.utils._config import _Config, to_arr
 
 
 class GeoConfig(_Config):
-    """Pydantic model for the geometric parameters.
+    """Sun and sensor geometry.
 
     Parameters
     ----------
-    sza : xr.DataArray
-        Sun zenith angle [°].
-    saa : xr.DataArray
-        Sun azimuth angle [°].
-    vza : xr.DataArray
-        Viewing zenith angle [°].
-    vaa : xr.DataArray
-        Viewing azimuth angle [°].
-    sat_height : float
-        Satellite elevation [km].
+    sza, vza : xr.DataArray
+        Sun and viewing zenith angles [°], in ``[0, 90]``.
+    saa, vaa : xr.DataArray
+        Sun and viewing azimuth angles [°], in ``[0, 360]``.
+    sat_height : float, optional
+        Satellite altitude [km], 700 by default.
     """
 
     sza: Annotated[xr.DataArray, Before(to_arr("sza", ge=0.0, le=90.0))]

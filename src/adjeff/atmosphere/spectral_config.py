@@ -1,4 +1,10 @@
-"""Define a configuration for spectral parameters."""
+"""Wavelengths and the sensor bands they stand for.
+
+Classes
+-------
+    SpectralConfig
+        Wavelengths, each resolved to the nearest band of a sensor.
+"""
 
 from __future__ import annotations
 
@@ -14,19 +20,17 @@ from adjeff.utils._config import _Config, to_arr
 
 
 class SpectralConfig(_Config):
-    """Pydantic model for spectral parameters.
+    """Wavelengths and the sensor bands they stand for.
 
-    Only contains wavelength and sensor bands. Can either be instantiated
-    through wavelengths specification (and sensor type) or directly from
-    a :class:`~adjeff.core.bands.SensorBand` list via :meth:`from_bands`.
+    Build it from wavelengths and a band type, or from bands with
+    :meth:`from_bands`.
 
     Parameters
     ----------
     wl : xr.DataArray
         Central wavelengths [nm], dim ``"wl"``.
     band_type : type[SensorBand]
-        The :class:`~adjeff.core.bands.SensorBand` subclass used to resolve
-        each wavelength to its nearest named band.
+        Sensor whose nearest band each wavelength resolves to.
     """
 
     wl: Annotated[xr.DataArray, Before(to_arr("wl", ge=0.0))]
@@ -45,25 +49,12 @@ class SpectralConfig(_Config):
 
     @classmethod
     def from_bands(cls, bands: list[SensorBand]) -> SpectralConfig:
-        """Construct a SpectralConfig from a list of SensorBand instances.
-
-        Parameters
-        ----------
-        bands : list[SensorBand]
-            Bands to sweep over. The ``wl`` coordinate is derived from
-            ``band.wl_nm`` for each band. All bands must be of the same
-            type.
-
-        Returns
-        -------
-        SpectralConfig
-            Config with ``wl`` populated from the band wavelengths.
+        """Build a config whose ``wl`` holds the wavelengths of *bands*.
 
         Raises
         ------
         ConfigurationError
-            If *bands* contains instances of more than one ``SensorBand``
-            subclass.
+            If *bands* mix several sensor types.
         """
         band_type: type[SensorBand] = type(bands[0])
         if not all(isinstance(b, band_type) for b in bands):

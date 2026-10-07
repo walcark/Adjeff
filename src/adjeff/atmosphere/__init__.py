@@ -1,21 +1,21 @@
-"""Atmospheric configuration and Smart-G atmosphere factory for adjeff.
+"""Smart-G atmosphere and surface inputs, built from adjeff configurations.
 
-**Configuration models**
+Classes
+-------
+    AtmoConfig
+        Aerosol and molecular parameters (AOT, RH, ground and aerosol
+        heights, species).
+    GeoConfig
+        Sun and sensor geometry.
+    SpectralConfig
+        Wavelengths and the sensor bands they resolve to.
+    SurfaceFactory
+        Smart-G surface and environment of an adjeff scene.
 
-- :class:`AtmoConfig` — aerosol and molecular parameters (AOT, RH, species).
-- :class:`GeoConfig` — sun/sensor geometry (SZA, VZA, SAA, VAA).
-- :class:`SpectralConfig` — spectral bands and wavelengths.
-
-**Surface**
-
-- :class:`SurfaceFactory` — builds Smart-G ``LambSurface`` and
-  ``Environment`` objects from an adjeff scene.
-
-**Factory**
-
-- :func:`create_atmosphere` — assembles a multi-profile Smart-G
-  atmosphere from :class:`AtmoConfig`, :class:`GeoConfig` and
-  :class:`SpectralConfig` parameters.
+Functions
+---------
+    create_atmosphere
+        Multi-profile Smart-G atmosphere, one profile per parameter set.
 """
 
 from .atmo_config import AtmoConfig
