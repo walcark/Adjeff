@@ -99,7 +99,6 @@ class TestGaussianField:
         assert da.values[center, center] == pytest.approx(0.8, abs=1e-3)
 
     def test_gaussian_boundary_approaches_rho_min(self):
-        """Gaussian generator values at the boundary approach rho_min for small sigma."""
         scene = gaussian_image_dict(
             sigma=0.001,
             res_km=RES_B02,

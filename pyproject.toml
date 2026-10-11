@@ -136,6 +136,10 @@ exclude = ["docs/*", "scripts/*", "test.py", "notebooks/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D"]
+# A test's name is its sentence: `test_binning_counts_sum_to_npixels`
+# needs no docstring on top of itself.  The class it sits in carries the
+# responsibility of the group, and that one is required.
+per-file-ignores = { "tests/**" = ["D102", "D103"] }
 fixable = ["ALL"]
 unfixable = []
 pydocstyle = { convention = "numpy" }
