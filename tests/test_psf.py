@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-
 from adjeff.core._psf import PSFGrid, radial_power
 from adjeff.core.analytical_psf import (
     GaussPSF,
@@ -15,10 +14,6 @@ from adjeff.core.analytical_psf import (
 )
 from adjeff.core.bands import S2Band, SensorBand
 from adjeff.core.non_analytical_psf import NonAnalyticalPSF
-
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -31,65 +26,6 @@ def grid() -> PSFGrid:
 def band() -> SensorBand:
     """Return the band every PSF fixture is built on."""
     return S2Band.B04
-
-
-# ---------------------------------------------------------------------------
-# PSFGrid
-# ---------------------------------------------------------------------------
-
-
-def test_grid_invalid_res():
-    """PSFGrid must reject non-positive resolution."""
-    with pytest.raises(Exception):
-        PSFGrid(res=0.0, n=11)
-
-
-def test_grid_invalid_n_even():
-    """PSFGrid must reject even n."""
-    with pytest.raises(Exception):
-        PSFGrid(res=0.01, n=10)
-
-
-def test_grid_invalid_n_too_small():
-    """PSFGrid must reject n < 3."""
-    with pytest.raises(Exception):
-        PSFGrid(res=0.01, n=1)
-
-
-def test_grid_as_coords_shape(grid):
-    """as_coords must return n-length x_psf and y_psf coordinates."""
-    coords = grid.as_coords()
-    assert len(coords["x_psf"]) == grid.n
-    assert len(coords["y_psf"]) == grid.n
-
-
-def test_grid_as_coords_centered(grid):
-    """as_coords coordinates must be centered on zero."""
-    coords = grid.as_coords()
-    assert coords["x_psf"].values[grid.n // 2] == pytest.approx(0.0, abs=1e-6)
-    assert coords["y_psf"].values[grid.n // 2] == pytest.approx(0.0, abs=1e-6)
-
-
-def test_grid_meshgrid_shape(grid):
-    """Meshgrid must return two (n, n) float32 tensors."""
-    X, Y = grid.meshgrid()
-    assert X.shape == (grid.n, grid.n)
-    assert Y.shape == (grid.n, grid.n)
-    assert X.dtype == torch.float32
-    assert Y.dtype == torch.float32
-
-
-def test_grid_meshgrid_center_is_zero(grid):
-    """Center pixel of both meshgrid tensors must be 0."""
-    X, Y = grid.meshgrid()
-    c = grid.n // 2
-    assert X[c, c].item() == pytest.approx(0.0, abs=1e-6)
-    assert Y[c, c].item() == pytest.approx(0.0, abs=1e-6)
-
-
-# ---------------------------------------------------------------------------
-# Helpers shared across all PSF kernels
-# ---------------------------------------------------------------------------
 
 
 def _assert_kernel_valid(kernel: torch.Tensor, n: int) -> None:
@@ -109,10 +45,6 @@ def _assert_dataarray_valid(da: xr.DataArray, n: int, band: SensorBand) -> None:
     assert da.attrs.get("band") == band.id
     assert "adjeff:kind" in da.attrs
 
-
-# ---------------------------------------------------------------------------
-# Analytical PSF invariants — parametrized over all 5 models
-# ---------------------------------------------------------------------------
 
 _ANALYTICAL_PSF_CASES = pytest.mark.parametrize(
     "psf_cls,kwargs,model_name,param_keys",
@@ -156,62 +88,6 @@ _ANALYTICAL_PSF_CASES = pytest.mark.parametrize(
 )
 
 
-@_ANALYTICAL_PSF_CASES
-def test_analytical_psf_kernel_valid(
-    psf_cls, kwargs, model_name, param_keys, grid, band
-):
-    """Every analytical PSF returns a normalised float32 (n, n) kernel."""
-    psf = psf_cls(grid=grid, band=band, **kwargs)
-    _assert_kernel_valid(psf.forward(), grid.n)
-
-
-@_ANALYTICAL_PSF_CASES
-def test_analytical_psf_peak_at_center(
-    psf_cls, kwargs, model_name, param_keys, grid, band
-):
-    """Every radially-symmetric PSF must peak at the center pixel."""
-    psf = psf_cls(grid=grid, band=band, **kwargs)
-    k = psf.forward()
-    c = grid.n // 2
-    assert k[c, c].item() == k.max().item()
-
-
-@_ANALYTICAL_PSF_CASES
-def test_analytical_psf_to_dataarray(
-    psf_cls, kwargs, model_name, param_keys, grid, band
-):
-    """to_dataarray returns an annotated DataArray naming its model."""
-    psf = psf_cls(grid=grid, band=band, **kwargs)
-    da = psf.to_dataarray()
-    _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:model"] == model_name
-
-
-@_ANALYTICAL_PSF_CASES
-def test_analytical_psf_param_dict(psf_cls, kwargs, model_name, param_keys, grid, band):
-    """param_dict must return float values keyed by the expected parameter names."""
-    psf = psf_cls(grid=grid, band=band, **kwargs)
-    p = psf.param_dict()
-    assert set(p.keys()) == param_keys
-    assert all(isinstance(v, float) for v in p.values())
-
-
-# ---------------------------------------------------------------------------
-# VoigtPSF specific
-# ---------------------------------------------------------------------------
-
-
-def test_voigt_eta_range(grid, band):
-    """_eta must return a value in [0, 1]."""
-    psf = VoigtPSF(grid=grid, band=band, sigma=1.0, gamma=1.0)
-    assert 0.0 <= psf._eta().item() <= 1.0
-
-
-# ---------------------------------------------------------------------------
-# NonAnalyticalPSF
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def flat_kernel(grid) -> np.ndarray:
     """Uniform (n, n) kernel — sums to 1 after normalisation."""
@@ -223,242 +99,6 @@ def non_analytical_psf(grid, band, flat_kernel) -> NonAnalyticalPSF:
     """Return a PSF wrapping a fixed, non-trainable kernel."""
     return NonAnalyticalPSF(grid=grid, band=band, kernel=flat_kernel)
 
-
-def test_non_analytical_forward_shape(non_analytical_psf, grid):
-    """NonAnalyticalPSF.forward must return a valid normalised kernel."""
-    _assert_kernel_valid(non_analytical_psf.forward(), grid.n)
-
-
-def test_non_analytical_forward_uniform(non_analytical_psf, grid):
-    """Uniform input kernel must remain uniform after normalisation."""
-    k = non_analytical_psf.forward()
-    expected = 1.0 / (grid.n * grid.n)
-    assert torch.allclose(k, torch.full_like(k, expected), atol=1e-6)
-
-
-def test_non_analytical_accepts_tensor(grid, band):
-    """NonAnalyticalPSF must accept a torch.Tensor kernel."""
-    k = torch.ones(grid.n, grid.n)
-    psf = NonAnalyticalPSF(grid=grid, band=band, kernel=k)
-    _assert_kernel_valid(psf.forward(), grid.n)
-
-
-def test_non_analytical_wrong_shape_raises(grid, band):
-    """NonAnalyticalPSF must raise when kernel shape mismatches the grid."""
-    bad_kernel = np.ones((5, 5), dtype=np.float32)
-    with pytest.raises(Exception):
-        NonAnalyticalPSF(grid=grid, band=band, kernel=bad_kernel)
-
-
-def test_non_analytical_to_dataarray(non_analytical_psf, grid, band):
-    """NonAnalyticalPSF.to_dataarray must return a valid annotated DataArray."""
-    da = non_analytical_psf.to_dataarray()
-    _assert_dataarray_valid(da, grid.n, band)
-    assert da.attrs["adjeff:kind"] == "non_analytical"
-    assert da.attrs.get("adjeff:source") == "SmartG"
-
-
-def test_non_analytical_custom_source(grid, band, flat_kernel):
-    """Custom source tag must appear in attrs."""
-    psf = NonAnalyticalPSF(grid=grid, band=band, kernel=flat_kernel, source="MyTool")
-    assert psf.to_dataarray().attrs["adjeff:source"] == "MyTool"
-
-
-def test_non_analytical_no_grad(non_analytical_psf):
-    """NonAnalyticalPSF kernel must not require gradients."""
-    assert not non_analytical_psf.forward().requires_grad
-
-
-def test_non_analytical_param_dict_empty(non_analytical_psf):
-    """NonAnalyticalPSF.param_dict must return an empty dict."""
-    assert non_analytical_psf.param_dict() == {}
-
-
-# ---------------------------------------------------------------------------
-# KingPSF — the power-law index stays in the integrable range
-# ---------------------------------------------------------------------------
-
-
-def test_king_gamma_is_confined_to_the_integrable_range(grid, band):
-    """A King kernel with gamma below one has no scale of its own.
-
-    Its radial integral diverges as ``R^(2-2g)``, so the grid rather than
-    the profile sets the normalisation, and the loss surface turns
-    concave there, which stalls a quasi-Newton step.
-    """
-    low, high = KingPSF.GAMMA_BOUNDS
-
-    assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()["gamma"] >= low
-    assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()["gamma"] <= high
-
-
-def test_king_gamma_stays_bounded_under_gradient_steps(grid, band):
-    """The bound must survive optimisation, not only construction."""
-    import torch
-
-    psf = KingPSF(grid, band, sigma=0.3, gamma=1.2)
-    optimiser = torch.optim.SGD(psf.parameters(), lr=1e3)
-
-    for _ in range(20):
-        optimiser.zero_grad()
-        # Push hard towards a flat kernel, which wants a small gamma.
-        psf.forward().max().backward()
-        optimiser.step()
-
-    low, high = KingPSF.GAMMA_BOUNDS
-    assert low <= psf.param_dict()["gamma"] <= high
-
-
-# ---------------------------------------------------------------------------
-# ConstrainedParameter — a bound must not kill the gradient
-# ---------------------------------------------------------------------------
-
-
-def test_a_step_past_the_bound_does_not_kill_the_parameter():
-    """A parameter pushed past its bound must still be able to come back.
-
-    `forward` clamps the *value*, not the raw parameter.  A step large
-    enough to send the raw parameter far behind a bound leaves it there
-    for good, since the derivative of `clamp` is zero outside the
-    interval: the gradient dies and no later step can move it.  The
-    constrained value looks plausible throughout, which is what makes it
-    worth guarding.
-    """
-    import torch
-
-    from adjeff.utils import ConstrainedParameter, ExpTransform
-
-    param = ConstrainedParameter(
-        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
-    )
-    optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
-
-    for _ in range(3):
-        optimiser.zero_grad()
-        ((param.forward() - 0.5) ** 2).backward()
-        optimiser.step()
-        param.project()
-
-    optimiser.zero_grad()
-    ((param.forward() - 0.5) ** 2).backward()
-
-    assert float(param.p) >= float(param.p_min)
-    assert float(param.p) <= float(param.p_max)
-    assert float(param.p.grad) != 0.0, "the parameter can no longer move"
-
-
-def test_without_projection_the_gradient_dies():
-    """The behaviour the projection exists to prevent."""
-    import torch
-
-    from adjeff.utils import ConstrainedParameter, ExpTransform
-
-    param = ConstrainedParameter(
-        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
-    )
-    optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
-
-    for _ in range(3):
-        optimiser.zero_grad()
-        ((param.forward() - 0.5) ** 2).backward()
-        optimiser.step()  # no projection
-
-    optimiser.zero_grad()
-    ((param.forward() - 0.5) ** 2).backward()
-
-    assert float(param.p) > float(param.p_max), "the raw parameter ran away"
-    assert float(param.p.grad) == 0.0
-
-
-def test_projection_leaves_a_healthy_parameter_alone():
-    """Inside the domain, projecting is a no-op."""
-    import torch
-
-    from adjeff.utils import ConstrainedParameter, ExpTransform
-
-    param = ConstrainedParameter(
-        torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
-    )
-    before = float(param.p)
-
-    param.project()
-
-    assert float(param.p) == before
-
-
-# --- Transform: the bound must stay somewhere a gradient survives ---
-
-
-def test_the_sigmoid_bound_is_kept_away_from_the_dead_zone():
-    """Torch would invert at the machine epsilon, where the slope is 1e-38.
-
-    ``project`` puts a runaway parameter *on* its bound, so the bound has
-    to be a place the optimiser can still move away from.
-    """
-    from torch.distributions import transforms as tt
-
-    from adjeff.utils import SigmoidTransform
-
-    ours = SigmoidTransform(1.0, 5.0)
-    theirs = tt.ComposeTransform([tt.SigmoidTransform(), tt.AffineTransform(1.0, 4.0)])
-
-    def slope(p: torch.Tensor) -> float:
-        x = p.detach().clone().requires_grad_(True)
-        torch.sigmoid(x).backward()
-        return float(x.grad)
-
-    p_low_ours = ours.inverse(torch.tensor(1.0))
-    p_low_torch = theirs.inv(torch.tensor(1.0))
-
-    assert slope(p_low_ours) > 1e-8
-    assert slope(p_low_torch) < 1e-30
-    assert float(p_low_ours) > float(p_low_torch)
-
-
-def test_the_sigmoid_bounds_are_symmetric():
-    """Both ends of an interval must be equally reachable."""
-    from adjeff.utils import SigmoidTransform
-
-    transform = SigmoidTransform(1.0, 5.0)
-
-    low = float(transform.inverse(torch.tensor(1.0)))
-    high = float(transform.inverse(torch.tensor(5.0)))
-    assert low == pytest.approx(-high, rel=1e-6)
-
-
-def test_a_transform_that_does_not_bound_the_parameter_is_refused():
-    """p_min and p_max only mean something for an increasing bijection."""
-    from adjeff.utils import ConstrainedParameter
-
-    class Decreasing:
-        def forward(self, p: torch.Tensor) -> torch.Tensor:
-            return -p
-
-        def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-            return -theta
-
-    with pytest.raises(ValueError, match="strictly increasing"):
-        ConstrainedParameter(torch.tensor(2.0), Decreasing(), min_val=1.0, max_val=5.0)
-
-
-def test_a_custom_increasing_transform_is_accepted():
-    """The check is on the property, not on a list of blessed classes."""
-    from adjeff.utils import ConstrainedParameter
-
-    class Cubic:
-        def forward(self, p: torch.Tensor) -> torch.Tensor:
-            return p**3
-
-        def inverse(self, theta: torch.Tensor) -> torch.Tensor:
-            return theta ** (1 / 3)
-
-    param = ConstrainedParameter(torch.tensor(8.0), Cubic(), min_val=1.0, max_val=27.0)
-
-    assert float(param.value) == pytest.approx(8.0, rel=1e-5)
-    assert float(param.p_min) < float(param.p_max)
-
-
-# --- radial_power: a grid that lands on r = 0 must not kill the gradient ---
 
 #: 401 pixels at 0.5 km: `linspace` lands exactly on zero here, where a
 #: 1999-pixel grid at 0.1 km misses it by 5e-08.  Both are real grids;
@@ -474,87 +114,6 @@ def _grad_of(psf) -> dict[str, float]:
     return {name: float(p.grad) for name, p in psf.named_parameters()}
 
 
-def test_the_centre_pixel_of_a_grid_can_land_exactly_on_zero():
-    """The premise of the tests below, stated so it cannot drift."""
-    res, n = ZERO_GRID
-    x, y = PSFGrid(res, n).meshgrid()
-    radius = torch.sqrt(x**2 + y**2)
-
-    assert float(radius.min()) == 0.0
-    assert int((radius == 0).sum()) == 1
-
-
-@pytest.mark.parametrize(
-    ("cls", "kwargs"),
-    [
-        (GeneralizedGaussianPSF, {"sigma": 1e-3, "n": 0.20}),
-        (GeneralizedGaussianPSF, {"sigma": 1e-1, "n": 0.40}),
-        (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.2, "gamma": 2.0}),
-        (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.4, "gamma": 2.0}),
-    ],
-    ids=["gg-n0.2", "gg-n0.4", "moffat-b0.2", "moffat-b0.4"],
-)
-def test_a_fractional_power_of_the_radius_stays_differentiable(cls, kwargs):
-    """An exponent below one used to make every parameter NaN at once.
-
-    One pixel out of a hundred and sixty thousand is enough: the NaN
-    enters the sum of the gradient, the optimiser writes it into the raw
-    parameter, and every later step is lost.
-    """
-    res, n = ZERO_GRID
-    psf = cls(PSFGrid(res, n), S2Band.B03, **kwargs)
-
-    grads = _grad_of(psf)
-
-    assert all(np.isfinite(v) for v in grads.values()), grads
-    assert any(v != 0.0 for v in grads.values()), "a dead gradient is not a fix"
-
-
-def test_radial_power_leaves_the_kernel_untouched():
-    """The fix is about the gradient; not one value may move."""
-    res, n = ZERO_GRID
-    x, y = PSFGrid(res, n).meshgrid()
-    radius = torch.sqrt(x**2 + y**2)
-    scale, power = torch.tensor(1e-3), torch.tensor(0.20)
-
-    guarded = radial_power(radius, scale, power)
-    plain = (radius / scale) ** power
-
-    assert torch.equal(guarded, plain)
-
-
-def test_radial_power_gives_the_origin_the_limit_of_its_gradient():
-    """``(r/s)**p`` tends to zero at the origin, and so does its slope."""
-    scale = torch.tensor(1e-3, requires_grad=True)
-    radius = torch.zeros(1)
-
-    radial_power(radius, scale, torch.tensor(0.20)).sum().backward()
-
-    assert float(scale.grad) == 0.0
-
-
-def test_discarding_the_result_would_not_have_been_enough():
-    """Why the origin is never evaluated rather than evaluated and dropped.
-
-    Overwriting a value after the fact leaves its gradient path in the
-    graph, weighted by zero, and zero times NaN is NaN.  This pins the
-    trap that the first attempt at this fix fell into.
-    """
-    scale = torch.tensor(1e-3, requires_grad=True)
-    radius = torch.zeros(1)
-
-    naive = (radius / scale) ** torch.tensor(0.20)
-    overwritten = naive.clone()
-    overwritten[0] = 0.0
-    overwritten.sum().backward()
-
-    assert np.isnan(float(scale.grad))
-
-
-# ---------------------------------------------------------------------------
-# The radial grid lives with the module, not with the call
-# ---------------------------------------------------------------------------
-
 #: One instance of every analytical PSF, with parameters that are valid
 #: for all of them, so the device tests can run over the whole family.
 ANALYTICAL = [
@@ -566,62 +125,450 @@ ANALYTICAL = [
 ]
 
 
-def test_meshgrid_honours_the_device_it_is_given(grid):
-    """The grid must be allocated where asked, not where torch defaults."""
-    X, Y = grid.meshgrid(device="cpu")
-    assert X.device.type == "cpu"
-    assert Y.device.type == "cpu"
+class TestPSFGrid:
+    """The grid a PSF is sampled on."""
+
+    def test_grid_invalid_res(self):
+        """PSFGrid must reject non-positive resolution."""
+        with pytest.raises(Exception):
+            PSFGrid(res=0.0, n=11)
+
+    def test_grid_invalid_n_even(self):
+        with pytest.raises(Exception):
+            PSFGrid(res=0.01, n=10)
+
+    def test_grid_invalid_n_too_small(self):
+        """PSFGrid must reject n < 3."""
+        with pytest.raises(Exception):
+            PSFGrid(res=0.01, n=1)
+
+    def test_grid_as_coords_shape(self, grid):
+        """as_coords must return n-length x_psf and y_psf coordinates."""
+        coords = grid.as_coords()
+        assert len(coords["x_psf"]) == grid.n
+        assert len(coords["y_psf"]) == grid.n
+
+    def test_grid_as_coords_centered(self, grid):
+        """as_coords coordinates must be centered on zero."""
+        coords = grid.as_coords()
+        assert coords["x_psf"].values[grid.n // 2] == pytest.approx(0.0, abs=1e-6)
+        assert coords["y_psf"].values[grid.n // 2] == pytest.approx(0.0, abs=1e-6)
+
+    def test_grid_meshgrid_shape(self, grid):
+        X, Y = grid.meshgrid()
+        assert X.shape == (grid.n, grid.n)
+        assert Y.shape == (grid.n, grid.n)
+        assert X.dtype == torch.float32
+        assert Y.dtype == torch.float32
+
+    def test_grid_meshgrid_center_is_zero(self, grid):
+        """Center pixel of both meshgrid tensors must be 0."""
+        X, Y = grid.meshgrid()
+        c = grid.n // 2
+        assert X[c, c].item() == pytest.approx(0.0, abs=1e-6)
+        assert Y[c, c].item() == pytest.approx(0.0, abs=1e-6)
 
 
-@pytest.mark.parametrize(
-    "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
-)
-def test_the_radial_grid_is_a_buffer_not_a_per_call_allocation(cls, params, grid, band):
-    """Every analytical PSF must read its radius off the module.
+class TestAnalyticalPSFs:
+    """Every analytical kernel, over the same cases."""
 
-    Rebuilding it inside ``forward`` costs 268 ms per call at n = 3999,
-    on whatever device torch defaults to, which is the CPU even when the
-    fit runs on a GPU.  Registering it as a buffer is what lets
-    ``.to(device)`` carry it along with the parameters.
-    """
-    psf = cls(grid, band, **params)
+    @_ANALYTICAL_PSF_CASES
+    def test_analytical_psf_kernel_valid(
+        self, psf_cls, kwargs, model_name, param_keys, grid, band
+    ):
+        psf = psf_cls(grid=grid, band=band, **kwargs)
+        _assert_kernel_valid(psf.forward(), grid.n)
 
-    assert "_r2" in dict(psf.named_buffers())
-    assert psf.r2.shape == (grid.n, grid.n)
-    assert torch.allclose(psf.r, torch.sqrt(psf.r2))
+    @_ANALYTICAL_PSF_CASES
+    def test_analytical_psf_peak_at_center(
+        self, psf_cls, kwargs, model_name, param_keys, grid, band
+    ):
+        psf = psf_cls(grid=grid, band=band, **kwargs)
+        k = psf.forward()
+        c = grid.n // 2
+        assert k[c, c].item() == k.max().item()
 
-    # Derived from `grid`, so it must not bloat a checkpoint.
-    assert "_r2" not in psf.state_dict()
+    @_ANALYTICAL_PSF_CASES
+    def test_analytical_psf_to_dataarray(
+        self, psf_cls, kwargs, model_name, param_keys, grid, band
+    ):
+        """to_dataarray returns an annotated DataArray naming its model."""
+        psf = psf_cls(grid=grid, band=band, **kwargs)
+        da = psf.to_dataarray()
+        _assert_dataarray_valid(da, grid.n, band)
+        assert da.attrs["adjeff:model"] == model_name
+
+    @_ANALYTICAL_PSF_CASES
+    def test_analytical_psf_param_dict(
+        self, psf_cls, kwargs, model_name, param_keys, grid, band
+    ):
+        """param_dict must return float values keyed by the expected parameter names."""
+        psf = psf_cls(grid=grid, band=band, **kwargs)
+        p = psf.param_dict()
+        assert set(p.keys()) == param_keys
+        assert all(isinstance(v, float) for v in p.values())
+
+    def test_voigt_eta_range(self, grid, band):
+        """_eta must return a value in [0, 1]."""
+        psf = VoigtPSF(grid=grid, band=band, sigma=1.0, gamma=1.0)
+        assert 0.0 <= psf._eta().item() <= 1.0
 
 
-@pytest.mark.parametrize(
-    "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
-)
-def test_the_kernel_comes_out_on_the_module_device(cls, params, grid, band):
-    """``forward`` must not silently move the kernel back to the CPU."""
-    psf = cls(grid, band, **params).to("cpu")
-    assert psf.forward().device == psf.r2.device
+class TestNonAnalyticalPSF:
+    """A PSF built from a kernel given as an array."""
+
+    def test_non_analytical_forward_shape(self, non_analytical_psf, grid):
+        """NonAnalyticalPSF.forward must return a valid normalised kernel."""
+        _assert_kernel_valid(non_analytical_psf.forward(), grid.n)
+
+    def test_non_analytical_forward_uniform(self, non_analytical_psf, grid):
+        """Uniform input kernel must remain uniform after normalisation."""
+        k = non_analytical_psf.forward()
+        expected = 1.0 / (grid.n * grid.n)
+        assert torch.allclose(k, torch.full_like(k, expected), atol=1e-6)
+
+    def test_non_analytical_accepts_tensor(self, grid, band):
+        """NonAnalyticalPSF must accept a torch.Tensor kernel."""
+        k = torch.ones(grid.n, grid.n)
+        psf = NonAnalyticalPSF(grid=grid, band=band, kernel=k)
+        _assert_kernel_valid(psf.forward(), grid.n)
+
+    def test_non_analytical_wrong_shape_raises(self, grid, band):
+        """NonAnalyticalPSF must raise when kernel shape mismatches the grid."""
+        bad_kernel = np.ones((5, 5), dtype=np.float32)
+        with pytest.raises(Exception):
+            NonAnalyticalPSF(grid=grid, band=band, kernel=bad_kernel)
+
+    def test_non_analytical_to_dataarray(self, non_analytical_psf, grid, band):
+        """NonAnalyticalPSF.to_dataarray must return a valid annotated DataArray."""
+        da = non_analytical_psf.to_dataarray()
+        _assert_dataarray_valid(da, grid.n, band)
+        assert da.attrs["adjeff:kind"] == "non_analytical"
+        assert da.attrs.get("adjeff:source") == "SmartG"
+
+    def test_non_analytical_custom_source(self, grid, band, flat_kernel):
+        psf = NonAnalyticalPSF(
+            grid=grid, band=band, kernel=flat_kernel, source="MyTool"
+        )
+        assert psf.to_dataarray().attrs["adjeff:source"] == "MyTool"
+
+    def test_non_analytical_no_grad(self, non_analytical_psf):
+        """NonAnalyticalPSF kernel must not require gradients."""
+        assert not non_analytical_psf.forward().requires_grad
+
+    def test_non_analytical_param_dict_empty(self, non_analytical_psf):
+        """NonAnalyticalPSF.param_dict must return an empty dict."""
+        assert non_analytical_psf.param_dict() == {}
 
 
-@pytest.mark.parametrize(
-    "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
-)
-def test_nothing_in_the_module_tree_is_left_behind_by_to(cls, params, grid, band):
-    """No tensor may hang off a module as a plain attribute.
+class TestBoundedParameters:
+    """Parameters kept inside the range their model needs."""
 
-    ``fit`` moves the model to its device, and ``.to`` carries parameters
-    and buffers only.  A tensor assigned directly stays on the host and
-    turns every step into a mixed-device operation, which is what the
-    bounds of a ``ConstrainedParameter`` used to be.  This catches the
-    next one without needing a GPU to run on.
-    """
-    psf = cls(grid, band, **params)
-    registered = {id(t) for t in psf.parameters()} | {id(t) for t in psf.buffers()}
+    def test_king_gamma_is_confined_to_the_integrable_range(self, grid, band):
+        """A King kernel with gamma below one has no scale of its own.
 
-    for module in psf.modules():
-        for name, attr in vars(module).items():
-            if isinstance(attr, torch.Tensor) and id(attr) not in registered:
-                raise AssertionError(
-                    f"{type(module).__name__}.{name} is a plain tensor: "
-                    "register it as a buffer so .to(device) moves it."
-                )
+        Its radial integral diverges as ``R^(2-2g)``, so the grid rather than
+        the profile sets the normalisation, and the loss surface turns
+        concave there, which stalls a quasi-Newton step.
+        """
+        low, high = KingPSF.GAMMA_BOUNDS
+
+        assert KingPSF(grid, band, sigma=0.3, gamma=0.2).param_dict()["gamma"] >= low
+        assert KingPSF(grid, band, sigma=0.3, gamma=50.0).param_dict()["gamma"] <= high
+
+    def test_king_gamma_stays_bounded_under_gradient_steps(self, grid, band):
+        """The bound must survive optimisation, not only construction."""
+        import torch
+
+        psf = KingPSF(grid, band, sigma=0.3, gamma=1.2)
+        optimiser = torch.optim.SGD(psf.parameters(), lr=1e3)
+
+        for _ in range(20):
+            optimiser.zero_grad()
+            # Push hard towards a flat kernel, which wants a small gamma.
+            psf.forward().max().backward()
+            optimiser.step()
+
+        low, high = KingPSF.GAMMA_BOUNDS
+        assert low <= psf.param_dict()["gamma"] <= high
+
+    def test_a_step_past_the_bound_does_not_kill_the_parameter(self):
+        """A parameter pushed past its bound must still be able to come back.
+
+        `forward` clamps the *value*, not the raw parameter.  A step large
+        enough to send the raw parameter far behind a bound leaves it there
+        for good, since the derivative of `clamp` is zero outside the
+        interval: the gradient dies and no later step can move it.  The
+        constrained value looks plausible throughout, which is what makes it
+        worth guarding.
+        """
+        import torch
+
+        from adjeff.utils import ConstrainedParameter, ExpTransform
+
+        param = ConstrainedParameter(
+            torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+        )
+        optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
+
+        for _ in range(3):
+            optimiser.zero_grad()
+            ((param.forward() - 0.5) ** 2).backward()
+            optimiser.step()
+            param.project()
+
+        optimiser.zero_grad()
+        ((param.forward() - 0.5) ** 2).backward()
+
+        assert float(param.p) >= float(param.p_min)
+        assert float(param.p) <= float(param.p_max)
+        assert float(param.p.grad) != 0.0, "the parameter can no longer move"
+
+    def test_without_projection_the_gradient_dies(self):
+        """The behaviour the projection exists to prevent."""
+        import torch
+
+        from adjeff.utils import ConstrainedParameter, ExpTransform
+
+        param = ConstrainedParameter(
+            torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+        )
+        optimiser = torch.optim.SGD(param.parameters(), lr=60.0)
+
+        for _ in range(3):
+            optimiser.zero_grad()
+            ((param.forward() - 0.5) ** 2).backward()
+            optimiser.step()  # no projection
+
+        optimiser.zero_grad()
+        ((param.forward() - 0.5) ** 2).backward()
+
+        assert float(param.p) > float(param.p_max), "the raw parameter ran away"
+        assert float(param.p.grad) == 0.0
+
+    def test_projection_leaves_a_healthy_parameter_alone(self):
+        """Inside the domain, projecting is a no-op."""
+        import torch
+
+        from adjeff.utils import ConstrainedParameter, ExpTransform
+
+        param = ConstrainedParameter(
+            torch.tensor(0.3), ExpTransform(), min_val=1e-3, max_val=50.0
+        )
+        before = float(param.p)
+
+        param.project()
+
+        assert float(param.p) == before
+
+    def test_the_sigmoid_bound_is_kept_away_from_the_dead_zone(self):
+        """Torch would invert at the machine epsilon, where the slope is 1e-38.
+
+        ``project`` puts a runaway parameter *on* its bound, so the bound has
+        to be a place the optimiser can still move away from.
+        """
+        from torch.distributions import transforms as tt
+
+        from adjeff.utils import SigmoidTransform
+
+        ours = SigmoidTransform(1.0, 5.0)
+        theirs = tt.ComposeTransform(
+            [tt.SigmoidTransform(), tt.AffineTransform(1.0, 4.0)]
+        )
+
+        def slope(p: torch.Tensor) -> float:
+            x = p.detach().clone().requires_grad_(True)
+            torch.sigmoid(x).backward()
+            return float(x.grad)
+
+        p_low_ours = ours.inverse(torch.tensor(1.0))
+        p_low_torch = theirs.inv(torch.tensor(1.0))
+
+        assert slope(p_low_ours) > 1e-8
+        assert slope(p_low_torch) < 1e-30
+        assert float(p_low_ours) > float(p_low_torch)
+
+    def test_the_sigmoid_bounds_are_symmetric(self):
+        """Both ends of an interval must be equally reachable."""
+        from adjeff.utils import SigmoidTransform
+
+        transform = SigmoidTransform(1.0, 5.0)
+
+        low = float(transform.inverse(torch.tensor(1.0)))
+        high = float(transform.inverse(torch.tensor(5.0)))
+        assert low == pytest.approx(-high, rel=1e-6)
+
+    def test_a_transform_that_does_not_bound_the_parameter_is_refused(self):
+        """p_min and p_max only mean something for an increasing bijection."""
+        from adjeff.utils import ConstrainedParameter
+
+        class Decreasing:
+            def forward(self, p: torch.Tensor) -> torch.Tensor:
+                return -p
+
+            def inverse(self, theta: torch.Tensor) -> torch.Tensor:
+                return -theta
+
+        with pytest.raises(ValueError, match="strictly increasing"):
+            ConstrainedParameter(
+                torch.tensor(2.0), Decreasing(), min_val=1.0, max_val=5.0
+            )
+
+    def test_a_custom_increasing_transform_is_accepted(self):
+        """The check is on the property, not on a list of blessed classes."""
+        from adjeff.utils import ConstrainedParameter
+
+        class Cubic:
+            def forward(self, p: torch.Tensor) -> torch.Tensor:
+                return p**3
+
+            def inverse(self, theta: torch.Tensor) -> torch.Tensor:
+                return theta ** (1 / 3)
+
+        param = ConstrainedParameter(
+            torch.tensor(8.0), Cubic(), min_val=1.0, max_val=27.0
+        )
+
+        assert float(param.value) == pytest.approx(8.0, rel=1e-5)
+        assert float(param.p_min) < float(param.p_max)
+
+
+class TestRadialDifferentiability:
+    """The radius at the origin, where r = 0 bites."""
+
+    def test_the_centre_pixel_of_a_grid_can_land_exactly_on_zero(self):
+        """The premise of the tests below, stated so it cannot drift."""
+        res, n = ZERO_GRID
+        x, y = PSFGrid(res, n).meshgrid()
+        radius = torch.sqrt(x**2 + y**2)
+
+        assert float(radius.min()) == 0.0
+        assert int((radius == 0).sum()) == 1
+
+    @pytest.mark.parametrize(
+        ("cls", "kwargs"),
+        [
+            (GeneralizedGaussianPSF, {"sigma": 1e-3, "n": 0.20}),
+            (GeneralizedGaussianPSF, {"sigma": 1e-1, "n": 0.40}),
+            (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.2, "gamma": 2.0}),
+            (MoffatGeneralizedPSF, {"alpha": 0.3, "beta": 0.4, "gamma": 2.0}),
+        ],
+        ids=["gg-n0.2", "gg-n0.4", "moffat-b0.2", "moffat-b0.4"],
+    )
+    def test_a_fractional_power_of_the_radius_stays_differentiable(self, cls, kwargs):
+        """An exponent below one used to make every parameter NaN at once.
+
+        One pixel out of a hundred and sixty thousand is enough: the NaN
+        enters the sum of the gradient, the optimiser writes it into the raw
+        parameter, and every later step is lost.
+        """
+        res, n = ZERO_GRID
+        psf = cls(PSFGrid(res, n), S2Band.B03, **kwargs)
+
+        grads = _grad_of(psf)
+
+        assert all(np.isfinite(v) for v in grads.values()), grads
+        assert any(v != 0.0 for v in grads.values()), "a dead gradient is not a fix"
+
+    def test_radial_power_leaves_the_kernel_untouched(self):
+        """The fix is about the gradient; not one value may move."""
+        res, n = ZERO_GRID
+        x, y = PSFGrid(res, n).meshgrid()
+        radius = torch.sqrt(x**2 + y**2)
+        scale, power = torch.tensor(1e-3), torch.tensor(0.20)
+
+        guarded = radial_power(radius, scale, power)
+        plain = (radius / scale) ** power
+
+        assert torch.equal(guarded, plain)
+
+    def test_radial_power_gives_the_origin_the_limit_of_its_gradient(self):
+        """``(r/s)**p`` tends to zero at the origin, and so does its slope."""
+        scale = torch.tensor(1e-3, requires_grad=True)
+        radius = torch.zeros(1)
+
+        radial_power(radius, scale, torch.tensor(0.20)).sum().backward()
+
+        assert float(scale.grad) == 0.0
+
+    def test_discarding_the_result_would_not_have_been_enough(self):
+        """Why the origin is never evaluated rather than evaluated and dropped.
+
+        Overwriting a value after the fact leaves its gradient path in the
+        graph, weighted by zero, and zero times NaN is NaN.  This pins the
+        trap that the first attempt at this fix fell into.
+        """
+        scale = torch.tensor(1e-3, requires_grad=True)
+        radius = torch.zeros(1)
+
+        naive = (radius / scale) ** torch.tensor(0.20)
+        overwritten = naive.clone()
+        overwritten[0] = 0.0
+        overwritten.sum().backward()
+
+        assert np.isnan(float(scale.grad))
+
+
+class TestDevicePlacement:
+    """What a move to another device has to carry with it."""
+
+    def test_meshgrid_honours_the_device_it_is_given(self, grid):
+        """The grid must be allocated where asked, not where torch defaults."""
+        X, Y = grid.meshgrid(device="cpu")
+        assert X.device.type == "cpu"
+        assert Y.device.type == "cpu"
+
+    @pytest.mark.parametrize(
+        "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
+    )
+    def test_the_radial_grid_is_a_buffer_not_a_per_call_allocation(
+        self, cls, params, grid, band
+    ):
+        """Every analytical PSF must read its radius off the module.
+
+        Rebuilding it inside ``forward`` costs 268 ms per call at n = 3999,
+        on whatever device torch defaults to, which is the CPU even when the
+        fit runs on a GPU.  Registering it as a buffer is what lets
+        ``.to(device)`` carry it along with the parameters.
+        """
+        psf = cls(grid, band, **params)
+
+        assert "_r2" in dict(psf.named_buffers())
+        assert psf.r2.shape == (grid.n, grid.n)
+        assert torch.allclose(psf.r, torch.sqrt(psf.r2))
+
+        # Derived from `grid`, so it must not bloat a checkpoint.
+        assert "_r2" not in psf.state_dict()
+
+    @pytest.mark.parametrize(
+        "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
+    )
+    def test_the_kernel_comes_out_on_the_module_device(self, cls, params, grid, band):
+        """``forward`` must not silently move the kernel back to the CPU."""
+        psf = cls(grid, band, **params).to("cpu")
+        assert psf.forward().device == psf.r2.device
+
+    @pytest.mark.parametrize(
+        "cls,params", ANALYTICAL, ids=lambda a: getattr(a, "__name__", "")
+    )
+    def test_nothing_in_the_module_tree_is_left_behind_by_to(
+        self, cls, params, grid, band
+    ):
+        """No tensor may hang off a module as a plain attribute.
+
+        ``fit`` moves the model to its device, and ``.to`` carries parameters
+        and buffers only.  A tensor assigned directly stays on the host and
+        turns every step into a mixed-device operation, which is what the
+        bounds of a ``ConstrainedParameter`` used to be.  This catches the
+        next one without needing a GPU to run on.
+        """
+        psf = cls(grid, band, **params)
+        registered = {id(t) for t in psf.parameters()} | {id(t) for t in psf.buffers()}
+
+        for module in psf.modules():
+            for name, attr in vars(module).items():
+                if isinstance(attr, torch.Tensor) and id(attr) not in registered:
+                    raise AssertionError(
+                        f"{type(module).__name__}.{name} is a plain tensor: "
+                        "register it as a buffer so .to(device) moves it."
+                    )

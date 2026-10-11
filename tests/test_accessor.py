@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 import xarray as xr
-
 import adjeff  # noqa: F401 — registers the accessor
 from adjeff.exceptions import AdjeffAccessorError
 
@@ -40,255 +39,6 @@ def annotated_da(flat_da: xr.DataArray) -> xr.DataArray:
     return flat_da
 
 
-# ------------------------------------------------------------------
-# Metadata
-# ------------------------------------------------------------------
-
-
-def test_kind(annotated_da):
-    """kind() returns the adjeff:kind attribute."""
-    assert annotated_da.adjeff.kind() == "analytical"
-
-
-def test_kind_missing(flat_da):
-    """kind() returns None when the attribute is absent."""
-    assert flat_da.adjeff.kind() is None
-
-
-def test_is_analytical_true(annotated_da):
-    """is_analytical() returns True when kind is 'analytical'."""
-    assert annotated_da.adjeff.is_analytical() is True
-
-
-def test_is_analytical_false(flat_da):
-    """is_analytical() returns False when kind attr is absent."""
-    assert flat_da.adjeff.is_analytical() is False
-
-
-def test_model(annotated_da):
-    """model() returns the adjeff:model attribute."""
-    assert annotated_da.adjeff.model() == "gaussian"
-
-
-def test_model_missing(flat_da):
-    """model() returns None when the attribute is absent."""
-    assert flat_da.adjeff.model() is None
-
-
-def test_params(annotated_da):
-    """params() returns the adjeff:params dict."""
-    assert annotated_da.adjeff.params() == {"sigma": 1.5}
-
-
-def test_params_missing(flat_da):
-    """params() returns None when the attribute is absent."""
-    assert flat_da.adjeff.params() is None
-
-
-# ------------------------------------------------------------------
-# Spatial properties
-# ------------------------------------------------------------------
-
-
-def test_res(flat_da):
-    """Res returns the pixel spacing derived from x coordinates."""
-    assert flat_da.adjeff.res == pytest.approx(1.0, rel=1e-5)
-
-
-def test_n(flat_da):
-    """N returns the number of pixels on the x dimension."""
-    assert flat_da.adjeff.n == 10
-
-
-# ------------------------------------------------------------------
-# Radial profile
-# ------------------------------------------------------------------
-
-
-def test_radial_returns_dataarray(flat_da):
-    """radial() returns a 1-D DataArray with dim 'r'."""
-    result = flat_da.adjeff.radial()
-    assert isinstance(result, xr.DataArray)
-    assert "r" in result.dims
-
-
-def test_radial_constant_field_is_flat(flat_da):
-    """A constant field produces a flat radial profile."""
-    result = flat_da.adjeff.radial()
-    assert not np.any(np.isnan(result.values))
-    assert np.allclose(result.values, 2.0, atol=1e-5)
-
-
-def test_radial_upsample(flat_da):
-    """Requesting more bins than natural upsamples via interpolation."""
-    result = flat_da.adjeff.radial(n_bins=100)
-    assert result.sizes["r"] == 100
-
-
-def test_radial_cdf_normalized(flat_da):
-    """radial_cdf reports the energy enclosed by each radius it names.
-
-    On a constant field that fraction is the area ratio, so the curve
-    must follow ``(r / r_max)**2``.  Its last sample sits at the centre
-    of the outermost annulus, short of the radius the normalisation is
-    taken at, so it lands below one rather than on it.
-    """
-    cdf = flat_da.adjeff.radial("cdf")
-    r = cdf.coords["r"].values
-    r_max = r[-1] + 0.5 * (r[-1] - r[-2])
-    expected = (r / r_max) ** 2
-    assert cdf.values == pytest.approx(expected, abs=0.02)
-    assert cdf.values[-1] < 1.0
-
-
-def test_radial_cdf_monotone(flat_da):
-    """radial_cdf is non-decreasing."""
-    cdf = flat_da.adjeff.radial("cdf")
-    diffs = np.diff(cdf.values)
-    assert np.all(diffs >= -1e-6)
-
-
-def test_radial_std_nonnegative(flat_da):
-    """radial_std values are >= 0 (ignoring NaN)."""
-    result = flat_da.adjeff.radial("std")
-    values = result.values[~np.isnan(result.values)]
-    assert np.all(values >= 0.0)
-
-
-def test_radial_std_constant_field_is_zero(flat_da):
-    """A constant field has zero azimuthal dispersion."""
-    result = flat_da.adjeff.radial("std")
-    values = result.values[~np.isnan(result.values)]
-    assert np.allclose(values, 0.0, atol=1e-5)
-
-
-# ------------------------------------------------------------------
-# Adaptive radial sampling
-# ------------------------------------------------------------------
-
-
-def test_radial_adaptive_count(disk_da):
-    """radial_adaptive returns exactly n samples before gap-filling."""
-    result = disk_da.adjeff.radial("adaptive", n=20)
-    assert isinstance(result, xr.DataArray)
-    assert "r" in result.dims
-    assert result.sizes["r"] >= 20
-
-
-def test_radial_adaptive_concentrates_near_edge(disk_da):
-    """Adaptive sampling places more points near the disk edge (r~10)."""
-    result = disk_da.adjeff.radial("adaptive", n=30)
-    r = result.coords["r"].values
-    # Density near the disk edge (8–12) should be higher than far from it
-    near_edge = np.sum((r >= 8) & (r <= 12))
-    far = np.sum(r > 20)
-    assert near_edge > far
-
-
-def test_radial_adaptive_max_gap(disk_da):
-    """max_gap ensures no two consecutive samples exceed the given distance."""
-    max_gap = 3.0
-    result = disk_da.adjeff.radial("adaptive", n=10, max_gap=max_gap)
-    r = result.coords["r"].values
-    gaps = np.diff(r)
-    assert np.all(gaps <= max_gap + 1e-6)
-
-
-def test_radial_adaptive_from_profile(disk_da):
-    """radial_adaptive on a 1-D 'r' DataArray skips recomputing azimuthal mean."""
-    profile = disk_da.adjeff.radial()
-    result = profile.adjeff.radial("adaptive", n=15)
-    assert "r" in result.dims
-    assert result.sizes["r"] >= 15
-
-
-# ------------------------------------------------------------------
-# Profile → 2D field reconstruction
-# ------------------------------------------------------------------
-
-
-def test_to_field_shape(disk_da):
-    """to_field reconstructs a 2D field with the target grid shape."""
-    profile = disk_da.adjeff.radial()
-    target_ds = disk_da.to_dataset(name="rho_s")
-    result = profile.adjeff.to_field(target_ds)
-    assert result.sizes["y"] == disk_da.sizes["y"]
-    assert result.sizes["x"] == disk_da.sizes["x"]
-
-
-def test_to_field_center_value(disk_da):
-    """to_field value at center (r=0) matches the profile value at r=0."""
-    profile = disk_da.adjeff.radial()
-    target_ds = disk_da.to_dataset(name="rho_s")
-    result = profile.adjeff.to_field(target_ds)
-    center_y = disk_da.sizes["y"] // 2
-    center_x = disk_da.sizes["x"] // 2
-    # Center pixel should be close to the high-reflectance disk value
-    assert result.values[center_y, center_x] == pytest.approx(0.8, abs=0.05)
-
-
-# ------------------------------------------------------------------
-# AdjeffAccessorError
-# ------------------------------------------------------------------
-
-
-def test_x_coord_missing_raises():
-    """Res and n raise AdjeffAccessorError when no x or x_psf coordinate."""
-    da = xr.DataArray(
-        np.ones((5, 5), dtype=np.float32),
-        dims=["y", "z"],
-        coords={"y": np.arange(5), "z": np.arange(5)},
-    )
-    with pytest.raises(AdjeffAccessorError, match="x-coordinate"):
-        _ = da.adjeff.res
-
-
-def test_radial_unknown_stat_raises(flat_da):
-    """radial() raises AdjeffAccessorError for an unknown stat."""
-    with pytest.raises(AdjeffAccessorError, match="Unknown stat"):
-        flat_da.adjeff.radial("invalid")
-
-
-def test_radial_adaptive_missing_n_raises(flat_da):
-    """radial('adaptive') without n raises AdjeffAccessorError."""
-    with pytest.raises(AdjeffAccessorError, match="requires n"):
-        flat_da.adjeff.radial("adaptive")
-
-
-def test_transect_non_2d_raises():
-    """Transect raises AdjeffAccessorError when DataArray is not 2-D."""
-    da_3d = xr.DataArray(
-        np.ones((3, 5, 5), dtype=np.float32),
-        dims=["aot", "y", "x"],
-        coords={
-            "aot": [0.1, 0.2, 0.3],
-            "y": np.linspace(-2, 2, 5),
-            "x": np.linspace(-2, 2, 5),
-        },
-    )
-    with pytest.raises(AdjeffAccessorError, match="2-D"):
-        da_3d.adjeff.transect(0.0)
-
-
-def test_to_field_broadcasts_extra_dims(disk_da):
-    """to_field broadcasts correctly when the profile has extra dimensions."""
-    profile = disk_da.adjeff.radial()
-    # Add an extra dimension (e.g. aot) by stacking
-    profile_extra = xr.concat(
-        [profile * 1.0, profile * 0.5], dim=xr.DataArray([0.1, 0.3], dims=["aot"])
-    )
-    target_ds = disk_da.to_dataset(name="rho_s")
-    result = profile_extra.adjeff.to_field(target_ds)
-    assert result.sizes["aot"] == 2
-    assert result.sizes["y"] == disk_da.sizes["y"]
-    assert result.sizes["x"] == disk_da.sizes["x"]
-
-
-# ---------------------------------------------------------------------------
-# tidy / untidy
-# ---------------------------------------------------------------------------
-
-
 def _swept(n: int = 4):
     """Return a field swept over aot, with rh and href never swept."""
     return xr.DataArray(
@@ -298,84 +48,269 @@ def _swept(n: int = 4):
     )
 
 
-def test_tidy_keeps_the_value_it_removes_the_dimension_of():
-    """A scalar configuration must still say which state it stands for."""
-    tidied = _swept().adjeff.tidy()
+class TestProvenance:
+    """What a kernel's attrs say about the model that made it."""
 
-    assert tidied.dims == ("aot", "y", "x")
-    assert float(tidied.rh) == 50.0
-    assert float(tidied.href) == 2.0
+    def test_kind(self, annotated_da):
+        assert annotated_da.adjeff.kind() == "analytical"
 
+    def test_kind_missing(self, flat_da):
+        assert flat_da.adjeff.kind() is None
 
-def test_tidy_leaves_a_swept_dimension_alone():
-    """Only the parameters that were never swept are peeled."""
-    assert "aot" in _swept().adjeff.tidy().dims
+    def test_is_analytical_true(self, annotated_da):
+        assert annotated_da.adjeff.is_analytical() is True
 
+    def test_is_analytical_false(self, flat_da):
+        assert flat_da.adjeff.is_analytical() is False
 
-def test_tidy_is_a_no_op_without_singletons():
-    """Nothing to peel, nothing copied."""
-    da = xr.DataArray(np.zeros((4, 4)), dims=["y", "x"])
+    def test_model(self, annotated_da):
+        assert annotated_da.adjeff.model() == "gaussian"
 
-    assert da.adjeff.tidy().dims == ("y", "x")
+    def test_model_missing(self, flat_da):
+        assert flat_da.adjeff.model() is None
 
+    def test_params(self, annotated_da):
+        assert annotated_da.adjeff.params() == {"sigma": 1.5}
 
-def test_untidy_restores_the_dimensions():
-    """The round trip returns the shape it started from."""
-    original = _swept()
+    def test_params_missing(self, flat_da):
+        assert flat_da.adjeff.params() is None
 
-    restored = original.adjeff.tidy().adjeff.untidy("rh", "href")
+    def test_res(self, flat_da):
+        assert flat_da.adjeff.res == pytest.approx(1.0, rel=1e-5)
 
-    assert set(restored.dims) == set(original.dims)
-    xr.testing.assert_allclose(restored.transpose(*original.dims), original)
-
-
-def test_untidy_defaults_to_every_scalar_coordinate():
-    """Called bare, it expands whatever tidy collapsed."""
-    restored = _swept().adjeff.tidy().adjeff.untidy()
-
-    assert set(restored.dims) == {"aot", "rh", "href", "y", "x"}
+    def test_n(self, flat_da):
+        assert flat_da.adjeff.n == 10
 
 
-def test_tidied_arrays_concatenate_back():
-    """Concat promotes the scalar coordinate to a dimension again.
+class TestRadialProfile:
+    """Radial statistics of a 2-D field."""
 
-    This is the supported way to recombine tidied pieces; `merge` and
-    `combine_by_coords` need a dimension to align on and are documented
-    as requiring `untidy` first.
-    """
-    pieces = [
-        xr.DataArray(
-            np.full((1, 4, 4), aot),
+    def test_radial_returns_dataarray(self, flat_da):
+        result = flat_da.adjeff.radial()
+        assert isinstance(result, xr.DataArray)
+        assert "r" in result.dims
+
+    def test_radial_constant_field_is_flat(self, flat_da):
+        result = flat_da.adjeff.radial()
+        assert not np.any(np.isnan(result.values))
+        assert np.allclose(result.values, 2.0, atol=1e-5)
+
+    def test_radial_upsample(self, flat_da):
+        result = flat_da.adjeff.radial(n_bins=100)
+        assert result.sizes["r"] == 100
+
+    def test_radial_cdf_normalized(self, flat_da):
+        """radial_cdf reports the energy enclosed by each radius it names.
+
+        On a constant field that fraction is the area ratio, so the curve
+        must follow ``(r / r_max)**2``.  Its last sample sits at the centre
+        of the outermost annulus, short of the radius the normalisation is
+        taken at, so it lands below one rather than on it.
+        """
+        cdf = flat_da.adjeff.radial("cdf")
+        r = cdf.coords["r"].values
+        r_max = r[-1] + 0.5 * (r[-1] - r[-2])
+        expected = (r / r_max) ** 2
+        assert cdf.values == pytest.approx(expected, abs=0.02)
+        assert cdf.values[-1] < 1.0
+
+    def test_radial_cdf_monotone(self, flat_da):
+        """radial_cdf is non-decreasing."""
+        cdf = flat_da.adjeff.radial("cdf")
+        diffs = np.diff(cdf.values)
+        assert np.all(diffs >= -1e-6)
+
+    def test_radial_std_nonnegative(self, flat_da):
+        """radial_std values are >= 0 (ignoring NaN)."""
+        result = flat_da.adjeff.radial("std")
+        values = result.values[~np.isnan(result.values)]
+        assert np.all(values >= 0.0)
+
+    def test_radial_std_constant_field_is_zero(self, flat_da):
+        """A constant field has zero azimuthal dispersion."""
+        result = flat_da.adjeff.radial("std")
+        values = result.values[~np.isnan(result.values)]
+        assert np.allclose(values, 0.0, atol=1e-5)
+
+    def test_radial_symmetric_mirrors_the_profile(self):
+        """A transect needs both halves, and a profile only computes one.
+
+        The values are unchanged: a radial profile is symmetric by
+        construction, so this only writes the other half down.
+        """
+        da = xr.DataArray(
+            np.arange(9 * 9, dtype=float).reshape(9, 9),
+            dims=["y", "x"],
+            coords={"y": np.linspace(-4, 4, 9), "x": np.linspace(-4, 4, 9)},
+        )
+
+        half = da.adjeff.radial()
+        full = da.adjeff.radial(symmetric=True)
+
+        assert full.sizes["r"] == 2 * half.sizes["r"]
+        np.testing.assert_allclose(
+            full.coords["r"].values[-len(half) :], half.coords["r"].values
+        )
+        np.testing.assert_allclose(full.values[-len(half) :], half.values)
+        np.testing.assert_allclose(full.values[: len(half)], half.values[::-1])
+
+
+class TestAdaptiveBinning:
+    """Radial bins placed where the field varies."""
+
+    def test_radial_adaptive_count(self, disk_da):
+        """radial_adaptive returns exactly n samples before gap-filling."""
+        result = disk_da.adjeff.radial("adaptive", n=20)
+        assert isinstance(result, xr.DataArray)
+        assert "r" in result.dims
+        assert result.sizes["r"] >= 20
+
+    def test_radial_adaptive_concentrates_near_edge(self, disk_da):
+        result = disk_da.adjeff.radial("adaptive", n=30)
+        r = result.coords["r"].values
+        # Density near the disk edge (8–12) should be higher than far from it
+        near_edge = np.sum((r >= 8) & (r <= 12))
+        far = np.sum(r > 20)
+        assert near_edge > far
+
+    def test_radial_adaptive_max_gap(self, disk_da):
+        """max_gap ensures no two consecutive samples exceed the given distance."""
+        max_gap = 3.0
+        result = disk_da.adjeff.radial("adaptive", n=10, max_gap=max_gap)
+        r = result.coords["r"].values
+        gaps = np.diff(r)
+        assert np.all(gaps <= max_gap + 1e-6)
+
+    def test_radial_adaptive_from_profile(self, disk_da):
+        """radial_adaptive on a 1-D 'r' DataArray skips recomputing azimuthal mean."""
+        profile = disk_da.adjeff.radial()
+        result = profile.adjeff.radial("adaptive", n=15)
+        assert "r" in result.dims
+        assert result.sizes["r"] >= 15
+
+
+class TestBackToAField:
+    """A profile spread back over two dimensions."""
+
+    def test_to_field_shape(self, disk_da):
+        profile = disk_da.adjeff.radial()
+        target_ds = disk_da.to_dataset(name="rho_s")
+        result = profile.adjeff.to_field(target_ds)
+        assert result.sizes["y"] == disk_da.sizes["y"]
+        assert result.sizes["x"] == disk_da.sizes["x"]
+
+    def test_to_field_center_value(self, disk_da):
+        profile = disk_da.adjeff.radial()
+        target_ds = disk_da.to_dataset(name="rho_s")
+        result = profile.adjeff.to_field(target_ds)
+        center_y = disk_da.sizes["y"] // 2
+        center_x = disk_da.sizes["x"] // 2
+        # Center pixel should be close to the high-reflectance disk value
+        assert result.values[center_y, center_x] == pytest.approx(0.8, abs=0.05)
+
+    def test_to_field_broadcasts_extra_dims(self, disk_da):
+        """to_field broadcasts correctly when the profile has extra dimensions."""
+        profile = disk_da.adjeff.radial()
+        # Add an extra dimension (e.g. aot) by stacking
+        profile_extra = xr.concat(
+            [profile * 1.0, profile * 0.5], dim=xr.DataArray([0.1, 0.3], dims=["aot"])
+        )
+        target_ds = disk_da.to_dataset(name="rho_s")
+        result = profile_extra.adjeff.to_field(target_ds)
+        assert result.sizes["aot"] == 2
+        assert result.sizes["y"] == disk_da.sizes["y"]
+        assert result.sizes["x"] == disk_da.sizes["x"]
+
+
+class TestMisuse:
+    """What the accessor refuses, and what it says."""
+
+    def test_x_coord_missing_raises(self):
+        """Res and n raise AdjeffAccessorError when no x or x_psf coordinate."""
+        da = xr.DataArray(
+            np.ones((5, 5), dtype=np.float32),
+            dims=["y", "z"],
+            coords={"y": np.arange(5), "z": np.arange(5)},
+        )
+        with pytest.raises(AdjeffAccessorError, match="x-coordinate"):
+            _ = da.adjeff.res
+
+    def test_radial_unknown_stat_raises(self, flat_da):
+        with pytest.raises(AdjeffAccessorError, match="Unknown stat"):
+            flat_da.adjeff.radial("invalid")
+
+    def test_radial_adaptive_missing_n_raises(self, flat_da):
+        """radial('adaptive') without n raises AdjeffAccessorError."""
+        with pytest.raises(AdjeffAccessorError, match="requires n"):
+            flat_da.adjeff.radial("adaptive")
+
+    def test_transect_non_2d_raises(self):
+        da_3d = xr.DataArray(
+            np.ones((3, 5, 5), dtype=np.float32),
             dims=["aot", "y", "x"],
-            coords={"aot": [aot]},
-        ).adjeff.tidy()
-        for aot in (0.2, 0.4, 0.6)
-    ]
+            coords={
+                "aot": [0.1, 0.2, 0.3],
+                "y": np.linspace(-2, 2, 5),
+                "x": np.linspace(-2, 2, 5),
+            },
+        )
+        with pytest.raises(AdjeffAccessorError, match="2-D"):
+            da_3d.adjeff.transect(0.0)
 
-    stacked = xr.concat(pieces, dim="aot")
 
-    assert stacked.dims == ("aot", "y", "x")
-    np.testing.assert_allclose(stacked.aot.values, [0.2, 0.4, 0.6])
+class TestTidy:
+    """Dropping and restoring the length-one sweep dimensions."""
 
+    def test_tidy_keeps_the_value_it_removes_the_dimension_of(self):
+        """A scalar configuration must still say which state it stands for."""
+        tidied = _swept().adjeff.tidy()
 
-def test_radial_symmetric_mirrors_the_profile():
-    """A transect needs both halves, and a profile only computes one.
+        assert tidied.dims == ("aot", "y", "x")
+        assert float(tidied.rh) == 50.0
+        assert float(tidied.href) == 2.0
 
-    The values are unchanged: a radial profile is symmetric by
-    construction, so this only writes the other half down.
-    """
-    da = xr.DataArray(
-        np.arange(9 * 9, dtype=float).reshape(9, 9),
-        dims=["y", "x"],
-        coords={"y": np.linspace(-4, 4, 9), "x": np.linspace(-4, 4, 9)},
-    )
+    def test_tidy_leaves_a_swept_dimension_alone(self):
+        """Only the parameters that were never swept are peeled."""
+        assert "aot" in _swept().adjeff.tidy().dims
 
-    half = da.adjeff.radial()
-    full = da.adjeff.radial(symmetric=True)
+    def test_tidy_is_a_no_op_without_singletons(self):
+        """Nothing to peel, nothing copied."""
+        da = xr.DataArray(np.zeros((4, 4)), dims=["y", "x"])
 
-    assert full.sizes["r"] == 2 * half.sizes["r"]
-    np.testing.assert_allclose(
-        full.coords["r"].values[-len(half) :], half.coords["r"].values
-    )
-    np.testing.assert_allclose(full.values[-len(half) :], half.values)
-    np.testing.assert_allclose(full.values[: len(half)], half.values[::-1])
+        assert da.adjeff.tidy().dims == ("y", "x")
+
+    def test_untidy_restores_the_dimensions(self):
+        """The round trip returns the shape it started from."""
+        original = _swept()
+
+        restored = original.adjeff.tidy().adjeff.untidy("rh", "href")
+
+        assert set(restored.dims) == set(original.dims)
+        xr.testing.assert_allclose(restored.transpose(*original.dims), original)
+
+    def test_untidy_defaults_to_every_scalar_coordinate(self):
+        """Called bare, it expands whatever tidy collapsed."""
+        restored = _swept().adjeff.tidy().adjeff.untidy()
+
+        assert set(restored.dims) == {"aot", "rh", "href", "y", "x"}
+
+    def test_tidied_arrays_concatenate_back(self):
+        """Concat promotes the scalar coordinate to a dimension again.
+
+        This is the supported way to recombine tidied pieces; `merge` and
+        `combine_by_coords` need a dimension to align on and are documented
+        as requiring `untidy` first.
+        """
+        pieces = [
+            xr.DataArray(
+                np.full((1, 4, 4), aot),
+                dims=["aot", "y", "x"],
+                coords={"aot": [aot]},
+            ).adjeff.tidy()
+            for aot in (0.2, 0.4, 0.6)
+        ]
+
+        stacked = xr.concat(pieces, dim="aot")
+
+        assert stacked.dims == ("aot", "y", "x")
+        np.testing.assert_allclose(stacked.aot.values, [0.2, 0.4, 0.6])
