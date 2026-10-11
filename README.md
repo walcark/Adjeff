@@ -76,7 +76,6 @@ at the mean atmosphere of a loaded product.
 |---|---|
 | [**User guide**](https://github.com/walcark/Adjeff/blob/main/docs/guide.md) | Concepts, configuration, samplers, PSF, fitting, cache, logging |
 | [**Notebooks**](https://github.com/walcark/Adjeff/tree/main/notebooks) | Six worked examples, from a synthetic scene to a PSF fitted and measured |
-| [**API reference**](https://github.com/walcark/Adjeff/tree/main/docs/source/api) | Generated from the docstrings (`pixi run build-doc`) |
 | [**Changelog**](https://github.com/walcark/Adjeff/blob/main/CHANGELOG.md) | What changed, and why |
 | [**Roadmap**](https://github.com/walcark/Adjeff/blob/main/docs/roadmap.md) | Open questions and planned work |
 
