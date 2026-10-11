@@ -10,4 +10,4 @@
 
 - **Partial cache reuse.** A cache entry is addressed by one key covering the whole call, and `load_vars` returns nothing unless every band and every variable is present. Adding one band or one atmospheric combination changes the key and recomputes the rest along with it.
 
-- **A notebook on writing a `SceneModule`.** The six notebooks cover creating scenes, configuring an atmosphere, computing radiative quantities, simulating `rho_toa`, reading a MAJA L2A product and learning a PSF. Extending the package with a module of one's own is documented in section 4 of the [user guide](guide.md) but nowhere worked through end to end.
+- **A notebook on writing a `SceneModule`.** The six notebooks cover creating scenes, configuring an atmosphere, computing radiative quantities, simulating `rho_toa`, learning a PSF and evaluating one. Extending the package with a module of one's own is documented in section 4 of the [user guide](guide.md) but nowhere worked through end to end.

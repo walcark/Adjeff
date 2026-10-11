@@ -30,7 +30,10 @@ _Scalar = float | list[float] | xr.DataArray
 def _da(val: _Scalar, dim: str) -> xr.DataArray:
     """Coerce a scalar/list/DataArray to a named-dim DataArray."""
     if isinstance(val, xr.DataArray):
-        return val
+        # A reduction such as the `.mean()` of `load_config(aggregate=True)`
+        # returns a 0-d array.  The samplers allocate their output from the
+        # named dimension, so it has to carry one.
+        return val if val.ndim else val.expand_dims(dim)
     arr = np.atleast_1d(np.asarray(val, dtype=float))
     return xr.DataArray(arr, dims=[dim])
 

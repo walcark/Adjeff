@@ -40,4 +40,4 @@ PSFDict
 Optimisation
 ------------
 
-See :doc:`/api/optim` and the :doc:`/examples/06-learn-psf` notebook.
+See :doc:`/api/optim` and the :doc:`/examples/05-learn-psf` notebook.

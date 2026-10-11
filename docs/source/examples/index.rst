@@ -11,5 +11,5 @@ They can be downloaded and run locally (GPU required for notebooks 03–06).
    02-atmospheric-configuration
    03-compute-radiative-quantities
    04-simulate-rho-toa
-   05-compute-2d-radiative-from-maja-output
-   06-learn-psf
+   05-learn-psf
+   06-evaluate-a-psf
