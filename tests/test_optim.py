@@ -8,10 +8,6 @@ import torch.nn as nn
 
 from adjeff.exceptions import ConfigurationError, OptimizationWarning
 
-# ---------------------------------------------------------------------------
-# Loss
-# ---------------------------------------------------------------------------
-
 
 def _sample(n: int = 8):
     """Return one training sample on a small square grid."""
@@ -31,208 +27,195 @@ def _sample(n: int = 8):
     )
 
 
-def test_loss_unknown_mask_variable_names_what_is_available():
-    """An unknown mask variable must say what the sample does carry.
+class TestLossDomain:
+    """The region of a field the loss is read over."""
 
-    The name is no longer restricted to `rho_unif`, so a typo can only
-    be caught when the training data is in hand.
-    """
-    from adjeff.optim import Loss, Metric
+    def test_loss_unknown_mask_variable_names_what_is_available(self):
+        """An unknown mask variable must say what the sample does carry.
 
-    loss = Loss(metric=Metric.MSE_RAD, mask_on="rho_uniff")
+        The name is no longer restricted to `rho_unif`, so a typo can only
+        be caught when the training data is in hand.
+        """
+        from adjeff.optim import Loss, Metric
 
-    with pytest.raises(ConfigurationError, match="rho_unif"):
-        loss._mask_for(_sample())
+        loss = Loss(metric=Metric.MSE_RAD, mask_on="rho_uniff")
 
+        with pytest.raises(ConfigurationError, match="rho_unif"):
+            loss._mask_for(_sample())
 
-def test_loss_rejects_a_non_positive_radius():
-    """A radius mask must be a positive number of kilometres."""
-    from adjeff.optim import Loss, Metric
+    def test_loss_rejects_a_non_positive_radius(self):
+        """A radius mask must be a positive number of kilometres."""
+        from adjeff.optim import Loss, Metric
 
-    with pytest.raises(ConfigurationError, match="radius"):
-        Loss(metric=Metric.MSE_RAD, mask_on=0.0)
+        with pytest.raises(ConfigurationError, match="radius"):
+            Loss(metric=Metric.MSE_RAD, mask_on=0.0)
 
+    def test_loss_radius_mask_is_a_disc_that_does_not_move(self):
+        """A radius mask depends on the grid alone, not on the prediction."""
+        from adjeff.optim import Loss, Metric
 
-def test_loss_radius_mask_is_a_disc_that_does_not_move():
-    """A radius mask depends on the grid alone, not on the prediction."""
-    from adjeff.optim import Loss, Metric
+        sample = _sample()
+        mask = Loss(metric=Metric.MSE_RAD, mask_on=2.0)._mask_for(sample)
 
-    sample = _sample()
-    mask = Loss(metric=Metric.MSE_RAD, mask_on=2.0)._mask_for(sample)
+        assert mask is not None
+        assert mask.dtype == torch.bool
+        assert bool(mask[sample.dist <= 2.0].all())
+        assert not bool(mask[sample.dist > 2.0].any())
 
-    assert mask is not None
-    assert mask.dtype == torch.bool
-    assert bool(mask[sample.dist <= 2.0].all())
-    assert not bool(mask[sample.dist > 2.0].any())
+    def test_loss_variable_mask_is_the_field_itself(self):
+        """A named mask hands the metric the field, which derives the cut."""
+        from adjeff.optim import Loss, Metric
 
+        sample = _sample()
+        mask = Loss(metric=Metric.MSE_RAD, mask_on="rho_unif")._mask_for(sample)
 
-def test_loss_variable_mask_is_the_field_itself():
-    """A named mask hands the metric the field, which derives the cut."""
-    from adjeff.optim import Loss, Metric
+        assert mask is sample.inputs["rho_unif"]
 
-    sample = _sample()
-    mask = Loss(metric=Metric.MSE_RAD, mask_on="rho_unif")._mask_for(sample)
+    def test_radial_metric_accepts_a_ready_made_mask(self):
+        """A boolean mask is used as is, a float field drives a CDF cut.
 
-    assert mask is sample.inputs["rho_unif"]
+        The two are told apart by dtype, so a fixed radius and an energy
+        fraction can share one parameter without a second argument.
+        """
+        from adjeff.optim import Metric
 
+        sample = _sample(16)
+        pred = sample.target + 0.1
 
-# ---------------------------------------------------------------------------
-# LBFGSStage — OptimizationWarning on degenerated line search
-# ---------------------------------------------------------------------------
+        inside = sample.dist <= 3.0
+        on_disc = float(Metric.MSE_RAD(pred, sample.target, sample.dist, inside))
+        everywhere = float(Metric.MSE_RAD(pred, sample.target, sample.dist, None))
 
+        # A constant offset gives the same mean square error either way, so
+        # the mask changes which pixels are averaged, not the value.
+        assert on_disc == pytest.approx(everywhere, rel=1e-5)
 
-def test_lbfgs_degenerated_line_search_warns():
-    """LBFGSStage issues OptimizationWarning when L-BFGS line search fails."""
-    from adjeff.core import S2Band
-    from adjeff.optim import Loss, Metric
-    from adjeff.optim.lbfgs_optimizer import LBFGSConfig, LBFGSStage
-
-    config = LBFGSConfig(
-        min_steps=0,
-        max_steps=5,
-        loss_relative_tolerance=1e-4,
-        loss=Loss(Metric.MSE),
-    )
-    stage = LBFGSStage(config)
-
-    # Minimal real parameter so LBFGS can be instantiated.
-    param = nn.Parameter(torch.tensor(1.0))
-    psf_mock = MagicMock(spec=nn.Module)
-    psf_mock.parameters.return_value = [param]
-
-    model = MagicMock()
-    model.psf_modules = {S2Band.B02.id: psf_mock}
-
-    with (
-        pytest.warns(OptimizationWarning, match="degenerated"),
-        patch("torch.optim.LBFGS.step", side_effect=IndexError("bracket collapse")),
-        patch.object(
-            stage, "_total_loss", return_value=torch.tensor(0.5, requires_grad=True)
-        ),
-    ):
-        stage._run_combo(model, S2Band.B02, MagicMock(), "aot=0.1")
-
-
-def test_radial_metric_accepts_a_ready_made_mask():
-    """A boolean mask is used as is, a float field drives a CDF cut.
-
-    The two are told apart by dtype, so a fixed radius and an energy
-    fraction can share one parameter without a second argument.
-    """
-    from adjeff.optim import Metric
-
-    sample = _sample(16)
-    pred = sample.target + 0.1
-
-    inside = sample.dist <= 3.0
-    on_disc = float(Metric.MSE_RAD(pred, sample.target, sample.dist, inside))
-    everywhere = float(Metric.MSE_RAD(pred, sample.target, sample.dist, None))
-
-    # A constant offset gives the same mean square error either way, so
-    # the mask changes which pixels are averaged, not the value.
-    assert on_disc == pytest.approx(everywhere, rel=1e-5)
-
-    # A defect confined outside the disc must be invisible to the mask.
-    spoiled = pred.clone()
-    spoiled[sample.dist > 5.0] += 10.0
-    assert float(
-        Metric.MSE_RAD(spoiled, sample.target, sample.dist, inside)
-    ) == pytest.approx(on_disc, rel=1e-5)
-    assert (
-        float(Metric.MSE_RAD(spoiled, sample.target, sample.dist, None))
-        > 10.0 * everywhere
-    )
-
-
-@pytest.mark.parametrize(
-    "metric_name", ["MAE", "MSE", "RMSE", "MAE_RAD", "MSE_RAD", "RMSE_RAD"]
-)
-def test_every_metric_honours_the_domain_it_is_given(metric_name):
-    """A metric must be a function of its own domain, and of nothing else.
-
-    The plain metrics used to build their domain from the residual they
-    were measuring, so a change outside the mask still moved the result,
-    and the optimiser could lower the loss by shrinking its own mask.
-    """
-    from adjeff.optim import Metric
-
-    metric = getattr(Metric, metric_name)
-    sample = _sample(16)
-    pred = sample.target + 0.05
-    inside = sample.dist <= 3.0
-
-    reference = float(metric(pred, sample.target, sample.dist, inside))
-
-    elsewhere = pred.clone()
-    elsewhere[sample.dist > 5.0] += 0.5
-
-    assert bool(torch.equal(pred[inside], elsewhere[inside]))
-    assert float(
-        metric(elsewhere, sample.target, sample.dist, inside)
-    ) == pytest.approx(reference, rel=1e-5)
-
-
-# ---------------------------------------------------------------------------
-# TrainingImages
-# ---------------------------------------------------------------------------
-
-
-def test_training_images_weights_default_to_uniform():
-    """Every caller wrote `[1.0] * len(images)` by hand."""
-    from adjeff.optim import TrainingImages
-
-    images = [object(), object(), object()]
-
-    assert TrainingImages(images=images).per_image == [1.0, 1.0, 1.0]
-
-
-def test_training_images_rejects_a_wrong_number_of_weights():
-    """A weight per image, or none at all."""
-    from adjeff.optim import TrainingImages
-
-    with pytest.raises(ConfigurationError, match="one per image"):
-        TrainingImages(images=[object(), object()], weights=[1.0])
-
-
-# ---------------------------------------------------------------------------
-# The kernel is built once per step, not once per landscape
-# ---------------------------------------------------------------------------
-
-
-def test_the_kernel_is_built_once_per_step_not_once_per_sample():
-    """One optimisation step must evaluate the PSF exactly once.
-
-    The kernel does not depend on the training landscape, but
-    ``forward_band`` used to rebuild it for every sample, multiplying the
-    cost of a step by the size of the training set.  At n = 3999 that was
-    three times 268 ms of CPU per step.
-    """
-    from adjeff.core.bands import S2Band
-    from adjeff.optim.adam_optimizer import AdamConfig, AdamStage
-    from adjeff.optim.loss import Loss
-    from adjeff.optim.metrics import Metric
-
-    band = S2Band.B03
-    samples = [_sample(), _sample(), _sample()]
-    kernel = torch.ones(3, 3) / 9.0
-
-    psf = MagicMock()
-    psf.forward.return_value = kernel
-    model = MagicMock()
-    model.psf_modules = {band.id: psf}
-    model.forward_band.side_effect = lambda b, **kw: kw["rho_unif"]
-
-    stage = AdamStage(
-        AdamConfig(
-            min_steps=1,
-            max_steps=1,
-            loss_relative_tolerance=1e-4,
-            loss=Loss(Metric.RMSE_RAD),
+        # A defect confined outside the disc must be invisible to the mask.
+        spoiled = pred.clone()
+        spoiled[sample.dist > 5.0] += 10.0
+        assert float(
+            Metric.MSE_RAD(spoiled, sample.target, sample.dist, inside)
+        ) == pytest.approx(on_disc, rel=1e-5)
+        assert (
+            float(Metric.MSE_RAD(spoiled, sample.target, sample.dist, None))
+            > 10.0 * everywhere
         )
-    )
-    stage._total_loss(model, band, samples)
 
-    assert psf.forward.call_count == 1
-    assert model.forward_band.call_count == len(samples)
-    for call in model.forward_band.call_args_list:
-        assert call.kwargs["kernel"] is kernel
+    @pytest.mark.parametrize(
+        "metric_name", ["MAE", "MSE", "RMSE", "MAE_RAD", "MSE_RAD", "RMSE_RAD"]
+    )
+    def test_every_metric_honours_the_domain_it_is_given(self, metric_name):
+        """A metric must be a function of its own domain, and of nothing else.
+
+        The plain metrics used to build their domain from the residual they
+        were measuring, so a change outside the mask still moved the result,
+        and the optimiser could lower the loss by shrinking its own mask.
+        """
+        from adjeff.optim import Metric
+
+        metric = getattr(Metric, metric_name)
+        sample = _sample(16)
+        pred = sample.target + 0.05
+        inside = sample.dist <= 3.0
+
+        reference = float(metric(pred, sample.target, sample.dist, inside))
+
+        elsewhere = pred.clone()
+        elsewhere[sample.dist > 5.0] += 0.5
+
+        assert bool(torch.equal(pred[inside], elsewhere[inside]))
+        assert float(
+            metric(elsewhere, sample.target, sample.dist, inside)
+        ) == pytest.approx(reference, rel=1e-5)
+
+
+class TestTrainingImages:
+    """The scenes a fit is run against."""
+
+    def test_training_images_weights_default_to_uniform(self):
+        """Every caller wrote `[1.0] * len(images)` by hand."""
+        from adjeff.optim import TrainingImages
+
+        images = [object(), object(), object()]
+
+        assert TrainingImages(images=images).per_image == [1.0, 1.0, 1.0]
+
+    def test_training_images_rejects_a_wrong_number_of_weights(self):
+        """A weight per image, or none at all."""
+        from adjeff.optim import TrainingImages
+
+        with pytest.raises(ConfigurationError, match="one per image"):
+            TrainingImages(images=[object(), object()], weights=[1.0])
+
+
+class TestOptimiserLoop:
+    """What the loop does per step, and when it complains."""
+
+    def test_lbfgs_degenerated_line_search_warns(self):
+        """LBFGSStage issues OptimizationWarning when L-BFGS line search fails."""
+        from adjeff.core import S2Band
+        from adjeff.optim import Loss, Metric
+        from adjeff.optim.lbfgs_optimizer import LBFGSConfig, LBFGSStage
+
+        config = LBFGSConfig(
+            min_steps=0,
+            max_steps=5,
+            loss_relative_tolerance=1e-4,
+            loss=Loss(Metric.MSE),
+        )
+        stage = LBFGSStage(config)
+
+        # Minimal real parameter so LBFGS can be instantiated.
+        param = nn.Parameter(torch.tensor(1.0))
+        psf_mock = MagicMock(spec=nn.Module)
+        psf_mock.parameters.return_value = [param]
+
+        model = MagicMock()
+        model.psf_modules = {S2Band.B02.id: psf_mock}
+
+        with (
+            pytest.warns(OptimizationWarning, match="degenerated"),
+            patch("torch.optim.LBFGS.step", side_effect=IndexError("bracket collapse")),
+            patch.object(
+                stage, "_total_loss", return_value=torch.tensor(0.5, requires_grad=True)
+            ),
+        ):
+            stage._run_combo(model, S2Band.B02, MagicMock(), "aot=0.1")
+
+    def test_the_kernel_is_built_once_per_step_not_once_per_sample(self):
+        """One optimisation step must evaluate the PSF exactly once.
+
+        The kernel does not depend on the training landscape, but
+        ``forward_band`` used to rebuild it for every sample, multiplying the
+        cost of a step by the size of the training set.  At n = 3999 that was
+        three times 268 ms of CPU per step.
+        """
+        from adjeff.core.bands import S2Band
+        from adjeff.optim.adam_optimizer import AdamConfig, AdamStage
+        from adjeff.optim.loss import Loss
+        from adjeff.optim.metrics import Metric
+
+        band = S2Band.B03
+        samples = [_sample(), _sample(), _sample()]
+        kernel = torch.ones(3, 3) / 9.0
+
+        psf = MagicMock()
+        psf.forward.return_value = kernel
+        model = MagicMock()
+        model.psf_modules = {band.id: psf}
+        model.forward_band.side_effect = lambda b, **kw: kw["rho_unif"]
+
+        stage = AdamStage(
+            AdamConfig(
+                min_steps=1,
+                max_steps=1,
+                loss_relative_tolerance=1e-4,
+                loss=Loss(Metric.RMSE_RAD),
+            )
+        )
+        stage._total_loss(model, band, samples)
+
+        assert psf.forward.call_count == 1
+        assert model.forward_band.call_count == len(samples)
+        for call in model.forward_band.call_args_list:
+            assert call.kwargs["kernel"] is kernel

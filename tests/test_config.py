@@ -27,20 +27,18 @@ def _pix_conf(aot: list[float], h: list[float] | None = None) -> AtmoConfig:
     )
 
 
-def test_dataset_returns_dataset():
-    """Ensure that the dataset property returns a xr.Dataset instance."""
-    cfg = AtmoConfig(**_SCALAR)
-    assert isinstance(cfg.dataset, xr.Dataset)
+class TestDatasetView:
+    """A config seen as a dataset."""
 
+    def test_dataset_returns_dataset(self):
+        cfg = AtmoConfig(**_SCALAR)
+        assert isinstance(cfg.dataset, xr.Dataset)
 
-def test_dataset_keys():
-    """Ensure thatthe dataset property exposes exactly the AtmoConfig fields."""
-    cfg = AtmoConfig(**_SCALAR)
-    assert set(cfg.dataset.data_vars) == {"aot", "h", "rh", "href"}
+    def test_dataset_keys(self):
+        cfg = AtmoConfig(**_SCALAR)
+        assert set(cfg.dataset.data_vars) == {"aot", "h", "rh", "href"}
 
-
-def test_dataset_values():
-    """Ensure that the dataset values match the config fields."""
-    cfg = AtmoConfig(**_SCALAR)
-    xr.testing.assert_equal(cfg.dataset["aot"], cfg.aot)
-    xr.testing.assert_equal(cfg.dataset["rh"], cfg.rh)
+    def test_dataset_values(self):
+        cfg = AtmoConfig(**_SCALAR)
+        xr.testing.assert_equal(cfg.dataset["aot"], cfg.aot)
+        xr.testing.assert_equal(cfg.dataset["rh"], cfg.rh)
