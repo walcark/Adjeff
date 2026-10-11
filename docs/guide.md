@@ -37,6 +37,17 @@ geometry (`sza`, `vza`, `saa`, `vaa`), the wavelength and the ground
 elevation `h`. Adjeff simulates $\rho_{toa}$, fits $P$ as an analytical
 kernel, and inverts the formula to recover $\rho_s$.
 
+This guide says what each piece is; the notebooks run it.
+
+| Notebook | | Section |
+|---|---|---|
+| [01](../notebooks/01-create-and-display-image.ipynb) | Scenes | 2 |
+| [02](../notebooks/02-atmospheric-configuration.ipynb) | Atmosphere and geometry | 3 |
+| [03](../notebooks/03-compute-radiative-quantities.ipynb) | Radiative samplers | 5 |
+| [04](../notebooks/04-simulate-rho-toa.ipynb) | High-level API | 9 |
+| [05](../notebooks/05-learn-psf.ipynb) | Fitting a PSF | 8 |
+| [06](../notebooks/06-evaluate-a-psf.ipynb) | Analysis | 10 |
+
 ## 2. Scenes
 
 An `ImageDict` holds one `xr.Dataset` per band, since bands may differ
@@ -63,6 +74,8 @@ noise = random_image_dict(bands, ["rho_s"], res_km=0.01, seed=0, n=101)
 
 Gaussian and disk scenes record their model and parameters, so that
 `RhoToaSymSampler` can redraw them exactly.
+
+> Worked through in [notebook 01](../notebooks/01-create-and-display-image.ipynb).
 
 ## 3. Atmosphere and geometry
 
@@ -91,6 +104,8 @@ spectral = SpectralConfig.from_bands(bands)
 
 `adjeff.make_full_config(bands, aot=..., sza=...)` builds the three at
 once, as a dict to unpack with `**cfg`.
+
+> Worked through in [notebook 02](../notebooks/02-atmospheric-configuration.ipynb).
 
 ## 4. Scene modules and pipelines
 
@@ -162,6 +177,8 @@ Every sampler takes `batch_size` (states per Smart-G call: cost only)
 and `dedup` (merge repeated states: worth it when parameters are
 spatial maps). `SMARTG_DIR_AUXDATA` must point at the Smart-G auxiliary
 data, or Smart-G returns NaN, which the modules turn into an error.
+
+> Worked through in [notebook 03](../notebooks/03-compute-radiative-quantities.ipynb).
 
 ## 6. PSF models
 
@@ -256,6 +273,8 @@ default), a radius in km, or `None`.
 `loss_landscape` and `energy_radius_landscape` evaluate the loss and the
 encircled-energy radii over a list of PSFs, e.g. a parameter grid.
 
+> Worked through in [notebook 05](../notebooks/05-learn-psf.ipynb).
+
 ## 9. High-level API
 
 `adjeff` exports one-call functions for the common paths:
@@ -272,6 +291,8 @@ encircled-energy radii over a list of PSFs, e.g. a parameter grid.
 `fit_psf` reads the mean atmosphere and geometry of the scene with
 `load_config(..., aggregate=True)`, so the scene must carry `aot`, `h`,
 `rh`, `href`, `sza`, `vza`, `saa` and `vaa`, as a loaded product does.
+
+> Worked through in [notebook 04](../notebooks/04-simulate-rho-toa.ipynb).
 
 ## 10. Analysis and the `.adjeff` accessor
 
@@ -298,6 +319,8 @@ da.adjeff.res, da.adjeff.n          # pixel size, pixels per side
 da.adjeff.tidy()                    # length-one dims to scalar coords
 da.adjeff.untidy()                  # and back, before xr.merge
 ```
+
+> Worked through in [notebook 06](../notebooks/06-evaluate-a-psf.ipynb).
 
 ## 11. Cache
 
