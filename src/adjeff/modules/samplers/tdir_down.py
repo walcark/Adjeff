@@ -25,12 +25,6 @@ class TdirDownSampler(AtmoSampler):
     retrieval and can therefore be kept very small (default ``1e2``).
     This is the downward counterpart of :class:`TdirUpSampler`.
 
-    Produced variable: ``tdir_down``.
-
-    Notes
-    -----
-    Requires a CUDA-capable GPU (for the Smart-G optical depth
-    retrieval), but very few photons suffice (default ``n_ph=1e2``).
 
     Parameters are those of :class:`AtmoSampler`.
     """

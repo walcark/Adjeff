@@ -27,11 +27,7 @@ class SphAlbSampler(AtmoSampler):
     Geometry-independent: no ``geo_config`` is required.  All parameters
     are swept as ``vector_dims``.
 
-    Produced variable: ``sph_alb``.
 
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
 
     Parameters are those of :class:`AtmoSampler`, less *geo_config*:
     the spherical albedo does not depend on a geometry.

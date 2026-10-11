@@ -1,4 +1,22 @@
-"""Adjeff exceptions hierarchy."""
+"""Exception hierarchy of the package.
+
+Classes
+-------
+    AdjeffError
+        Base of every error below.
+    MissingVariableError
+        A required variable is absent from a band.
+    AdjeffAccessorError
+        The ``.adjeff`` accessor was misused.
+    ConfigurationError
+        Invalid or missing configuration.
+    ImageIOError
+        A product file could not be read.
+    ComputationError
+        A module produced an unusable result.
+    OptimizationWarning
+        A PSF fit did not converge.
+"""
 
 
 class AdjeffError(Exception):
@@ -24,9 +42,8 @@ class ImageIOError(AdjeffError):
 class ComputationError(AdjeffError):
     """A module produced a result that cannot be used.
 
-    Raised before anything is written to the cache, so that a bad result
-    is a failure at the place that caused it rather than a value later
-    runs keep reading back.
+    Raised before the cache is written, so a bad result fails where it
+    was caused rather than being read back by later runs.
     """
 
 

@@ -24,12 +24,6 @@ class TdirUpSampler(AtmoSampler):
 
     This is the upward counterpart of :class:`TdirDownSampler`.
 
-    Produced variable: ``tdir_up``.
-
-    Notes
-    -----
-    Requires a CUDA-capable GPU (for the Smart-G optical depth
-    retrieval), but very few photons suffice (default ``n_ph=1e9``).
 
     Parameters are those of :class:`AtmoSampler`.
     """

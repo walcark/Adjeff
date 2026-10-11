@@ -24,16 +24,9 @@ class SphAlbBrdfSampler(BrdfSampler):
 
         sph_alb = raw / (tdir_down + tdif_down)
 
-    Produced variable: ``sph_alb``, the same slot the Lambertian sampler
-    writes.
-
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
-
-    Only ``sza`` is swept: the quantity is a hemispheric integral, so
-    there is no viewing direction to carry, and the relative azimuth
-    does not enter either.
+    It writes the slot the Lambertian :class:`SphAlbSampler` writes, so
+    nothing downstream changes.  Only ``sza`` is swept: a hemispheric
+    integral carries no viewing direction.
 
     Parameters are those of :class:`BrdfSampler`.
     """

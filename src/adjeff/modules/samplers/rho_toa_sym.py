@@ -40,26 +40,22 @@ class RhoToaSymSampler(SweepSampler):
     ``sza`` and ``vza`` are ``scalar_dims`` — sensor positions depend on
     ``vza`` and cannot be vectorised within one call.
 
-    Produced variable: ``rho_toa``.
 
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
 
     Parameters
     ----------
     atmo_config : AtmoConfig
-        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
+        Atmospheric state: ``aot``, ``rh``, ``h``, ``href``.
     geo_config : GeoConfig
         Geometry — ``vza`` and ``sza`` must be single-element per call.
     remove_rayleigh : bool
-        Whether to suppress Rayleigh scattering.
+        Suppress Rayleigh scattering.
     afgl_type : str
         AFGL atmosphere profile identifier.
     nr : int
-        Number of radial sampling points.
+        Radial sampling points.
     n_ph : int
-        Number of photons per sensor.
+        Photons per sensor.
     """
 
     _required_vars: ClassVar[list[str]] = ["rho_s"]

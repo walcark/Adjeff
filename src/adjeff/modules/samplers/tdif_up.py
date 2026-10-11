@@ -22,11 +22,7 @@ class TdifUpSampler(AtmoSampler):
 
         t_up = tdir_up + tdif_up
 
-    Produced variable: ``tdif_up``.
 
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
 
     Parameters are those of :class:`AtmoSampler`.
     """

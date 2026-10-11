@@ -35,11 +35,7 @@ class RhoAtmSampler(AtmoSampler):
     ``vector_dims`` — a single Smart-G call handles all wavelengths,
     aerosol states, and viewing angles simultaneously.
 
-    Produced variable: ``rho_atm``.
 
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
 
     Parameters are those of :class:`AtmoSampler`.
     """
@@ -63,13 +59,9 @@ def ensure_rho_atm(
 ) -> ImageDict:
     """Return *scene* carrying ``rho_atm``, computing it only if absent.
 
-    The path reflectance is a single Monte-Carlo number, and two draws of
-    it differ.  A sampler that recomputes one the scene already holds
-    therefore replaces the value every downstream module has agreed on:
-    ``rho_toa`` would then be built with one draw and inverted with
-    another, leaving a constant bias behind.  Worse, whether that happens
-    depends on the cache, since a cached sampler never reaches this code
-    at all.
+    Two Monte-Carlo draws of the path reflectance differ, so recomputing
+    one the scene already holds would build ``rho_toa`` with one draw and
+    invert it with another, leaving a constant bias.
 
     Parameters
     ----------

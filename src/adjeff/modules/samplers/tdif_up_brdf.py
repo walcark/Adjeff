@@ -17,30 +17,18 @@ from ._smartg import tdif_up_brdf
 class TdifUpBrdfSampler(BrdfSampler):
     """Sample ``tdif_up`` over an RTLS surface with Smart-G Monte-Carlo.
 
-    The Lambertian :class:`TdifUpSampler` emits isotropically from the
-    ground, which only measures the atmosphere because a Lambertian
-    surface re-emits the same field whatever the incidence.  A BRDF does
-    not, so the surface has to be lit from a direction: photons leave
-    the satellite along ``vza``, reflect once, and are collected toward
-    the sun.  Dividing by the downward transmittance and removing the
-    direct beam leaves::
+    A BRDF has to be lit from a direction, so photons leave the
+    satellite along ``vza``, reflect once, and are collected toward the
+    sun.  Dividing by the downward transmittance and removing the direct
+    beam leaves::
 
         tdif_up = raw / (tdir_down + tdif_down) - tdir_up
 
-    Produced variable: ``tdif_up``, the same slot the Lambertian sampler
-    writes, so nothing downstream changes.
-
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
-
-    Two costs separate it from the Lambertian sampler, and both are
-    physical rather than incidental.  It sweeps ``sza`` **and** ``vza``,
-    since a BRDF breaks the reciprocity that collapsed them into one.
-    And it measures the total transmittance and subtracts the direct
-    part, where the Lambertian sampler measures the diffuse part
-    directly: for a given photon count the relative error is worse by
-    roughly ``sqrt(T / tdif)``, hence the higher ``default_n_ph``.
+    It writes the slot the Lambertian :class:`TdifUpSampler` writes, so
+    nothing downstream changes.  Two costs follow from the BRDF: ``sza``
+    and ``vza`` are both swept, reciprocity no longer collapsing them;
+    and subtracting the direct beam costs a factor ``sqrt(T / tdif)`` in
+    relative error, hence the higher ``default_n_ph``.
 
     Parameters are those of :class:`BrdfSampler`.
     """

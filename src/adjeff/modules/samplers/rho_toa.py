@@ -45,15 +45,15 @@ class RhoToaSampler(SweepSampler):
     geo_config : GeoConfig
         Geometry — ``vza`` and ``sza`` must be scalar per call.
     remove_rayleigh : bool
-        Whether to suppress Rayleigh scattering.
+        Suppress Rayleigh scattering.
     afgl_type : str
         AFGL atmosphere profile identifier.
     nx : int
-        Number of sensor columns (x dimension).
+        Sensor columns.
     ny : int
-        Number of sensor rows (y dimension).
+        Sensor rows.
     n_ph : int
-        Number of photons per sensor.
+        Photons per sensor.
     n_alb : int
         Number of discrete albedo levels in the ``AlbedoMap`` (default 1000).
     rho_background : float | "mean" | "min" | "zero"

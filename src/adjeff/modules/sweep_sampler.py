@@ -1,4 +1,11 @@
-"""SceneModule whose physics runs through an xsweep batched sweep."""
+"""SceneModule whose physics runs through an xsweep batched sweep.
+
+Classes
+-------
+    SweepSampler
+        Declares a ``contract`` and a ``point_fn``, and gets batching,
+        deduplication and result placement from xsweep.
+"""
 
 from __future__ import annotations
 

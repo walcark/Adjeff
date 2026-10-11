@@ -23,39 +23,28 @@ from ..sweep_sampler import SweepSampler
 class AtmoSampler(SweepSampler):
     """A Smart-G sampler over an atmosphere and an observation geometry.
 
-    Declaring one
-    -------------
-    Beyond ``contract`` and ``point_fn`` that :class:`SweepSampler`
-    already asks for:
-
-    ``_output_vars`` — the single variable produced.
-
-    ``default_n_ph`` — photons per Smart-G call when the caller says
-    nothing.  It differs by two orders of magnitude between quantities:
-    a direct transmittance is an extinction along one line, a path
-    reflectance is a scattering integral.
-
-    ``geo_statics`` — the geometry arguments the point function takes as
-    constants, in the order it declares them.  ``sza`` and ``vza`` are
-    not among them: those are swept, and appear in ``contract``.
+    A subclass declares, on top of :class:`SweepSampler`'s ``contract``
+    and ``point_fn``: ``_output_vars``, the single variable produced;
+    ``default_n_ph``, photons per call; and ``geo_statics``, the geometry
+    arguments the point function takes as constants, in its own order.
 
     Parameters
     ----------
     atmo_config : AtmoConfig
-        Atmospheric state parameters (``aot``, ``rh``, ``h``, ``href``).
+        Atmospheric state: ``aot``, ``rh``, ``h``, ``href``.
     geo_config : GeoConfig or None
         Observation geometry, or ``None`` for a quantity that does not
         depend on one.
     spectral_config : SpectralConfig
         Spectral bands and wavelengths to compute.
     remove_rayleigh : bool
-        If ``True``, Rayleigh scattering is suppressed.
+        Suppress Rayleigh scattering.
     afgl_type : str, optional
-        AFGL standard atmosphere profile identifier.
+        AFGL atmosphere profile identifier.
     n_ph : int or None, optional
         Photons per Smart-G call.  ``None`` uses ``default_n_ph``.
     cache : CacheStore or None, optional
-        Result cache; ``None`` disables caching.
+        Result cache, ``None`` to disable.
     batch_size : int, optional
         Atmospheric states per Smart-G call.
     dedup : bool, optional

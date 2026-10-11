@@ -119,14 +119,9 @@ class PSFModule(nn.Module, ABC):
         super().__init__()
         self.grid = grid
         self.band = band
-        # The radial grid never changes and carries no gradient, yet
-        # forward() used to rebuild it on every call, on whatever device
-        # torch defaults to.  Measured at n = 3999: 268 ms of CPU per
-        # evaluation on one core, against 1 ms once it sits on the GPU,
-        # and the optimiser pays it once per training landscape per step.
-        # Held as a buffer so that `.to(device)` moves it along with the
-        # parameters, and non-persistent because it is derived from
-        # `grid` rather than learned.
+        # A buffer, so `.to(device)` moves it with the parameters and
+        # `forward` does not rebuild it on every call.  Non-persistent:
+        # it is derived from `grid`, not learned.
         X, Y = grid.meshgrid()
         self.register_buffer("_r2", X * X + Y * Y, persistent=False)
 

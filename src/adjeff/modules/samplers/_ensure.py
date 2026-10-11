@@ -32,18 +32,8 @@ def ensure_downward(
 ) -> ImageDict:
     """Return *scene* carrying ``tdir_down``, ``tdif_down`` and ``tdir_up``.
 
-    The BRDF samplers divide their raw Monte-Carlo result by these, so
-    the draw they use must be the draw the rest of the scene agreed on.
-    Recomputing one the scene already holds would leave the numerator
-    and the denominator on two independent draws, and whether that
-    happens would depend on the cache, since a cached sampler never
-    reaches this code at all.  This is the reasoning of
-    :func:`~adjeff.modules.samplers.rho_atm.ensure_rho_atm`, applied to
-    three quantities instead of one.
-
-    Only ``tdif_down`` is Monte-Carlo; the two direct transmittances are
-    analytical, cost nothing and add no noise.  That is why a single
-    photon count is enough here.
+    Only the ones a band is missing are computed, so the numerator and
+    the denominator of a BRDF ratio stay on one Monte-Carlo draw.
 
     Parameters
     ----------
@@ -56,22 +46,17 @@ def ensure_downward(
     afgl_type : str
         AFGL atmosphere profile identifier.
     n_ph_tdif_down : int
-        Photon count for ``tdif_down``.  It sets the noise floor of any
-        ratio built on it, so it should match the numerator's budget
-        rather than be left to a hard-coded default.
+        Photon count for ``tdif_down``, the only Monte-Carlo one of the
+        three.  It sets the noise floor of any ratio built on it.
     cache : CacheStore or None
         Cache forwarded to whichever sampler runs.
     rename : dict[str, str] or None, optional
-        Slot names the caller reads these variables under.  Both the
-        presence test and the sampler that fills a gap use them, so a
-        renamed dependency is looked for, and written, where the caller
-        expects it.
+        Slot names the caller reads these variables under.
 
     Returns
     -------
     ImageDict
-        The input scene when every band already holds the three, or the
-        enriched scene.
+        The input scene, or a copy carrying what was missing.
     """
 
     def build(name: str) -> SweepSampler:

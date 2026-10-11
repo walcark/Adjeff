@@ -22,11 +22,7 @@ class TdifDownSampler(AtmoSampler):
 
         t_down = tdir_down + tdif_down
 
-    Produced variable: ``tdif_down``.
 
-    Notes
-    -----
-    Requires a CUDA-capable GPU.
 
     Parameters are those of :class:`AtmoSampler`.
     """

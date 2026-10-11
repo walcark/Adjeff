@@ -88,35 +88,22 @@ def loss_landscape(
     model: TrainableSceneModule | None = None,
     device: str = "cpu",
 ) -> np.ndarray:
-    """Evaluate the loss for each PSF in *psf_modules*.
-
-    For each PSF, its kernel is applied to the training images and the
-    loss is computed.  Loss values are averaged over all atmospheric
-    parameter combinations found in *train_images*.
+    """Evaluate the loss of each PSF, averaged over the atmospheric combos.
 
     Parameters
     ----------
     train_images : TrainingImages
-        Pre-computed scenes.  They must carry whatever the model
-        declares in ``required_vars`` and ``output_vars``, which for
-        :class:`~adjeff.modules.models.Unif2Surface` means ``rho_unif``,
-        ``tdir_up``, ``tdif_up``, ``sph_alb`` and ``rho_s``.
+        Pre-computed scenes, carrying what the model declares in
+        ``required_vars`` and ``output_vars``.
     band : SensorBand
         Band to evaluate.
     psf_modules : list[PSFModule]
-        Any :class:`~adjeff.core._psf.PSFModule` instances
-        (e.g. :class:`~adjeff.core.GeneralizedGaussianPSF`,
-        :class:`~adjeff.core.KingPSF`, …).
+        The PSFs to evaluate.
     loss : Loss or callable
-        Anything with the signature ``loss(forward_fn, samples)``.  The
-        built-in :class:`Loss` satisfies it, and so does a custom
-        callable, which is what makes it possible to map a surface for a
-        metric this package does not ship.
+        Anything with the signature ``loss(forward_fn, samples)``.
     model : TrainableSceneModule or None, optional
         Model whose forward pass the kernels feed.  ``None`` keeps the
-        :class:`~adjeff.modules.models.Unif2Surface` convolution, which
-        is what the manuscript's figures use.  When given, the variable
-        names are read off the model rather than assumed.
+        :class:`~adjeff.modules.models.Unif2Surface` convolution.
     device : str
         Torch device for convolutions (default ``"cpu"``).
 
