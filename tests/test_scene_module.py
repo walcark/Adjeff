@@ -17,236 +17,6 @@ def scene():
     )
 
 
-# --- TestModule compute ---
-
-
-def test_testmodule_produces_rho_toa(scene):
-    """TestModule writes rho_toa into the output scene."""
-    result = TestModule()(scene)
-    assert "rho_toa" in result[S2Band.B02]
-
-
-def test_testmodule_shift_value(scene):
-    """TestModule computes rho_toa as rho_s + 0.05."""
-    rho_s = scene[S2Band.B02]["rho_s"].values.copy()
-    result = TestModule()(scene)
-    np.testing.assert_allclose(
-        result[S2Band.B02]["rho_toa"].values, rho_s + 0.05, rtol=1e-5
-    )
-
-
-# --- Provenance ---
-
-
-def test_provenance_is_stamped(scene):
-    """Output DataArrays carry _adjeff_provenance after compute."""
-    result = TestModule()(scene)
-    prov = result[S2Band.B02]["rho_toa"].attrs.get("_adjeff_provenance")
-    assert prov is not None
-    assert prov["module"] == "TestModule"
-    assert "key" in prov
-
-
-# --- Cache ---
-
-
-def test_cache_hit_returns_same_values(tmp_path, scene):
-    """Second call with identical input hits the cache and returns the same values."""
-    cache = CacheStore(tmp_path)
-    module = TestModule(cache=cache)
-    result1 = module(scene)
-    result2 = module(scene)
-    np.testing.assert_array_equal(
-        result1[S2Band.B02]["rho_toa"].values,
-        result2[S2Band.B02]["rho_toa"].values,
-    )
-
-
-def test_cache_different_inputs_differ(tmp_path):
-    """Two scenes with different content produce different outputs."""
-    cache = CacheStore(tmp_path)
-    scene_a = random_image_dict(
-        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
-    )
-    scene_b = random_image_dict(
-        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=1
-    )
-    module = TestModule(cache=cache)
-    r_a = module(scene_a)
-    r_b = module(scene_b)
-    assert not np.array_equal(
-        r_a[S2Band.B02]["rho_toa"].values,
-        r_b[S2Band.B02]["rho_toa"].values,
-    )
-
-
-# --- Validation ---
-
-
-def test_missing_required_var_raises():
-    """TestModule raises MissingVariableError when rho_s is absent."""
-    scene = random_image_dict(
-        bands=[S2Band.B02], variables=["rho_toa"], res_km=0.01, n=8, seed=0
-    )
-    with pytest.raises(MissingVariableError):
-        TestModule()(scene)
-
-
-# --- Pipeline ---
-
-
-def test_pipeline_wrong_dependency_raises():
-    """Pipeline rejects a dependency declared but not yet produced.
-
-    The variable is a pipeline output, so the mistake is one of order
-    rather than of declaration.
-    """
-    from _test_module import TestModule as TM
-
-    from adjeff.exceptions import ConfigurationError
-    from adjeff.modules import Pipeline
-
-    # Module A requires rho_s and produces rho_toa.
-    # Module B requires rho_toa and produces rho_unif.
-    # Declaring them in reverse order (B then A) is a configuration error.
-    class ModuleB(TM):
-        _required_vars = ["rho_toa"]
-        _output_vars = ["rho_unif"]
-
-        def _compute(self, scene):  # type: ignore[override]
-            return scene
-
-    with pytest.raises(ConfigurationError):
-        Pipeline([ModuleB(), TM()])
-
-
-# --- Cache key completeness ---
-
-
-def test_config_dict_raises_on_privately_stored_param():
-    """A param stored under a private name must not be silently dropped.
-
-    Auto-detection reads __init__ params off same-named attributes, so a
-    private name would leave the param out of the cache key and let two
-    different configurations collide on one entry.
-    """
-    from _test_module import TestModule as TM
-
-    from adjeff.exceptions import ConfigurationError
-
-    class Hidden(TM):
-        def __init__(self, shift, cache=None):
-            self._shift = shift  # wrong: not visible to _config_dict()
-            super().__init__(cache=cache)
-
-    with pytest.raises(ConfigurationError, match="shift"):
-        Hidden(shift=0.1)._config_dict()
-
-
-def test_sweep_params_reach_the_cache_key():
-    """batch_size and dedup must change the cache key.
-
-    Neither can change a value, but both are __init__ parameters, and the
-    guard that keeps `res` and the old `deduplicate_dims` in the key is
-    what would catch either being stored under a private name.
-    """
-    import xarray as xr
-
-    from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
-    from adjeff.core import ImageDict
-    from adjeff.modules.samplers import TdirDownSampler
-
-    common = dict(
-        atmo_config=AtmoConfig(
-            aot=0.1, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
-        ),
-        geo_config=GeoConfig(sza=30.0, vza=0.0, saa=120.0, vaa=120.0),
-        spectral_config=SpectralConfig.from_bands([S2Band.B02]),
-        remove_rayleigh=False,
-    )
-    scene = ImageDict({S2Band.B02: xr.Dataset()})
-
-    plain = TdirDownSampler(**common)._cache_key(scene)
-    deduped = TdirDownSampler(**common, dedup=True)._cache_key(scene)
-    grouped = TdirDownSampler(**common, batch_size=8)._cache_key(scene)
-
-    assert len({plain, deduped, grouped}) == 3
-
-
-def test_loader_resolution_reaches_the_cache_key(tmp_path):
-    """ProductLoader.res must change the cache key.
-
-    The same product loaded at two target resolutions holds different
-    pixels, so the entries must not collide.
-    """
-    from adjeff.modules.loaders.product_loader import ProductLoader
-
-    class Loader(ProductLoader):
-        def ensure_correct_folder(self, path):
-            return None
-
-        def extract_metadata(self):
-            return None
-
-        def reflectance(self, band, btype="SRE"):
-            raise NotImplementedError
-
-        def _compute(self, scene):
-            return scene
-
-    def key(res):
-        return Loader(
-            product_path=tmp_path, bands=[S2Band.B02], res=res
-        )._config_dict()["res"]
-
-    assert key(0.12) != key(0.06)
-
-
-def test_truncated_cache_entry_reads_as_a_miss(tmp_path):
-    """A cache entry short of an output var must not count as a hit.
-
-    Returning the variables that happen to be present would hand back a
-    scene silently missing an output, reported as ``cached=True``.
-    """
-    import shutil
-
-    import xarray as xr
-    from _test_module import TestModule as TM
-
-    class TwoOut(TM):
-        _output_vars = ["rho_toa", "rho_unif"]
-
-        def _compute(self, scene):  # type: ignore[override]
-            for band in scene.bands:
-                ds = scene[band]
-                ds["rho_toa"] = ds["rho_s"] + 0.05
-                ds["rho_unif"] = ds["rho_s"] + 0.10
-            return scene
-
-    cache = CacheStore(tmp_path)
-    scene = random_image_dict(
-        bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
-    )
-    module = TwoOut(cache=cache)
-    module(scene)
-
-    # Drop one output from the stored entry, as an interrupted write or a
-    # changed output_vars would.
-    path = tmp_path / module._cache_key(scene) / f"{S2Band.B02}.zarr"
-    stored = xr.open_zarr(path).load().drop_vars("rho_unif")
-    shutil.rmtree(path)
-    stored.to_zarr(path, mode="w")
-
-    assert (
-        cache.load_vars(module._cache_key(scene), [S2Band.B02], TwoOut._output_vars)
-        is None
-    )
-    assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
-
-
-# --- Pipeline streaming ---
-
-
 @pytest.fixture
 def streamed_scene():
     """Return a scene with two swept dims and a species attribute."""
@@ -277,219 +47,420 @@ class _Doubler(TestModule):
         return scene
 
 
-@pytest.mark.parametrize(
-    "stream_dims",
-    [{"aot": 1}, {"rh": 2}, {"aot": 1, "rh": 1}, {"aot": 1, "rh": 2}],
-)
-def test_streaming_matches_the_full_run(streamed_scene, stream_dims):
-    """Streaming over one or several dims must reproduce the full run.
+class TestForward:
+    """A module reads its inputs and writes its outputs."""
 
-    Folding the Cartesian product of chunks along a single dimension
-    would stack n0 * n1 pieces on one axis instead of rebuilding the grid.
-    """
-    from adjeff.modules import Pipeline
+    def test_testmodule_produces_rho_toa(self, scene):
+        """TestModule writes rho_toa into the output scene."""
+        result = TestModule()(scene)
+        assert "rho_toa" in result[S2Band.B02]
 
-    reference = Pipeline([_Doubler()])(streamed_scene)[S2Band.B02]["out"]
-    streamed = Pipeline([_Doubler()], stream_dims=stream_dims)(streamed_scene)[
-        S2Band.B02
-    ]["out"]
+    def test_testmodule_shift_value(self, scene):
+        rho_s = scene[S2Band.B02]["rho_s"].values.copy()
+        result = TestModule()(scene)
+        np.testing.assert_allclose(
+            result[S2Band.B02]["rho_toa"].values, rho_s + 0.05, rtol=1e-5
+        )
 
-    assert streamed.transpose(*reference.dims).shape == reference.shape
-    np.testing.assert_allclose(
-        streamed.transpose(*reference.dims).values, reference.values
-    )
+    def test_provenance_is_stamped(self, scene):
+        """Output DataArrays carry _adjeff_provenance after compute."""
+        result = TestModule()(scene)
+        prov = result[S2Band.B02]["rho_toa"].attrs.get("_adjeff_provenance")
+        assert prov is not None
+        assert prov["module"] == "TestModule"
+        assert "key" in prov
 
+    def test_missing_required_var_raises(self):
+        """TestModule raises MissingVariableError when rho_s is absent."""
+        scene = random_image_dict(
+            bands=[S2Band.B02], variables=["rho_toa"], res_km=0.01, n=8, seed=0
+        )
+        with pytest.raises(MissingVariableError):
+            TestModule()(scene)
 
-def test_streaming_preserves_dataset_attrs(streamed_scene):
-    """Streaming must carry the band attrs through.
+    def test_pipeline_wrong_dependency_raises(self):
+        """Pipeline rejects a dependency declared but not yet produced.
 
-    They hold the aerosol species written by load_scene(); losing them
-    makes load_config() fall back to sulphate without a word.
-    """
-    from adjeff.modules import Pipeline
+        The variable is a pipeline output, so the mistake is one of order
+        rather than of declaration.
+        """
+        from _test_module import TestModule as TM
 
-    out = Pipeline([_Doubler()], stream_dims={"aot": 1})(streamed_scene)
-    assert out[S2Band.B02].attrs["adjeff:species"] == {"sulphate": 1.0}
+        from adjeff.exceptions import ConfigurationError
+        from adjeff.modules import Pipeline
 
+        # Module A requires rho_s and produces rho_toa.
+        # Module B requires rho_toa and produces rho_unif.
+        # Declaring them in reverse order (B then A) is a configuration error.
+        class ModuleB(TM):
+            _required_vars = ["rho_toa"]
+            _output_vars = ["rho_unif"]
 
-def test_cache_ignores_the_encoding_of_a_reloaded_array(tmp_path, scene):
-    """An array read back from zarr must be storable again.
+            def _compute(self, scene):  # type: ignore[override]
+                return scene
 
-    `forward` swaps its outputs for lazy zarr-backed views, which carry
-    the file's own `encoding["chunks"]`.  `to_zarr` honours that encoding
-    over the chunking the cache asks for and refuses the write when the
-    two disagree, which is what happens as soon as a swept dimension is
-    longer than one.
-    """
-    import xarray as xr
-
-    cache = CacheStore(tmp_path)
-    module = TestModule(cache=cache)
-    result = module(scene)
-
-    # Stand in for a reload: an encoding that contradicts the cache's
-    # own one-per-combo chunking along a swept dim.
-    stacked = xr.concat([result[S2Band.B02]["rho_toa"]] * 3, dim="aot").chunk(
-        {"aot": 1}
-    )
-    stacked.encoding["chunks"] = (3, *stacked.shape[1:])
-    result[S2Band.B02]["rho_toa"] = stacked
-
-    cache.save_vars("some-key", result, ["rho_toa"])
-
-    back = cache.load_vars("some-key", [S2Band.B02], ["rho_toa"])
-    assert back is not None
-    assert back[S2Band.B02]["rho_toa"].sizes["aot"] == 3
+        with pytest.raises(ConfigurationError):
+            Pipeline([ModuleB(), TM()])
 
 
-def test_optional_vars_enter_the_key_only_when_present(tmp_path, scene):
-    """An optional input must key the entry it contributed to.
+class TestCacheKey:
+    """What enters the key, and what must not."""
 
-    A module that computes a variable when the scene lacks it, and reuses
-    the scene's own when it has one, produces two different outputs from
-    the same declared inputs.  Leaving that variable out of the key lets
-    the two share an entry.
-    """
-    import xarray as xr
+    def test_cache_hit_returns_same_values(self, tmp_path, scene):
+        cache = CacheStore(tmp_path)
+        module = TestModule(cache=cache)
+        result1 = module(scene)
+        result2 = module(scene)
+        np.testing.assert_array_equal(
+            result1[S2Band.B02]["rho_toa"].values,
+            result2[S2Band.B02]["rho_toa"].values,
+        )
 
-    class OptionalModule(TestModule):
-        _optional_vars = ["rho_atm"]
+    def test_cache_different_inputs_differ(self, tmp_path):
+        """Two scenes with different content produce different outputs."""
+        cache = CacheStore(tmp_path)
+        scene_a = random_image_dict(
+            bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
+        )
+        scene_b = random_image_dict(
+            bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=1
+        )
+        module = TestModule(cache=cache)
+        r_a = module(scene_a)
+        r_b = module(scene_b)
+        assert not np.array_equal(
+            r_a[S2Band.B02]["rho_toa"].values,
+            r_b[S2Band.B02]["rho_toa"].values,
+        )
 
-    cache = CacheStore(tmp_path)
-    module = OptionalModule(cache=cache)
-    plain = module._cache_key(scene)
+    def test_config_dict_raises_on_privately_stored_param(self):
+        """A param stored under a private name must not be silently dropped.
 
-    with_var = scene.shallow_copy()
-    with_var[S2Band.B02]["rho_atm"] = xr.DataArray(0.06)
-    keyed = module._cache_key(with_var)
+        Auto-detection reads __init__ params off same-named attributes, so a
+        private name would leave the param out of the cache key and let two
+        different configurations collide on one entry.
+        """
+        from _test_module import TestModule as TM
 
-    other = scene.shallow_copy()
-    other[S2Band.B02]["rho_atm"] = xr.DataArray(0.07)
+        from adjeff.exceptions import ConfigurationError
 
-    assert plain != keyed, "an optional input present must change the key"
-    assert keyed != module._cache_key(other), "two values, two keys"
-    assert plain == module._cache_key(scene.shallow_copy())
+        class Hidden(TM):
+            def __init__(self, shift, cache=None):
+                self._shift = shift  # wrong: not visible to _config_dict()
+                super().__init__(cache=cache)
 
+        with pytest.raises(ConfigurationError, match="shift"):
+            Hidden(shift=0.1)._config_dict()
 
-# --- Port binding ---
+    def test_sweep_params_reach_the_cache_key(self):
+        """batch_size and dedup must change the cache key.
 
+        Neither can change a value, but both are __init__ parameters, and the
+        guard that keeps `res` and the old `deduplicate_dims` in the key is
+        what would catch either being stored under a private name.
+        """
+        import xarray as xr
 
-def test_rename_puts_an_output_in_its_own_slot(tmp_path, scene):
-    """An estimate must be able to sit beside the truth it estimates.
+        from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
+        from adjeff.core import ImageDict
+        from adjeff.modules.samplers import TdirDownSampler
 
-    `Unif2Surface` writes `rho_s`, which is also the name of the ground
-    truth, so a scene carrying both used to lose one of them.  Naming
-    the slot separates them without touching the module's own roles.
-    """
-    from _test_module import TestModule as TM
+        common = dict(
+            atmo_config=AtmoConfig(
+                aot=0.1, rh=50.0, h=0.0, href=2.0, species={"sulphate": 1.0}
+            ),
+            geo_config=GeoConfig(sza=30.0, vza=0.0, saa=120.0, vaa=120.0),
+            spectral_config=SpectralConfig.from_bands([S2Band.B02]),
+            remove_rayleigh=False,
+        )
+        scene = ImageDict({S2Band.B02: xr.Dataset()})
 
-    truth = scene[S2Band.B02]["rho_s"].copy()
+        plain = TdirDownSampler(**common)._cache_key(scene)
+        deduped = TdirDownSampler(**common, dedup=True)._cache_key(scene)
+        grouped = TdirDownSampler(**common, batch_size=8)._cache_key(scene)
 
-    estimated = TM(cache=CacheStore(tmp_path), rename={"rho_toa": "rho_toa_king"})
-    out = estimated(scene)
+        assert len({plain, deduped, grouped}) == 3
 
-    assert "rho_toa_king" in out[S2Band.B02]
-    assert "rho_toa" not in out[S2Band.B02]
-    np.testing.assert_array_equal(out[S2Band.B02]["rho_s"].values, truth.values)
+    def test_loader_resolution_reaches_the_cache_key(self, tmp_path):
+        """ProductLoader.res must change the cache key.
 
+        The same product loaded at two target resolutions holds different
+        pixels, so the entries must not collide.
+        """
+        from adjeff.modules.loaders.product_loader import ProductLoader
 
-def test_rename_does_not_split_the_cache(tmp_path, scene):
-    """Two slots, one computation, one entry.
+        class Loader(ProductLoader):
+            def ensure_correct_folder(self, path):
+                return None
 
-    Where the result is written changes nothing to what is computed, so
-    a rename must not send the two runs to different cache entries.
-    """
-    from _test_module import TestModule as TM
+            def extract_metadata(self):
+                return None
 
-    cache = CacheStore(tmp_path)
-    plain = TM(cache=cache)
-    renamed = TM(cache=cache, rename={"rho_toa": "elsewhere"})
+            def reflectance(self, band, btype="SRE"):
+                raise NotImplementedError
 
-    assert plain._cache_key(scene) == renamed._cache_key(scene)
+            def _compute(self, scene):
+                return scene
 
-    computed = plain(scene)[S2Band.B02]["rho_toa"]
-    reread = renamed(scene)[S2Band.B02]["elsewhere"]
+        def key(res):
+            return Loader(
+                product_path=tmp_path, bands=[S2Band.B02], res=res
+            )._config_dict()["res"]
 
-    np.testing.assert_array_equal(reread.values, computed.values)
+        assert key(0.12) != key(0.06)
 
+    def test_optional_vars_enter_the_key_only_when_present(self, tmp_path, scene):
+        """An optional input must key the entry it contributed to.
 
-def test_rename_rejects_a_role_the_module_does_not_have(tmp_path):
-    """A typo in a role name must fail at construction, naming the roles."""
-    from _test_module import TestModule as TM
+        A module that computes a variable when the scene lacks it, and reuses
+        the scene's own when it has one, produces two different outputs from
+        the same declared inputs.  Leaving that variable out of the key lets
+        the two share an entry.
+        """
+        import xarray as xr
 
-    with pytest.raises(ConfigurationError, match="rho_s"):
-        TM(cache=CacheStore(tmp_path), rename={"rho_ss": "elsewhere"})
+        class OptionalModule(TestModule):
+            _optional_vars = ["rho_atm"]
 
+        cache = CacheStore(tmp_path)
+        module = OptionalModule(cache=cache)
+        plain = module._cache_key(scene)
 
-def test_rename_also_redirects_an_input(tmp_path, scene):
-    """Reading is renamed the same way writing is."""
-    from _test_module import TestModule as TM
+        with_var = scene.shallow_copy()
+        with_var[S2Band.B02]["rho_atm"] = xr.DataArray(0.06)
+        keyed = module._cache_key(with_var)
 
-    ds = scene[S2Band.B02]
-    ds["rho_s_king"] = ds["rho_s"] * 0.5
-    module = TM(cache=CacheStore(tmp_path), rename={"rho_s": "rho_s_king"})
+        other = scene.shallow_copy()
+        other[S2Band.B02]["rho_atm"] = xr.DataArray(0.07)
 
-    out = module(scene)[S2Band.B02]
+        assert plain != keyed, "an optional input present must change the key"
+        assert keyed != module._cache_key(other), "two values, two keys"
+        assert plain == module._cache_key(scene.shallow_copy())
 
-    np.testing.assert_allclose(out["rho_toa"].values, (ds["rho_s_king"] + 0.05).values)
+    def test_cache_ignores_the_encoding_of_a_reloaded_array(self, tmp_path, scene):
+        """An array read back from zarr must be storable again.
 
+        `forward` swaps its outputs for lazy zarr-backed views, which carry
+        the file's own `encoding["chunks"]`.  `to_zarr` honours that encoding
+        over the chunking the cache asks for and refuses the write when the
+        two disagree, which is what happens as soon as a swept dimension is
+        longer than one.
+        """
+        import xarray as xr
 
-# --- non-finite outputs ---
+        cache = CacheStore(tmp_path)
+        module = TestModule(cache=cache)
+        result = module(scene)
 
+        # Stand in for a reload: an encoding that contradicts the cache's
+        # own one-per-combo chunking along a swept dim.
+        stacked = xr.concat([result[S2Band.B02]["rho_toa"]] * 3, dim="aot").chunk(
+            {"aot": 1}
+        )
+        stacked.encoding["chunks"] = (3, *stacked.shape[1:])
+        result[S2Band.B02]["rho_toa"] = stacked
 
-def test_a_non_finite_output_is_never_cached(tmp_path, scene):
-    """A NaN must fail where it is produced, not where it is read.
+        cache.save_vars("some-key", result, ["rho_toa"])
 
-    Smart-G returns NaN rather than raising when it cannot allocate on
-    the GPU.  Cached, such a result is permanent: every later run reads
-    it back and fails far away, in an interpolation or a solver, with
-    nothing pointing at the simulation that produced it.
-    """
-    from _test_module import TestModule as TM
+        back = cache.load_vars("some-key", [S2Band.B02], ["rho_toa"])
+        assert back is not None
+        assert back[S2Band.B02]["rho_toa"].sizes["aot"] == 3
 
-    from adjeff.exceptions import ComputationError
+    def test_truncated_cache_entry_reads_as_a_miss(self, tmp_path):
+        """A cache entry short of an output var must not count as a hit.
 
-    class Broken(TM):
-        def _compute(self, scene):  # type: ignore[override]
-            for band in scene.bands:
-                ds = scene[band]
-                ds["rho_toa"] = ds["rho_s"] * np.nan
-            return scene
+        Returning the variables that happen to be present would hand back a
+        scene silently missing an output, reported as ``cached=True``.
+        """
+        import shutil
 
-    cache = CacheStore(tmp_path)
-    module = Broken(cache=cache)
+        import xarray as xr
+        from _test_module import TestModule as TM
 
-    with pytest.raises(ComputationError, match="non-finite"):
+        class TwoOut(TM):
+            _output_vars = ["rho_toa", "rho_unif"]
+
+            def _compute(self, scene):  # type: ignore[override]
+                for band in scene.bands:
+                    ds = scene[band]
+                    ds["rho_toa"] = ds["rho_s"] + 0.05
+                    ds["rho_unif"] = ds["rho_s"] + 0.10
+                return scene
+
+        cache = CacheStore(tmp_path)
+        scene = random_image_dict(
+            bands=[S2Band.B02], variables=["rho_s"], res_km=0.01, n=8, seed=0
+        )
+        module = TwoOut(cache=cache)
         module(scene)
 
-    assert not any(tmp_path.iterdir()), "a rejected result must leave no entry"
+        # Drop one output from the stored entry, as an interrupted write or a
+        # changed output_vars would.
+        path = tmp_path / module._cache_key(scene) / f"{S2Band.B02}.zarr"
+        stored = xr.open_zarr(path).load().drop_vars("rho_unif")
+        shutil.rmtree(path)
+        stored.to_zarr(path, mode="w")
+
+        assert (
+            cache.load_vars(module._cache_key(scene), [S2Band.B02], TwoOut._output_vars)
+            is None
+        )
+        assert "rho_unif" in TwoOut(cache=cache)(scene)[S2Band.B02]
 
 
-def test_a_finite_output_still_goes_through(tmp_path, scene):
-    """The guard costs one pass and must not change the normal path."""
-    module = TestModule(cache=CacheStore(tmp_path))
+class TestStreaming:
+    """A sweep run one slice at a time."""
 
-    out = module(scene)
+    @pytest.mark.parametrize(
+        "stream_dims",
+        [{"aot": 1}, {"rh": 2}, {"aot": 1, "rh": 1}, {"aot": 1, "rh": 2}],
+    )
+    def test_streaming_matches_the_full_run(self, streamed_scene, stream_dims):
+        """Streaming over one or several dims must reproduce the full run.
 
-    assert np.isfinite(out[S2Band.B02]["rho_toa"].values).all()
-    assert any(tmp_path.iterdir())
+        Folding the Cartesian product of chunks along a single dimension
+        would stack n0 * n1 pieces on one axis instead of rebuilding the grid.
+        """
+        from adjeff.modules import Pipeline
+
+        reference = Pipeline([_Doubler()])(streamed_scene)[S2Band.B02]["out"]
+        streamed = Pipeline([_Doubler()], stream_dims=stream_dims)(streamed_scene)[
+            S2Band.B02
+        ]["out"]
+
+        assert streamed.transpose(*reference.dims).shape == reference.shape
+        np.testing.assert_allclose(
+            streamed.transpose(*reference.dims).values, reference.values
+        )
+
+    def test_streaming_preserves_dataset_attrs(self, streamed_scene):
+        """Streaming must carry the band attrs through.
+
+        They hold the aerosol species written by load_scene(); losing them
+        makes load_config() fall back to sulphate without a word.
+        """
+        from adjeff.modules import Pipeline
+
+        out = Pipeline([_Doubler()], stream_dims={"aot": 1})(streamed_scene)
+        assert out[S2Band.B02].attrs["adjeff:species"] == {"sulphate": 1.0}
 
 
-def test_the_guard_names_the_module_and_the_variable(tmp_path, scene):
-    """The message must say where to look, since the cause is upstream."""
-    from _test_module import TestModule as TM
+class TestRename:
+    """Reading and writing a role under another slot name."""
 
-    from adjeff.exceptions import ComputationError
+    def test_rename_puts_an_output_in_its_own_slot(self, tmp_path, scene):
+        """An estimate must be able to sit beside the truth it estimates.
 
-    class Broken(TM):
-        def _compute(self, scene):  # type: ignore[override]
-            for band in scene.bands:
-                scene[band]["rho_toa"] = scene[band]["rho_s"] * np.inf
-            return scene
+        `Unif2Surface` writes `rho_s`, which is also the name of the ground
+        truth, so a scene carrying both used to lose one of them.  Naming
+        the slot separates them without touching the module's own roles.
+        """
+        from _test_module import TestModule as TM
 
-    with pytest.raises(ComputationError) as caught:
-        Broken(cache=CacheStore(tmp_path))(scene)
+        truth = scene[S2Band.B02]["rho_s"].copy()
 
-    message = str(caught.value)
-    assert "Broken" in message
-    assert "rho_toa" in message
+        estimated = TM(cache=CacheStore(tmp_path), rename={"rho_toa": "rho_toa_king"})
+        out = estimated(scene)
+
+        assert "rho_toa_king" in out[S2Band.B02]
+        assert "rho_toa" not in out[S2Band.B02]
+        np.testing.assert_array_equal(out[S2Band.B02]["rho_s"].values, truth.values)
+
+    def test_rename_does_not_split_the_cache(self, tmp_path, scene):
+        """Two slots, one computation, one entry.
+
+        Where the result is written changes nothing to what is computed, so
+        a rename must not send the two runs to different cache entries.
+        """
+        from _test_module import TestModule as TM
+
+        cache = CacheStore(tmp_path)
+        plain = TM(cache=cache)
+        renamed = TM(cache=cache, rename={"rho_toa": "elsewhere"})
+
+        assert plain._cache_key(scene) == renamed._cache_key(scene)
+
+        computed = plain(scene)[S2Band.B02]["rho_toa"]
+        reread = renamed(scene)[S2Band.B02]["elsewhere"]
+
+        np.testing.assert_array_equal(reread.values, computed.values)
+
+    def test_rename_rejects_a_role_the_module_does_not_have(self, tmp_path):
+        """A typo in a role name must fail at construction, naming the roles."""
+        from _test_module import TestModule as TM
+
+        with pytest.raises(ConfigurationError, match="rho_s"):
+            TM(cache=CacheStore(tmp_path), rename={"rho_ss": "elsewhere"})
+
+    def test_rename_also_redirects_an_input(self, tmp_path, scene):
+        """Reading is renamed the same way writing is."""
+        from _test_module import TestModule as TM
+
+        ds = scene[S2Band.B02]
+        ds["rho_s_king"] = ds["rho_s"] * 0.5
+        module = TM(cache=CacheStore(tmp_path), rename={"rho_s": "rho_s_king"})
+
+        out = module(scene)[S2Band.B02]
+
+        np.testing.assert_allclose(
+            out["rho_toa"].values, (ds["rho_s_king"] + 0.05).values
+        )
+
+
+class TestNonFiniteGuard:
+    """An unusable result fails instead of being cached."""
+
+    def test_a_non_finite_output_is_never_cached(self, tmp_path, scene):
+        """A NaN must fail where it is produced, not where it is read.
+
+        Smart-G returns NaN rather than raising when it cannot allocate on
+        the GPU.  Cached, such a result is permanent: every later run reads
+        it back and fails far away, in an interpolation or a solver, with
+        nothing pointing at the simulation that produced it.
+        """
+        from _test_module import TestModule as TM
+
+        from adjeff.exceptions import ComputationError
+
+        class Broken(TM):
+            def _compute(self, scene):  # type: ignore[override]
+                for band in scene.bands:
+                    ds = scene[band]
+                    ds["rho_toa"] = ds["rho_s"] * np.nan
+                return scene
+
+        cache = CacheStore(tmp_path)
+        module = Broken(cache=cache)
+
+        with pytest.raises(ComputationError, match="non-finite"):
+            module(scene)
+
+        assert not any(tmp_path.iterdir()), "a rejected result must leave no entry"
+
+    def test_a_finite_output_still_goes_through(self, tmp_path, scene):
+        """The guard costs one pass and must not change the normal path."""
+        module = TestModule(cache=CacheStore(tmp_path))
+
+        out = module(scene)
+
+        assert np.isfinite(out[S2Band.B02]["rho_toa"].values).all()
+        assert any(tmp_path.iterdir())
+
+    def test_the_guard_names_the_module_and_the_variable(self, tmp_path, scene):
+        """The message must say where to look, since the cause is upstream."""
+        from _test_module import TestModule as TM
+
+        from adjeff.exceptions import ComputationError
+
+        class Broken(TM):
+            def _compute(self, scene):  # type: ignore[override]
+                for band in scene.bands:
+                    scene[band]["rho_toa"] = scene[band]["rho_s"] * np.inf
+                return scene
+
+        with pytest.raises(ComputationError) as caught:
+            Broken(cache=CacheStore(tmp_path))(scene)
+
+        message = str(caught.value)
+        assert "Broken" in message
+        assert "rho_toa" in message

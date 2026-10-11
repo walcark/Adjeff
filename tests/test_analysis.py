@@ -7,9 +7,11 @@ form.  A Gaussian is that profile.
 """
 
 import math
+
 import numpy as np
 import pytest
 import xarray as xr
+
 from adjeff.analysis import (
     encircled_energy,
     encircled_radii,
@@ -18,7 +20,6 @@ from adjeff.analysis import (
     mtf,
 )
 from adjeff.core import GaussPSF, KingPSF, PSFGrid, S2Band
-
 
 BAND = S2Band.B03
 

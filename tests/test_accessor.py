@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 import xarray as xr
+
 import adjeff  # noqa: F401 — registers the accessor
 from adjeff.exceptions import AdjeffAccessorError
 
