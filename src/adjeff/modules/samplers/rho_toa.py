@@ -54,8 +54,9 @@ class RhoToaSampler(SweepSampler):
         Sensor rows.
     n_ph : int
         Photons per sensor.
-    n_alb : int
-        Number of discrete albedo levels in the ``AlbedoMap`` (default 1000).
+    n_alb : int or None
+        Discrete albedo levels in the ``AlbedoMap``.  ``None`` takes
+        Smart-G's own maximum, which is 100.
     rho_background : float | "mean" | "min" | "zero"
         Reflectance of the ``LambSurface`` for photons leaving the
         ``AlbedoMap`` region.  See :class:`~adjeff.atmosphere.SurfaceFactory`
@@ -85,7 +86,7 @@ class RhoToaSampler(SweepSampler):
         ny: int = 50,
         topleft_pix: tuple[int, int] = (0, 0),
         n_ph: int = int(1e6),
-        n_alb: int = 1000,
+        n_alb: int | None = None,
         rho_background: float | Literal["mean", "min", "zero"] = "mean",
         cache: CacheStore | None = None,
         batch_size: int = 64,

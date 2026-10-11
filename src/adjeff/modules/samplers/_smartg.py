@@ -368,7 +368,7 @@ def rho_toa(
     ny: int,
     topleft_pix: tuple[int, int],
     n_ph: int,
-    n_alb: int,
+    n_alb: int | None,
     rho_background: float | Literal["mean", "min", "zero"] = "mean",
 ) -> xr.DataArray:
     """TOA reflectance of an arbitrary surface, on an ``nx × ny`` sub-grid.

@@ -88,7 +88,7 @@ class SurfaceFactory:
     def custom_environment(
         self,
         arr: xr.Dataset,
-        n_alb: int = 1000,
+        n_alb: int | None = None,
     ) -> Environment:
         """Return an ``AlbedoMap`` environment for an arbitrary scene.
 
@@ -99,11 +99,26 @@ class SurfaceFactory:
         ----------
         arr : xr.Dataset
             Scene holding ``"rho_s"`` on dims ``(y, x)``.
-        n_alb : int, optional
-            Number of reflectance levels, 1000 by default.
+        n_alb : int or None, optional
+            Reflectance levels.  ``None`` takes Smart-G's own maximum.
+
+        Raises
+        ------
+        ConfigurationError
+            Beyond ``smartg.smartg.MAX_NREF`` levels, which Smart-G
+            reports as a broadcast error from inside its kernel setup.
         """
         from smartg.albedo import AlbedoCst, AlbedoMap
+        from smartg.smartg import MAX_NREF
         from smartg.surface import Environment
+
+        n_alb = MAX_NREF if n_alb is None else n_alb
+        if not 1 <= n_alb <= MAX_NREF:
+            raise ConfigurationError(
+                f"n_alb must be between 1 and {MAX_NREF}, got {n_alb}; "
+                "Smart-G stores the environment albedos in a fixed array "
+                "of that size."
+            )
 
         da = arr["rho_s"]
         # adjeff stores (y, x); Smart-G AlbedoMap expects (x, y) ordering

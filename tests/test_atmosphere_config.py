@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from adjeff.atmosphere import AtmoConfig, GeoConfig
+from adjeff.atmosphere import AtmoConfig, GeoConfig, SurfaceFactory
+from adjeff.core import S2Band, random_image_dict
 from adjeff.exceptions import ConfigurationError
 
 _VALID_ATMO: dict[str, Any] = dict(
@@ -96,3 +97,30 @@ class TestValidation:
                     "href": xr.DataArray([2.0, 2.0], dims=["index"]),
                 }
             )
+
+
+# Importing smartg needs SMARTG_DIR_AUXDATA, which is what the
+# `integration` marker guards; no GPU is used here.
+@pytest.mark.integration
+class TestAlbedoMapLevels:
+    """How many reflectance levels an arbitrary scene may be quantised to."""
+
+    @staticmethod
+    def _band():
+        """Return a one-band scene carrying an arbitrary `rho_s`."""
+        scene = random_image_dict(
+            bands=[S2Band.B03], variables=["rho_s"], res_km=1.0, n=9, seed=0
+        )
+        return scene[S2Band.B03]
+
+    def test_the_default_is_what_smartg_can_hold(self):
+        from smartg.smartg import MAX_NREF
+
+        env = SurfaceFactory().custom_environment(self._band())
+        assert len(env.alb.list) == MAX_NREF
+
+    def test_more_levels_than_smartg_holds_is_refused(self):
+        from smartg.smartg import MAX_NREF
+
+        with pytest.raises(ConfigurationError, match="n_alb must be"):
+            SurfaceFactory().custom_environment(self._band(), n_alb=MAX_NREF + 1)
