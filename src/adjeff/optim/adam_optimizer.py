@@ -58,7 +58,6 @@ class AdamStage(_ComboStage):
         model: TrainableSceneModule,
         band: SensorBand,
         data: TrainingSet,
-        combo_str: str,
     ) -> None:
         """Adam optimisation loop for one combo."""
         best_params = save_all_params(model)

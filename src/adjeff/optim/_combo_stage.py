@@ -158,7 +158,6 @@ class _ComboStage(abc.ABC):
         model: TrainableSceneModule,
         band: SensorBand,
         data: TrainingSet,
-        combo_str: str,
     ) -> None:
         """Run optimization for a single atmospheric combo.
 

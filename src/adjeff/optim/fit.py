@@ -161,7 +161,7 @@ def fit(
                     steps = 0
                     for stage in runs:
                         stage._reset_state()
-                        stage._run_combo(model, band, data, label)
+                        stage._run_combo(model, band, data)
                         best = min(best, stage.best_loss)
                         steps += stage.nloop
                     del data

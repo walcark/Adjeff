@@ -180,7 +180,7 @@ class TestOptimiserLoop:
                 stage, "_total_loss", return_value=torch.tensor(0.5, requires_grad=True)
             ),
         ):
-            stage._run_combo(model, S2Band.B02, MagicMock(), "aot=0.1")
+            stage._run_combo(model, S2Band.B02, MagicMock())
 
     def test_the_kernel_is_built_once_per_step_not_once_per_sample(self):
         """One optimisation step must evaluate the PSF exactly once.

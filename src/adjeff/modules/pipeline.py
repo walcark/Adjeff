@@ -109,7 +109,7 @@ class Pipeline:
         present: dict[str, int] = {}
         for band in scene.bands:
             for da in scene[band].data_vars.values():
-                for dim, chunk_size in self._stream_dims.items():
+                for dim in self._stream_dims:
                     if dim in da.dims and dim not in present:
                         present[dim] = da.sizes[dim]
 

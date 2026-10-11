@@ -78,7 +78,6 @@ class LBFGSStage(_ComboStage):
         model: TrainableSceneModule,
         band: SensorBand,
         data: TrainingSet,
-        combo_str: str,
     ) -> None:
         """L-BFGS optimisation loop for one combo."""
         best_params = save_all_params(model)
