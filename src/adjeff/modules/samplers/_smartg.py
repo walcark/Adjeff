@@ -781,15 +781,15 @@ def psf_atm(
 
     result = result.isel(x=slice(None, n), y=slice(None, n))
 
-    # Assign proper spatial km coordinates from the input grid, and strip
-    # the DataArray name so bundle.apply can combine results correctly.
-    result = (
-        result.assign_coords(
-            x=rho_s["rho_s"].coords["x"].values,
-            y=rho_s["rho_s"].coords["y"].values,
-        )
-        / result.sum()
-    )
+    # On the PSF grid's own axes, not the scene's: a kernel is a kernel,
+    # and `apply_psf` convolves a scene with it.  `kind` is `arbitrary`
+    # because it is sampled, so nothing extrapolates it past the grid.
+    grid = PSFGrid(res=res, n=n)
+    result = result.rename(x="x_psf", y="y_psf").assign_coords(grid.as_coords())
+    result = result / result.sum()
+    result.attrs["adjeff:kind"] = "arbitrary"
+    result.attrs["band"] = band.id
+    # The name would otherwise reach bundle.apply and break the combine.
     return result.rename(None)
 
 

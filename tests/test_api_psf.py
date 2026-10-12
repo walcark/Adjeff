@@ -76,3 +76,38 @@ class TestApplyPsf:
         out = apply_psf(scene, _tree(), BAND, device="cpu")
 
         assert "rho_s_est" in out[BAND]
+
+
+class TestSampledKernel:
+    """A sampled kernel is a kernel: on a PSF grid, with its provenance."""
+
+    @staticmethod
+    def _wu_like() -> xr.DataTree:
+        """Return a tree shaped as `sample_psf_atm` now returns one."""
+        from adjeff.core import psf_tree
+
+        grid = PSFGrid(RES, N)
+        kernel = xr.DataArray(
+            np.full((N, N), 1.0 / (N * N)),
+            dims=["y_psf", "x_psf"],
+            coords=grid.as_coords(),
+            attrs={"adjeff:kind": "arbitrary", "band": BAND.id},
+        )
+        return psf_tree({BAND: kernel})
+
+    def test_apply_psf_accepts_it(self):
+        """It carried the scene's own x and y, which collided on convolution."""
+        out = apply_psf(
+            _scene(carries_atmosphere=False), self._wu_like(), BAND, device="cpu"
+        )
+
+        assert "rho_s_est" in out[BAND]
+
+    def test_it_is_not_mistaken_for_an_analytical_kernel(self):
+        """`grid_share` extrapolates past the grid, which a sample cannot."""
+        from adjeff.analysis._plane import grid_share
+        from adjeff.exceptions import ConfigurationError
+
+        kernel = self._wu_like()[BAND.id].ds["kernel"]
+        with pytest.raises(ConfigurationError):
+            grid_share(kernel, radius_km=RES * N)

@@ -22,7 +22,7 @@ from typing import Any, ClassVar
 import xarray as xr
 
 import adjeff.atmosphere as atmo
-from adjeff.core import ImageDict
+from adjeff.core import ImageDict, PSFGrid
 from adjeff.modules.samplers._smartg import psf_atm
 from adjeff.modules.sweep_sampler import SweepSampler
 from adjeff.utils import CacheStore
@@ -80,7 +80,9 @@ class WuPsfSampler(SweepSampler):
 
     _required_vars: ClassVar[list[str]] = []
     _output_vars: ClassVar[list[str]] = ["psf_atm"]
-    contract: ClassVar[str] = "loop(vza, vaa, aot, rh, h, href) -> psf_atm(x, y)"
+    contract: ClassVar[str] = (
+        "loop(vza, vaa, aot, rh, h, href) -> psf_atm(y_psf, x_psf)"
+    )
     point_fn: ClassVar[Any] = staticmethod(_psf_atm_from_scalars)
 
     def __init__(
@@ -121,7 +123,14 @@ class WuPsfSampler(SweepSampler):
     def _compute(self, scene: ImageDict) -> ImageDict:
         """Run the atmospheric PSF sampling for every band in the scene."""
         for band in scene.bands:
-            arr = self._sweep(rho_s=scene[band], band=band)
-            scene[band][self._slot("psf_atm")] = self._restore_coords(arr, scene[band])
+            ds = scene[band]
+            arr = self._sweep(rho_s=ds, band=band)
+            arr = self._restore_coords(arr, ds)
+            # The store allocates from the contract and labels a dimension
+            # it never swept by position, so the grid is put back here.
+            grid = PSFGrid(res=ds["rho_s"].adjeff.res, n=ds["rho_s"].adjeff.n)
+            arr = arr.assign_coords(grid.as_coords())
+            arr.attrs = {"adjeff:kind": "arbitrary", "band": band.id}
+            scene[band][self._slot("psf_atm")] = arr
             logger.debug("wu_psf.done", dims=list(arr.dims), band=str(band))
         return scene
