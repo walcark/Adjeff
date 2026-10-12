@@ -101,7 +101,7 @@ Ordre choisi pour que chaque étape soit vérifiable seule et que la suivante
 s'appuie sur elle. Les tâches 1 et 2 sont l'infrastructure, 3 et 4 la forme,
 5 et 6 le contenu, 7 la sortie.
 
-### Tâche 1 — Le transport
+### Tâche 1 : Le transport
 
 **Faire.** Un `adjeff/_logging.py` exposant `get_logger(name)` qui enveloppe
 `logging.getLogger(name)` via `structlog.wrap_logger`, sans jamais toucher à la
@@ -123,7 +123,7 @@ le `caplog` de pytest voit les enregistrements. Un test qui assert que
 
 ---
 
-### Tâche 2 — `setup_logging()`
+### Tâche 2 : `setup_logging()`
 
 **Faire.** Exporter depuis `adjeff` :
 
@@ -155,7 +155,7 @@ enregistrement `zarr` de niveau `DEBUG` ne l'atteint pas.
 
 ---
 
-### Tâche 3 — Durées et contexte
+### Tâche 3 : Durées et contexte
 
 **Faire.** Un context manager d'une dizaine de lignes dans
 `SceneModule.forward`, qui émet `module.start` en entrée et `module.done` en
@@ -173,7 +173,7 @@ sous-classes.
 
 ---
 
-### Tâche 4 — Convention `objet.action` et niveaux
+### Tâche 4 : Convention `objet.action` et niveaux
 
 **Faire.** Renommer les messages en `objet.action`, minuscules, sans
 ponctuation, jamais interpolés.
@@ -198,7 +198,7 @@ qu'aucun n'est une f-string.
 
 ---
 
-### Tâche 5 — Combler les trous
+### Tâche 5 : Combler les trous
 
 **Faire.** Quatre fichiers sont aujourd'hui à zéro log, et ce sont les chemins
 qui durent des heures :
@@ -225,7 +225,7 @@ seconde, échouer, ou être sauté produit une ligne.
 
 ---
 
-### Tâche 6 — Le niveau `warning`, aujourd'hui quasi vide
+### Tâche 6 : Le niveau `warning`, aujourd'hui quasi vide
 
 **Faire.** Deux `warning` existent dans tout le paquet
 (`optim/lbfgs_optimizer.py:110`, `utils/cache_store.py:148`). Les cas
@@ -244,7 +244,7 @@ Il ne manque que l'étage intermédiaire.
 
 ---
 
-### Tâche 7 — Sortie
+### Tâche 7 : Sortie
 
 **Faire.** Changelog. `makefig` du dépôt article appelle
 `adjeff.setup_logging(level="info")`. Mesure de silence rejouée et consignée.

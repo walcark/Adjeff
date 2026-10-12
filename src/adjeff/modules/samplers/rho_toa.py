@@ -40,10 +40,10 @@ class RhoToaSampler(SweepSampler):
     Parameters
     ----------
     atmo_config : AtmoConfig
-        Atmospheric parameters — may be full arrays (swept via
+        Atmospheric parameters, may be full arrays (swept via
         ``multi_profiles``).
     geo_config : GeoConfig
-        Geometry — ``vza`` and ``sza`` must be scalar per call.
+        Geometry; ``vza`` and ``sza`` must be scalar per call.
     remove_rayleigh : bool
         Suppress Rayleigh scattering.
     afgl_type : str

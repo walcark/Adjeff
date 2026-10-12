@@ -108,5 +108,11 @@ def grid(nx: int, ny: int, res: float) -> xr.Coordinates:
     halfy = ny * res * 0.5
     x = np.linspace(-halfx + res * 0.5, halfx - res * 0.5, nx)
     y = np.linspace(-halfy + res * 0.5, halfy - res * 0.5, ny)
-    coords = xr.Coordinates(dict(x=x, y=y))
-    return coords
+    # The unit rides on the coordinate, so `.plot()` labels the axes itself.
+    attrs = {"units": "km"}
+    return xr.Coordinates(
+        dict(
+            x=xr.DataArray(x, dims="x", attrs=attrs),
+            y=xr.DataArray(y, dims="y", attrs=attrs),
+        )
+    )

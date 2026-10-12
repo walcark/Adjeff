@@ -32,7 +32,7 @@ class RhoAtmSampler(AtmoSampler):
                   + t_up * t_down * rho_unif / (1 - sph_alb * rho_unif)
 
     All atmospheric and geometric parameters are swept as
-    ``vector_dims`` — a single Smart-G call handles all wavelengths,
+    ``vector_dims``: a single Smart-G call handles all wavelengths,
     aerosol states, and viewing angles simultaneously.
 
 

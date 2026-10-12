@@ -91,7 +91,7 @@ _ANALYTICAL_PSF_CASES = pytest.mark.parametrize(
 
 @pytest.fixture
 def flat_kernel(grid) -> np.ndarray:
-    """Uniform (n, n) kernel — sums to 1 after normalisation."""
+    """Uniform (n, n) kernel, sums to 1 after normalisation."""
     return np.ones((grid.n, grid.n), dtype=np.float32)
 
 

@@ -146,7 +146,7 @@ def _rad_weights(dists: torch.Tensor, mask_tensor: torch.Tensor | None) -> torch
 
 
 # ---------------------------------------------------------------------------
-# Metric enum — defined after functions so members can reference them
+# Metric enum, defined after functions so members can reference them
 # ---------------------------------------------------------------------------
 
 

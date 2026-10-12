@@ -42,21 +42,21 @@ __all__ = [
     "OptimizationWarning",
     "FullConfig",
     "MissingVariableError",
-    # API — loaders
+    # API: loaders
     "load_scene",
     "load_maja",
-    # API — config
+    # API: config
     "load_config",
     "make_full_config",
-    # API — model
+    # API: model
     "make_model",
     "fit",
     "fit_psf",
     "apply_psf",
-    # API — pipelines
+    # API: pipelines
     "run_forward_pipeline",
     "run_radiatives_from_scene",
-    # API — PSF sampling
+    # API: PSF sampling
     "sample_psf_atm",
     "sample_psf_atm_from_scene",
 ]

@@ -121,7 +121,7 @@ def fft_convolve_2D_torch(
             value=0.0,
         )
 
-    # Kernel padded — use F.pad so the gradient flows through in2.
+    # Kernel padded: use F.pad so the gradient flows through in2.
     in2_ext = torch.nn.functional.pad(in2, (0, ext_fft - k, 0, ext - k))
 
     # FFT-based linear conv

@@ -808,8 +808,8 @@ known case.
 ### Changed
 
 - **Every sampler runs on [xsweep](https://github.com/walcark/xsweep).**
-  The three that loop over geometry — `RhoToaSampler`, `RhoToaSymSampler`
-  and `WuPsfSampler` — declare `loop(sza, vza) vec(...)`: the sensor grid
+  The three that loop over geometry (`RhoToaSampler`, `RhoToaSymSampler`
+  and `WuPsfSampler`) declare `loop(sza, vza) vec(...)`: the sensor grid
   is rebuilt per angle, so a call carries one geometry and those axes
   cannot be batched.
 
@@ -817,7 +817,7 @@ known case.
   They declare a contract instead of a sweep: `batch(aot, rh, h, href,
   sza) vec(wl) -> tdir_down(wl)`. The atmospheric states stay sweep axes,
   so dedup and resumption keep working, but Smart-G still receives a
-  whole group per call — calling it once per state costs 3x, since it
+  whole group per call: calling it once per state costs 3x, since it
   amortises the atmospheric profile over the batch.
 
   `sweep_chunks` and `deduplicate_dims` become `batch_size` and `dedup`,

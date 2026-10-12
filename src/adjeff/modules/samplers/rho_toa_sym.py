@@ -37,7 +37,7 @@ class RhoToaSymSampler(SweepSampler):
     4. Writes ``rho_toa`` with dims ``(r, aot, rh, h, href)`` into the
        scene.
 
-    ``sza`` and ``vza`` are ``scalar_dims`` — sensor positions depend on
+    ``sza`` and ``vza`` are ``scalar_dims``: sensor positions depend on
     ``vza`` and cannot be vectorised within one call.
 
 
@@ -47,7 +47,7 @@ class RhoToaSymSampler(SweepSampler):
     atmo_config : AtmoConfig
         Atmospheric state: ``aot``, ``rh``, ``h``, ``href``.
     geo_config : GeoConfig
-        Geometry — ``vza`` and ``sza`` must be single-element per call.
+        Geometry; ``vza`` and ``sza`` must be single-element per call.
     remove_rayleigh : bool
         Suppress Rayleigh scattering.
     afgl_type : str

@@ -56,7 +56,13 @@ class PSFGrid:
         """Return centered xarray coordinates for the PSF grid."""
         half = (self.n // 2) * self.res
         coords = np.linspace(-half, half, self.n)
-        return xr.Coordinates({"x_psf": coords, "y_psf": coords})
+        attrs = {"units": "km"}
+        return xr.Coordinates(
+            {
+                "x_psf": xr.DataArray(coords, dims="x_psf", attrs=attrs),
+                "y_psf": xr.DataArray(coords, dims="y_psf", attrs=attrs),
+            }
+        )
 
     def meshgrid(
         self, device: torch.device | str | None = None

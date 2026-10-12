@@ -36,7 +36,7 @@ class TestMissingInputs:
         from adjeff.modules.loaders.maja_loader import MajaLoader
 
         loader = MajaLoader.__new__(MajaLoader)
-        loader.product_path = tmp_path  # real empty dir — no *ATB_R2.tif file
+        loader.product_path = tmp_path  # real empty dir, no *ATB_R2.tif file
         loader.as_map = False
 
         with pytest.raises(ImageIOError, match="AOT"):
@@ -46,7 +46,7 @@ class TestMissingInputs:
         from adjeff.modules.loaders.maja_loader import MajaLoader
 
         loader = MajaLoader.__new__(MajaLoader)
-        loader.mnt_path = tmp_path  # real empty dir — no DEM file
+        loader.mnt_path = tmp_path  # real empty dir, no DEM file
         loader.mtd = {"tile": "T31TGK"}
         loader.as_map = False
 
