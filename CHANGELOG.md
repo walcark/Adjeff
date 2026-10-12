@@ -38,13 +38,16 @@ code, and this release is the one to depend on.
 ### Added
 
 - **A validation against SOS**, the successive-orders code MAJA's own
-  lookup tables are built with. Median relative difference 0.12 % over
-  339 comparisons; see `validation/sos/README.md`.
+  lookup tables are built with: median relative difference 0.12 % over
+  339 comparisons. The harness it ran under is not kept in the tree.
 - **A notebook on evaluating a PSF**, covering `fit_psf`, `apply_psf`,
   the reference PSF and `adjeff.analysis`.
 
 ### Removed
 
+- **`SensorBand.from_wl`.** A wavelength identifies a band only once the
+  sensor is fixed, so the reverse lookup belongs to the caller, which is
+  the one that knows the tolerance it wants.
 - **The Sphinx tree.** `docs/guide.md` is the documentation, and the six
   notebooks run it.
 
