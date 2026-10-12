@@ -202,6 +202,11 @@ def fit_psf(
     return fit(model, train_images, stages=_stages, device=device)
 
 
+#: Where `apply_psf` writes by default: an estimate is not the truth a
+#: scene was built from, and `Unif2Surface` names both `rho_s`.
+ESTIMATE_SLOTS: dict[str, str] = {"rho_s": "rho_s_est"}
+
+
 def apply_psf(
     scene: ImageDict,
     tree: xr.DataTree,
@@ -211,6 +216,7 @@ def apply_psf(
     psf_type: type[PSFModule] | None = None,
     n: int | None = None,
     res_km: float | None = None,
+    rename: dict[str, str] | None = None,
     device: str = "cuda",
 ) -> ImageDict:
     """Return *scene* with the output of *model_cls* applied with *tree*.
@@ -235,11 +241,19 @@ def apply_psf(
     ------
     ConfigurationError
         If *n* is given without *psf_type*.
+
+    Notes
+    -----
+    The estimate lands in ``rho_s_est``, not in ``rho_s``: a scene built
+    from a known surface carries its truth there.  Pass ``rename={}`` to
+    write the model's own role names instead.
     """
     from adjeff.exceptions import ConfigurationError
 
     if n is not None and psf_type is None:
         raise ConfigurationError("`psf_type` is required when `n` is provided.")
+
+    _rename = ESTIMATE_SLOTS if rename is None else rename
 
     if n is not None and psf_type is not None:
         params: dict[str, float] = {
@@ -249,9 +263,10 @@ def apply_psf(
         model = model_cls(
             psfs=_build_psfs(psf_type, [band], _res_km, n, params),
             device=device,
+            rename=_rename,
         )
     else:
-        model = model_cls(kernels=tree, device=device)
+        model = model_cls(kernels=tree, device=device, rename=_rename)
 
     model.eval()
     return model(scene)  # type: ignore[no-any-return]
