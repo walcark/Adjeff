@@ -245,7 +245,8 @@ class TestMisuse:
         with pytest.raises(AdjeffAccessorError, match="requires n"):
             flat_da.adjeff.radial("adaptive")
 
-    def test_transect_non_2d_raises(self):
+    def test_a_swept_field_is_mapped_over_rather_than_refused(self):
+        """It used to demand a 2-D input and tell the caller to squeeze."""
         da_3d = xr.DataArray(
             np.ones((3, 5, 5), dtype=np.float32),
             dims=["aot", "y", "x"],
@@ -255,8 +256,10 @@ class TestMisuse:
                 "x": np.linspace(-2, 2, 5),
             },
         )
-        with pytest.raises(AdjeffAccessorError, match="2-D"):
-            da_3d.adjeff.transect(0.0)
+
+        out = da_3d.adjeff.transect(0.0)
+
+        assert out.dims == ("aot", "s")
 
 
 class TestTidy:

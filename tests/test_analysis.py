@@ -18,6 +18,7 @@ from adjeff.analysis import (
     encircled_radius,
     fwhm,
     mtf,
+    radial_profile,
 )
 from adjeff.core import GaussPSF, KingPSF, PSFGrid, S2Band
 
@@ -388,3 +389,52 @@ class TestPlaneNormalisation:
 
         with pytest.raises(ConfigurationError, match="'grid' or 'plane'"):
             encircled_energy(kernel, normalize="full")
+
+
+class TestSweptDimensions:
+    """A reduction keeps the dimensions it does not read, as xarray does.
+
+    A kernel fitted over several states carries them, and the point is
+    that ``profile.plot(hue="aot")`` draws one line per state.  Each of
+    these used to raise on an input wider than two dimensions.
+    """
+
+    @staticmethod
+    def _swept() -> xr.DataArray:
+        """Return one kernel per AOT, two states that differ."""
+        narrow = KingPSF(PSFGrid(RES_KM, 51), BAND, sigma=0.2, gamma=1.2)
+        wide = KingPSF(PSFGrid(RES_KM, 51), BAND, sigma=0.5, gamma=1.5)
+        return xr.concat(
+            [narrow.to_dataarray(), wide.to_dataarray()],
+            dim=xr.DataArray([0.2, 0.8], dims=["aot"], name="aot"),
+        )
+
+    @pytest.mark.parametrize(
+        ("reduce", "axis"),
+        [
+            (radial_profile, "r"),
+            (encircled_energy, "r"),
+            (mtf, "f"),
+        ],
+    )
+    def test_the_swept_dimension_survives(self, reduce, axis):
+        out = reduce(self._swept())
+
+        assert out.dims == ("aot", axis)
+        assert out.sizes["aot"] == 2
+
+    def test_each_slice_is_reduced_on_its_own(self):
+        """A shared result would make the extra dimension decorative."""
+        out = radial_profile(self._swept())
+
+        assert float(abs(out.isel(aot=0) - out.isel(aot=1)).max()) > 0.0
+
+    def test_a_plain_two_dimensional_kernel_is_unchanged(self):
+        psf = KingPSF(PSFGrid(RES_KM, 51), BAND, sigma=0.2, gamma=1.2)
+
+        assert radial_profile(psf.to_dataarray()).dims == ("r",)
+
+    def test_two_swept_dimensions_both_survive(self):
+        out = radial_profile(self._swept().expand_dims(rh=[50.0, 90.0]))
+
+        assert out.dims == ("rh", "aot", "r")

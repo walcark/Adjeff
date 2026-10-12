@@ -26,6 +26,7 @@ from adjeff.exceptions import ConfigurationError
 from adjeff.utils.radial import RadialBinning
 
 from ._plane import grid_share
+from ._vectorise import over_slices
 
 __all__ = [
     "encircled_energy",
@@ -54,6 +55,13 @@ def _as_grid(
 
 
 def encircled_energy(
+    kernel: xr.DataArray, *, normalize: Literal["grid", "plane"] = "grid"
+) -> xr.DataArray:
+    """Return :func:`_encircled_energy_one` over every 2-D slice."""
+    return over_slices(_encircled_energy_one, kernel, normalize=normalize)
+
+
+def _encircled_energy_one(
     kernel: xr.DataArray, *, normalize: Literal["grid", "plane"] = "grid"
 ) -> xr.DataArray:
     """Return the energy fraction enclosed by each radius, on dim ``"r"``.
@@ -157,6 +165,11 @@ def fwhm(kernel: xr.DataArray) -> float:
 
 
 def mtf(kernel: xr.DataArray) -> xr.DataArray:
+    """Return the azimuthally averaged MTF, extra dimensions kept."""
+    return over_slices(_mtf_one, kernel)
+
+
+def _mtf_one(kernel: xr.DataArray) -> xr.DataArray:
     """Return the azimuthally averaged MTF of a kernel, 1 at zero frequency.
 
     On dim ``"f"``, in cycles per coordinate unit, up to Nyquist.

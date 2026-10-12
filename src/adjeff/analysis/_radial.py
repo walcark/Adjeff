@@ -34,6 +34,8 @@ from adjeff.utils.radial import (
     radial_distances,
 )
 
+from ._vectorise import over_slices
+
 __all__ = ["radial_profile", "resolution", "to_field", "transect"]
 
 
@@ -78,6 +80,31 @@ def radial_profile(
     AdjeffAccessorError
         On an unknown *stat*, or ``"adaptive"`` without *n*.
     """
+    return over_slices(
+        _radial_one,
+        da,
+        stat,
+        center,
+        n_bins,
+        normalize=normalize,
+        n=n,
+        max_gap=max_gap,
+        symmetric=symmetric,
+    )
+
+
+def _radial_one(
+    da: xr.DataArray,
+    stat: Literal["mean", "cdf", "std", "adaptive"] = "mean",
+    center: tuple[float, float] | None = None,
+    n_bins: int | None = None,
+    *,
+    normalize: bool = True,
+    n: int | None = None,
+    max_gap: float | None = None,
+    symmetric: bool = False,
+) -> xr.DataArray:
+    """Return :func:`radial_profile` of one 2-D slice."""
     profile = _radial_profile(
         da,
         stat,
@@ -173,6 +200,16 @@ def transect(
     center: tuple[float, float] | None = None,
     n_points: int | None = None,
 ) -> xr.DataArray:
+    """Return :func:`_transect_one` over every 2-D slice."""
+    return over_slices(_transect_one, da, angle, center, n_points=n_points)
+
+
+def _transect_one(
+    da: xr.DataArray,
+    angle: float,
+    center: tuple[float, float] | None = None,
+    n_points: int | None = None,
+) -> xr.DataArray:
     """Return the values of the 2-D *da* along a line through its centre.
 
     The line points to *angle* [°, counterclockwise from +x] on its
@@ -191,8 +228,9 @@ def transect(
 
     if da.ndim != 2:
         raise AdjeffAccessorError(
-            f"transect requires a 2-D (y, x) DataArray; "
-            f"got shape {da.shape}. Call .squeeze() first."
+            f"a transect is read on a 2-D (y, x) slice; got shape "
+            f"{da.shape}.  `transect` maps over the other dimensions, so "
+            "this is reached only on a slice that is not a field."
         )
 
     x = da.coords["x"].values
