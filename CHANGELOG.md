@@ -5,15 +5,48 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0]
+
+The API is stable. Nothing in `adjeff.api` has changed name or meaning
+since 0.13, the Smart-G 2.0 port is validated against an independent
+code, and this release is the one to depend on.
 
 ### Changed
 
-- **`RTLSSurface` takes its weights as three keywords again.** Smart-G
-  1.1 raised on `k0=`, `k1p=` and `k2p=`, writing into the tuple default
-  they were given, so `05fb0ae` had to pass the `kp` triple and silence
-  its deprecation warning. 2.0 fixed the three and deprecated `kp`, so
-  the workaround and the warning filter are gone.
+- **`apply_psf` writes its estimate to `rho_s_est`.** It used to write
+  `rho_s`, the name a scene built from a known surface already carries
+  its truth under. Pass `rename={}` for the old behaviour.
+- **The Wu et al. kernel comes out on a PSF grid**, `(y_psf, x_psf)`
+  with its provenance attrs, rather than on the scene's own `x` and `y`.
+  `apply_psf` now accepts it.
+- **The forward pipeline records `saa` and `vaa`.** They were sampler
+  constants and never reached the output, so one scene could not serve
+  both `fit_psf` and `apply_psf`.
+- **`RTLSSurface` takes its weights as three keywords.** Smart-G 1.1
+  raised on `k0=`, `k1p=` and `k2p=`; 2.0 fixed them and deprecated the
+  `kp` triple, so the workaround is gone.
+- **`adjeff.api` is a package**, one module per responsibility. The
+  fourteen exported names are unchanged.
+
+### Fixed
+
+- **The albedo map is capped at what Smart-G can hold**, 100 levels.
+  `RhoToaSampler` asked for 1000 and failed inside the kernel setup.
+- **`load_config(aggregate=True)` keeps a dimension.** A reduced field
+  came back 0-d and the samplers had nothing to allocate from.
+
+### Added
+
+- **A validation against SOS**, the successive-orders code MAJA's own
+  lookup tables are built with. Median relative difference 0.12 % over
+  339 comparisons; see `validation/sos/README.md`.
+- **A notebook on evaluating a PSF**, covering `fit_psf`, `apply_psf`,
+  the reference PSF and `adjeff.analysis`.
+
+### Removed
+
+- **The Sphinx tree.** `docs/guide.md` is the documentation, and the six
+  notebooks run it.
 
 ## [0.15.0]
 
