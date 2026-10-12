@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TypeVar, cast
 
+import numpy as np
+
 from adjeff.atmosphere import AtmoConfig, GeoConfig, SpectralConfig
 from adjeff.core import (
     ImageDict,  # noqa: E402
@@ -107,7 +109,14 @@ def run_forward_pipeline(
         stream_dims=stream_dims,
     )
 
-    return _map_scenes(scene, pipeline)
+    out = _map_scenes(scene, pipeline)
+    # `saa` and `vaa` are statics of the samplers, so they never reach the
+    # output on their own.  Recorded here so the scene describes the
+    # geometry it was simulated at, which is what `load_config` reads back.
+    return _map_scenes(
+        out,
+        lambda one: _with_azimuths(one, geo_config),
+    )
 
 
 def run_radiatives_from_scene(
@@ -147,3 +156,28 @@ def run_radiatives_from_scene(
         return s
 
     return _map_scenes(scene, _run)
+
+
+def _with_azimuths(scene: ImageDict, geo_config: GeoConfig) -> ImageDict:
+    """Return *scene* carrying the azimuths its samplers took as constants.
+
+    Parameters
+    ----------
+    scene : ImageDict
+        A scene the radiative pipeline has just written into.
+    geo_config : GeoConfig
+        The geometry it was run at.
+
+    Returns
+    -------
+    ImageDict
+        The same scene, with ``saa`` and ``vaa`` as scalar coordinates.
+    """
+    out = scene.shallow_copy()
+    azimuths = {
+        name: float(np.asarray(getattr(geo_config, name)).ravel()[0])
+        for name in ("saa", "vaa")
+    }
+    for band in out.bands:
+        out[band] = out[band].assign_coords(azimuths)
+    return out

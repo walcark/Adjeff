@@ -111,3 +111,33 @@ class TestSampledKernel:
         kernel = self._wu_like()[BAND.id].ds["kernel"]
         with pytest.raises(ConfigurationError):
             grid_share(kernel, radius_km=RES * N)
+
+
+class TestOneSceneForBoth:
+    """The scene the forward pipeline writes is the scene `fit_psf` reads."""
+
+    def test_the_pipeline_records_the_azimuths_it_simulated_at(self):
+        """`saa` and `vaa` are sampler statics, so nothing else carries them."""
+        from adjeff.api import make_full_config
+        from adjeff.api._pipeline import _with_azimuths
+
+        cfg = make_full_config(bands=[BAND], saa=120.0, vaa=30.0)
+        out = _with_azimuths(_scene(carries_atmosphere=False), cfg["geo_config"])
+
+        assert float(out[BAND].coords["saa"]) == 120.0
+        assert float(out[BAND].coords["vaa"]) == 30.0
+
+    def test_load_config_reads_the_eight_fields_off_coordinates(self):
+        """They need not be data variables, which is what clashed on merge."""
+        from adjeff.api import load_config, make_full_config
+        from adjeff.api._pipeline import _with_azimuths
+
+        cfg = make_full_config(bands=[BAND], saa=0.0, vaa=0.0)
+        scene = _with_azimuths(_scene(carries_atmosphere=False), cfg["geo_config"])
+        ds = scene[BAND].assign_coords(sza=40.0, vza=0.0)
+        scene[BAND] = ds
+
+        read = load_config(scene, BAND, aggregate=True)
+
+        assert not [n for n in ("aot", "saa") if n in ds.data_vars]
+        assert float(read["atmo_config"].aot.squeeze()) == SWEPT["aot"]
