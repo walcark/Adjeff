@@ -635,11 +635,7 @@ def rho_toa_sym(
             rho_atm = rho_atm.sel({dim: value}, method="nearest", drop=True)
     result = result + rho_atm
 
-    # Reconstruct 2-D field from radial profile: `.compute()` materialises
-    # dask chunks introduced by `+ rho_atm` above, because `to_field` uses
-    # `apply_ufunc` without dask support.
-    # TODO: add dask support to apply_ufunc with parallelize=True.
-    return xr.DataArray(result.compute().adjeff.to_field(rho_s).sel(wl=band.wl_nm))
+    return xr.DataArray(result.adjeff.to_field(rho_s).sel(wl=band.wl_nm))
 
 
 def _radial_sensors(

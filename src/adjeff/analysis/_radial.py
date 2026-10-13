@@ -276,9 +276,12 @@ def to_field(da: xr.DataArray, target_ds: xr.Dataset) -> xr.DataArray:
 
     result = xr.apply_ufunc(
         _interp,
-        da,
+        da.chunk({"r": -1}) if da.chunks else da,
         input_core_dims=[["r"]],
         output_core_dims=[["y", "x"]],
         vectorize=True,
+        dask="parallelized",
+        output_dtypes=[da.dtype],
+        dask_gufunc_kwargs={"output_sizes": {"y": y.size, "x": x.size}},
     )
     return xr.DataArray(result.assign_coords(y=y, x=x))
