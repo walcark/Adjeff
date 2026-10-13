@@ -159,13 +159,14 @@ class SceneModule:
                 slot = self._slot(role)
                 if slot not in ds:
                     continue
-                values = np.asarray(ds[slot].values)
+                values = ds[slot]
                 if values.dtype.kind not in "fc":
                     continue
-                finite = np.isfinite(values)
-                if bool(finite.all()):
+                # Reduced rather than materialised: a lazy output is read
+                # back one chunk at a time instead of all at once.
+                bad = int((~np.isfinite(values)).sum())
+                if not bad:
                     continue
-                bad = int(values.size - finite.sum())
                 raise ComputationError(
                     f"{type(self).__name__} produced {bad} non-finite "
                     f"value(s) out of {values.size} in {slot!r} for band "
