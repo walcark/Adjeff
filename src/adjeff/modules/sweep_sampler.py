@@ -10,6 +10,7 @@ Classes
 from __future__ import annotations
 
 import functools
+import hashlib
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import numpy as np
@@ -153,10 +154,20 @@ class SweepSampler(SceneModule):
         return SweepPolicy(
             batch_size=self.batch_size,
             dedup=self.dedup,
-            store=str(root / "sweeps" / type(self).__name__),
+            store=str(root / "sweeps" / self._store_name(space)),
             chunks=self._chunks(space),
             load=False,
         )
+
+    def _store_name(self, space: xr.Dataset) -> str:
+        """Return a store directory unique to the sampler and its grid.
+
+        A store cannot be resumed once an axis has changed, so the axes are
+        part of its name.
+        """
+        axes = {str(d): space[d].values.tolist() for d in space.dims}
+        digest = hashlib.sha1(repr(sorted(axes.items())).encode()).hexdigest()
+        return f"{type(self).__name__}-{digest[:8]}"
 
     def _chunks(self, space: xr.Dataset) -> dict[str, int]:
         """Return the chunk widths that give batches of ``batch_size`` states.

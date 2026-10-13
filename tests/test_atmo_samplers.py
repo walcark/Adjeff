@@ -199,7 +199,7 @@ class TestSweepPolicy:
         )
         policy = sampler._policy(sampler._space())
         vec = {var.name for var in sampler._contract.vec}
-        assert str(policy.store).endswith("RhoToaSymSampler")
+        assert "RhoToaSymSampler" in str(policy.store)
         assert set(policy.chunks) <= vec
         assert policy.load is False
 
