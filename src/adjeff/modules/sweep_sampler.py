@@ -137,20 +137,14 @@ class SweepSampler(SceneModule):
         out: xr.DataArray = result[self._contract.outputs[0]]
         return out
 
-    #: Output dims that make a sweep worth writing through to disk.
     _SPATIAL: ClassVar[frozenset[str]] = frozenset({"x", "y", "x_psf", "y_psf"})
 
     def _policy(self, space: xr.Dataset) -> SweepPolicy:
-        """Return the sweep policy, writing through the cache when it pays.
+        """Return the sweep policy.
 
-        A sweep whose output carries the image dims weighs one image per
-        state, so it is written to zarr as it is produced and handed back
-        lazily: the peak is one batch rather than the whole space.  One
-        chunk per state, as the scene cache does.
-
-        A sweep that returns a spectrum per state weighs kilobytes, and is
-        assembled in memory as before: a store would cost more than it
-        saves.  Without a cache directory, neither is written.
+        A sweep whose output carries the image dims is written to zarr as
+        it is produced and read back lazily, one chunk per state.  Any
+        other sweep, or no cache directory, is assembled in memory.
         """
         policy = SweepPolicy(batch_size=self.batch_size, dedup=self.dedup)
         root = self._cache.cache_dir
