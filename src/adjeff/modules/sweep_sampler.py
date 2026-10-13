@@ -150,13 +150,13 @@ class SweepSampler(SceneModule):
         root = self._cache.cache_dir
         if root is None or not self._SPATIAL & set(self._contract.out_dims):
             return policy
-        per_state = {str(d): 1 for d in space.dims}
         return SweepPolicy(
             batch_size=self.batch_size,
             dedup=self.dedup,
             store=str(root / "sweeps" / type(self).__name__),
-            store_chunks=per_state,
-            chunks=per_state,
+            chunks={
+                var.name: 1 for var in self._contract.vec if var.name in space.dims
+            },
             load=False,
         )
 

@@ -10,6 +10,8 @@ import inspect
 import re
 
 import pytest
+import xarray as xr
+from xsweep.policy import UNSET
 
 import adjeff.atmosphere as atmo
 from adjeff.core import S2Band
@@ -168,3 +170,52 @@ class TestGeometryDependence:
 
         with pytest.raises(ValueError, match="RhoAtmSampler needs 'saa'"):
             sampler._statics()
+
+
+class TestSweepPolicy:
+    """Which sweeps are written through to the store."""
+
+    def test_a_spatial_sweep_is_chunked_on_its_vectorised_dims(self, tmp_path):
+        from adjeff.modules.samplers import RhoToaSymSampler
+        from adjeff.utils import CacheStore
+
+        sampler = RhoToaSymSampler(
+            atmo_config=atmo.AtmoConfig(
+                aot=xr.DataArray([0.1, 0.2], dims=["aot"]),
+                rh=xr.DataArray([50.0], dims=["rh"]),
+                h=xr.DataArray([0.0], dims=["h"]),
+                href=xr.DataArray([2.0], dims=["href"]),
+                species={"sulphate": 1.0},
+            ),
+            geo_config=atmo.GeoConfig(
+                sza=xr.DataArray([40.0], dims=["sza"]),
+                vza=xr.DataArray([0.0], dims=["vza"]),
+                saa=xr.DataArray([0.0], dims=["saa"]),
+                vaa=xr.DataArray([0.0], dims=["vaa"]),
+            ),
+            remove_rayleigh=False,
+            cache=CacheStore(tmp_path),
+        )
+        policy = sampler._policy(sampler._space())
+        vec = {var.name for var in sampler._contract.vec}
+        assert str(policy.store).endswith("RhoToaSymSampler")
+        assert set(policy.chunks) <= vec
+        assert policy.load is False
+
+    def test_a_spectral_sweep_is_left_in_memory(self, tmp_path):
+        from adjeff.modules.samplers import SphAlbSampler
+        from adjeff.utils import CacheStore
+
+        sampler = SphAlbSampler(
+            atmo_config=atmo.AtmoConfig(
+                aot=xr.DataArray([0.1], dims=["aot"]),
+                rh=xr.DataArray([50.0], dims=["rh"]),
+                h=xr.DataArray([0.0], dims=["h"]),
+                href=xr.DataArray([2.0], dims=["href"]),
+                species={"sulphate": 1.0},
+            ),
+            spectral_config=atmo.SpectralConfig.from_bands([S2Band.B02]),
+            remove_rayleigh=False,
+            cache=CacheStore(tmp_path),
+        )
+        assert sampler._policy(sampler._space()).store is UNSET
