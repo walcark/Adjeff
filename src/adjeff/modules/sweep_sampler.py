@@ -133,13 +133,33 @@ class SweepSampler(SceneModule):
         if spectral is not None:
             plan["bands"] = len(spectral.bands)
         self._log.info("sweep.plan", **plan)
-        result = sweeper(
-            space,
-            policy=SweepPolicy(batch_size=self.batch_size, dedup=self.dedup),
-            **statics,
-        )
+        result = sweeper(space, policy=self._policy(space), **statics)
         out: xr.DataArray = result[self._contract.outputs[0]]
         return out
+
+    def _policy(self, space: xr.Dataset) -> SweepPolicy:
+        """Return the sweep policy, writing through the cache when there is one.
+
+        Without a cache directory the sweep is assembled in memory, which is
+        what a small space wants.  With one, xsweep writes each batch to zarr
+        and hands back a lazy array: the peak is then one batch rather than
+        the whole space, which is what a scene swept over tens of atmospheric
+        states needs.  One chunk per state, as the scene cache does.
+        """
+        policy = SweepPolicy(batch_size=self.batch_size, dedup=self.dedup)
+        root = self._cache.cache_dir
+        if root is None:
+            return policy
+        spatial = {"x", "y", "x_psf", "y_psf", "r"}
+        swept = [str(d) for d in space.dims]
+        return SweepPolicy(
+            batch_size=self.batch_size,
+            dedup=self.dedup,
+            store=str(root / "sweeps" / type(self).__name__),
+            store_chunks={d: 1 for d in swept},
+            chunks={d: 1 for d in swept} | {d: -1 for d in spatial},
+            load=False,
+        )
 
     def _compute(self, scene: "ImageDict") -> "ImageDict":
         """Run the sweep and write its output into every declared band."""
