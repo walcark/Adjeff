@@ -57,6 +57,7 @@ def run_forward_pipeline(
     afgl_type: str = "afgl_exp_h8km",
     nr: int = 500,
     n_ph: int = int(1e5),
+    n_ph_radiative: int | None = None,
     batch_size: int = 64,
     rtls: tuple[float, float, float] | None = None,
     stream_dims: dict[str, int] | None = None,
@@ -75,6 +76,12 @@ def run_forward_pipeline(
         Scene(s) holding ``rho_s``.
     nr, n_ph : int, optional
         Radii and photons per sensor of ``rho_toa``.
+    n_ph_radiative : int or None, optional
+        Photons per call of the six radiative samplers.  ``None`` keeps
+        the default each one declares, which differ by orders of
+        magnitude: a direct transmittance converges in a few photons, a
+        path reflectance does not.  A single number is what a smoke run
+        wants, the physics being meaningless there anyway.
     batch_size : int, optional
         Atmospheric states per Smart-G call; changes the cost only.
     rtls : tuple[float, float, float] or None, optional
@@ -94,6 +101,7 @@ def run_forward_pipeline(
         cache=cache,
         batch_size=batch_size,
         rtls=rtls,
+        n_ph=n_ph_radiative,
     )
     rho_toa = RhoToaSymSampler(
         atmo_config=atmo_config,

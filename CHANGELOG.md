@@ -25,6 +25,13 @@ PSF fit being the case that motivated it.
 - **`to_field` keeps a dask profile lazy**, which is what makes the peak
   independent of `batch_size`.
 
+### Added
+
+- **`run_forward_pipeline(n_ph_radiative=...)`**, one photon budget for
+  the six radiative samplers. Their defaults differ by orders of
+  magnitude, which is right for physics and wrong for a smoke run: a
+  pipeline asked for a hundred photons still launched billions.
+
 ### Fixed
 
 - **The non-finite guard reduces instead of materialising.** It read the

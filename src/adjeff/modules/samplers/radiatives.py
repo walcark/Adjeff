@@ -36,6 +36,10 @@ class RadiativePipeline(Pipeline):
         Suppress Rayleigh scattering.
     afgl_type : str, optional
         AFGL atmosphere profile.
+    n_ph : int or None, optional
+        Photons per call of every Monte-Carlo sampler, overriding the four
+        below.  They differ by orders of magnitude on purpose, so a single
+        number is for a smoke run rather than for physics.
     n_ph_sph_alb, n_ph_rho_atm, n_ph_tdif_up, n_ph_tdif_down : int, optional
         Photons per call of each Monte-Carlo sampler.
     cache, batch_size, dedup : optional
@@ -57,6 +61,7 @@ class RadiativePipeline(Pipeline):
         spectral_config: SpectralConfig,
         remove_rayleigh: bool,
         afgl_type: str = "afgl_exp_h8km",
+        n_ph: int | None = None,
         n_ph_sph_alb: int = int(2e7),
         n_ph_rho_atm: int = int(2e7),
         n_ph_tdif_up: int = int(3e7),
@@ -67,6 +72,8 @@ class RadiativePipeline(Pipeline):
         rtls: tuple[float, float, float] | None = None,
         rename: dict[str, str] | None = None,
     ) -> None:
+        if n_ph is not None:
+            n_ph_sph_alb = n_ph_rho_atm = n_ph_tdif_up = n_ph_tdif_down = n_ph
         common: dict[str, Any] = dict(
             atmo_config=atmo_config,
             geo_config=geo_config,
