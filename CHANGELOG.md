@@ -5,6 +5,32 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0]
+
+Memory and reuse on a sweep that returns images, the forward pipeline of a
+PSF fit being the case that motivated it.
+
+### Changed
+
+- **A cached sweep is written through to zarr and read back lazily.** It
+  applies to the samplers whose output carries the image dims, and only
+  when the module has a cache directory; a sweep returning a spectrum per
+  state is still assembled in memory. Two consequences: the three training
+  scenes of a fit share one Smart-G run instead of three, and the result a
+  module hands on is dask-backed rather than numpy.
+- **`batch_size` controls the batching.** It did not before: xsweep took
+  the whole space in one call whatever its value. Measured on a 3999 pixel
+  grid, a batch of 24 states costs five times the time of three batches of
+  8 for the same memory, so the default of 64 is now worth lowering.
+- **`to_field` keeps a dask profile lazy**, which is what makes the peak
+  independent of `batch_size`.
+
+### Fixed
+
+- **The non-finite guard reduces instead of materialising.** It read the
+  whole output back into memory, plus a boolean mask of the same shape,
+  right before writing it to the cache.
+
 ## [1.0.0]
 
 The API is stable. Nothing in `adjeff.api` has changed name or meaning
