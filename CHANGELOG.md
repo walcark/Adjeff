@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0]
+
+### Added
+
+- **`run_forward_pipeline(n_ph_radiative=...)`**, one photon budget for
+  the six radiative samplers, also reachable as `RadiativePipeline(n_ph=)`.
+  Their defaults differ by orders of magnitude, which is right for physics
+  and wrong for a smoke run: a pipeline asked for a hundred photons still
+  launched billions. Measured on one slab of the PSF lookup table, the
+  radiative pipeline falls from 630 s to 60 s.
+
 ## [1.1.0]
 
 Memory and reuse on a sweep that returns images, the forward pipeline of a
@@ -24,13 +35,6 @@ PSF fit being the case that motivated it.
   8 for the same memory, so the default of 64 is now worth lowering.
 - **`to_field` keeps a dask profile lazy**, which is what makes the peak
   independent of `batch_size`.
-
-### Added
-
-- **`run_forward_pipeline(n_ph_radiative=...)`**, one photon budget for
-  the six radiative samplers. Their defaults differ by orders of
-  magnitude, which is right for physics and wrong for a smoke run: a
-  pipeline asked for a hundred photons still launched billions.
 
 ### Fixed
 
