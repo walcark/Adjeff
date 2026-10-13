@@ -154,11 +154,25 @@ class SweepSampler(SceneModule):
             batch_size=self.batch_size,
             dedup=self.dedup,
             store=str(root / "sweeps" / type(self).__name__),
-            chunks={
-                var.name: 1 for var in self._contract.vec if var.name in space.dims
-            },
+            chunks=self._chunks(space),
             load=False,
         )
+
+    def _chunks(self, space: xr.Dataset) -> dict[str, int]:
+        """Return the chunk widths that give batches of ``batch_size`` states.
+
+        The vectorised dims are split from the last to the first: those that
+        fit whole stay whole, and the one that overflows carries the
+        remainder.
+        """
+        chunks: dict[str, int] = {}
+        room = self.batch_size
+        names = [v.name for v in self._contract.vec if v.name in space.dims]
+        for name in reversed(names):
+            size = space.sizes[name]
+            chunks[name] = max(1, min(size, room))
+            room = max(1, room // size)
+        return chunks
 
     def _compute(self, scene: "ImageDict") -> "ImageDict":
         """Run the sweep and write its output into every declared band."""

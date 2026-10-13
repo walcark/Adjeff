@@ -9,6 +9,7 @@ them.
 import inspect
 import re
 
+import numpy as np
 import pytest
 import xarray as xr
 from xsweep.policy import UNSET
@@ -201,6 +202,31 @@ class TestSweepPolicy:
         assert str(policy.store).endswith("RhoToaSymSampler")
         assert set(policy.chunks) <= vec
         assert policy.load is False
+
+    def test_the_chunks_hold_a_batch_of_states(self, tmp_path):
+        from adjeff.modules.samplers import RhoToaSymSampler
+        from adjeff.utils import CacheStore
+
+        sampler = RhoToaSymSampler(
+            atmo_config=atmo.AtmoConfig(
+                aot=xr.DataArray([0.0, 0.1, 0.2, 0.3], dims=["aot"]),
+                rh=xr.DataArray([50.0, 90.0], dims=["rh"]),
+                h=xr.DataArray([0.0, 3.0], dims=["h"]),
+                href=xr.DataArray([2.0], dims=["href"]),
+                species={"sulphate": 1.0},
+            ),
+            geo_config=atmo.GeoConfig(
+                sza=xr.DataArray([40.0], dims=["sza"]),
+                vza=xr.DataArray([0.0], dims=["vza"]),
+                saa=xr.DataArray([0.0], dims=["saa"]),
+                vaa=xr.DataArray([0.0], dims=["vaa"]),
+            ),
+            remove_rayleigh=False,
+            batch_size=4,
+            cache=CacheStore(tmp_path),
+        )
+        chunks = sampler._policy(sampler._space()).chunks
+        assert np.prod(list(chunks.values())) == 4
 
     def test_a_spectral_sweep_is_left_in_memory(self, tmp_path):
         from adjeff.modules.samplers import SphAlbSampler
