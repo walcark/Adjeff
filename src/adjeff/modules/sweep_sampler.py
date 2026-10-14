@@ -13,6 +13,7 @@ import functools
 import hashlib
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
+import joblib  # type: ignore[import-untyped]
 import numpy as np
 import xarray as xr
 from xsweep import Sweeper, SweepPolicy
@@ -134,13 +135,13 @@ class SweepSampler(SceneModule):
         if spectral is not None:
             plan["bands"] = len(spectral.bands)
         self._log.info("sweep.plan", **plan)
-        result = sweeper(space, policy=self._policy(space), **statics)
+        result = sweeper(space, policy=self._policy(space, bound), **statics)
         out: xr.DataArray = result[self._contract.outputs[0]]
         return out
 
     _SPATIAL: ClassVar[frozenset[str]] = frozenset({"x", "y", "x_psf", "y_psf"})
 
-    def _policy(self, space: xr.Dataset) -> SweepPolicy:
+    def _policy(self, space: xr.Dataset, bound: dict[str, Any]) -> SweepPolicy:
         """Return the sweep policy.
 
         A sweep whose output carries the image dims is written to zarr as
@@ -154,24 +155,41 @@ class SweepSampler(SceneModule):
         return SweepPolicy(
             batch_size=self.batch_size,
             dedup=self.dedup,
-            store=str(root / "sweeps" / self._store_name(space)),
+            store=str(root / "sweeps" / self._store_name(space, bound)),
             chunks=self._chunks(space),
             load=False,
         )
 
-    def _store_name(self, space: xr.Dataset) -> str:
-        """Return a store directory unique to the sampler, its grid and statics.
+    def _store_name(self, space: xr.Dataset, bound: dict[str, Any]) -> str:
+        """Return a store directory unique to everything the results depend on.
 
-        A store cannot be resumed once anything it was written with has
-        changed, the aerosol species as much as an axis, so both are part
-        of its name.
+        The axes and the statics, which xsweep fingerprints itself, and the
+        scene data bound to the physics, which it does not: two training
+        scenes sweep the same space and must not share a store.
         """
         axes = {str(d): space[d].values.tolist() for d in space.dims}
         statics = {k: repr(v) for k, v in self._statics().items()}
         digest = hashlib.sha1(
-            repr((sorted(axes.items()), sorted(statics.items()))).encode()
+            repr(
+                (
+                    sorted(axes.items()),
+                    sorted(statics.items()),
+                    sorted(self._bound_hashes(bound).items()),
+                )
+            ).encode()
         ).hexdigest()
         return f"{type(self).__name__}-{digest[:8]}"
+
+    @staticmethod
+    def _bound_hashes(bound: dict[str, Any]) -> dict[str, str]:
+        """Return a stable hash of each scene object bound to the physics."""
+        hashes: dict[str, str] = {}
+        for name, value in bound.items():
+            if isinstance(value, (xr.Dataset, xr.DataArray)):
+                hashes[name] = str(joblib.hash(value))
+            else:
+                hashes[name] = repr(value)
+        return hashes
 
     def _chunks(self, space: xr.Dataset) -> dict[str, int]:
         """Return the chunk widths that give batches of ``batch_size`` states.

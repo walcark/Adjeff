@@ -197,7 +197,7 @@ class TestSweepPolicy:
             remove_rayleigh=False,
             cache=CacheStore(tmp_path),
         )
-        policy = sampler._policy(sampler._space())
+        policy = sampler._policy(sampler._space(), {})
         vec = {var.name for var in sampler._contract.vec}
         assert "RhoToaSymSampler" in str(policy.store)
         assert set(policy.chunks) <= vec
@@ -225,7 +225,7 @@ class TestSweepPolicy:
             batch_size=4,
             cache=CacheStore(tmp_path),
         )
-        chunks = sampler._policy(sampler._space()).chunks
+        chunks = sampler._policy(sampler._space(), {}).chunks
         assert np.prod(list(chunks.values())) == 4
 
     def test_a_spectral_sweep_is_left_in_memory(self, tmp_path):
@@ -244,7 +244,7 @@ class TestSweepPolicy:
             remove_rayleigh=False,
             cache=CacheStore(tmp_path),
         )
-        assert sampler._policy(sampler._space()).store is UNSET
+        assert sampler._policy(sampler._space(), {}).store is UNSET
 
     def test_two_species_do_not_share_a_store(self, tmp_path):
         from adjeff.modules.samplers import RhoToaSymSampler
@@ -268,6 +268,40 @@ class TestSweepPolicy:
                 remove_rayleigh=False,
                 cache=CacheStore(tmp_path),
             )
-            return str(sampler._policy(sampler._space()).store)
+            return str(sampler._policy(sampler._space(), {}).store)
 
         assert name("ammonium") != name("blackcar")
+
+    def test_two_scenes_do_not_share_a_store(self, tmp_path):
+        from adjeff.core import S2Band, gaussian_image_dict
+        from adjeff.modules.samplers import RhoToaSymSampler
+        from adjeff.utils import CacheStore
+
+        sampler = RhoToaSymSampler(
+            atmo_config=atmo.AtmoConfig(
+                aot=xr.DataArray([0.1, 0.2], dims=["aot"]),
+                rh=xr.DataArray([50.0], dims=["rh"]),
+                h=xr.DataArray([0.0], dims=["h"]),
+                href=xr.DataArray([2.0], dims=["href"]),
+                species={"sulphate": 1.0},
+            ),
+            geo_config=atmo.GeoConfig(
+                sza=xr.DataArray([40.0], dims=["sza"]),
+                vza=xr.DataArray([0.0], dims=["vza"]),
+                saa=xr.DataArray([0.0], dims=["saa"]),
+                vaa=xr.DataArray([0.0], dims=["vaa"]),
+            ),
+            remove_rayleigh=False,
+            cache=CacheStore(tmp_path),
+        )
+        band = S2Band.B02
+        scenes = [
+            gaussian_image_dict(sigma=s, res_km=0.5, bands=[band], n=9)[band]
+            for s in (1.0, 5.0)
+        ]
+        space = sampler._space()
+        stores = [
+            str(sampler._policy(space, {"rho_s": ds, "band": band}).store)
+            for ds in scenes
+        ]
+        assert stores[0] != stores[1]

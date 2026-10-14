@@ -5,6 +5,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.2]
+
+### Fixed
+
+- **The sweep store is named after the scene bound to it.** The scene is
+  passed to the physics outside xsweep's fingerprint, so two training
+  scenes sweeping the same space shared a store and the second read back
+  the first one's results. Introduced in 1.1.0, which is where the store
+  comes from.
+
 ## [1.2.1]
 
 ### Fixed
@@ -34,9 +44,8 @@ PSF fit being the case that motivated it.
 - **A cached sweep is written through to zarr and read back lazily.** It
   applies to the samplers whose output carries the image dims, and only
   when the module has a cache directory; a sweep returning a spectrum per
-  state is still assembled in memory. Two consequences: the three training
-  scenes of a fit share one Smart-G run instead of three, and the result a
-  module hands on is dask-backed rather than numpy.
+  state is still assembled in memory. The result a module hands on is then
+  dask-backed rather than numpy.
 - **`batch_size` controls the batching.** It did not before: xsweep took
   the whole space in one call whatever its value. Measured on a 3999 pixel
   grid, a batch of 24 states costs five times the time of three batches of
