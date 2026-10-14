@@ -160,13 +160,17 @@ class SweepSampler(SceneModule):
         )
 
     def _store_name(self, space: xr.Dataset) -> str:
-        """Return a store directory unique to the sampler and its grid.
+        """Return a store directory unique to the sampler, its grid and statics.
 
-        A store cannot be resumed once an axis has changed, so the axes are
-        part of its name.
+        A store cannot be resumed once anything it was written with has
+        changed, the aerosol species as much as an axis, so both are part
+        of its name.
         """
         axes = {str(d): space[d].values.tolist() for d in space.dims}
-        digest = hashlib.sha1(repr(sorted(axes.items())).encode()).hexdigest()
+        statics = {k: repr(v) for k, v in self._statics().items()}
+        digest = hashlib.sha1(
+            repr((sorted(axes.items()), sorted(statics.items()))).encode()
+        ).hexdigest()
         return f"{type(self).__name__}-{digest[:8]}"
 
     def _chunks(self, space: xr.Dataset) -> dict[str, int]:

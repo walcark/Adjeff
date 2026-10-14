@@ -245,3 +245,29 @@ class TestSweepPolicy:
             cache=CacheStore(tmp_path),
         )
         assert sampler._policy(sampler._space()).store is UNSET
+
+    def test_two_species_do_not_share_a_store(self, tmp_path):
+        from adjeff.modules.samplers import RhoToaSymSampler
+        from adjeff.utils import CacheStore
+
+        def name(species: str) -> str:
+            sampler = RhoToaSymSampler(
+                atmo_config=atmo.AtmoConfig(
+                    aot=xr.DataArray([0.1, 0.2], dims=["aot"]),
+                    rh=xr.DataArray([50.0], dims=["rh"]),
+                    h=xr.DataArray([0.0], dims=["h"]),
+                    href=xr.DataArray([2.0], dims=["href"]),
+                    species={species: 1.0},
+                ),
+                geo_config=atmo.GeoConfig(
+                    sza=xr.DataArray([40.0], dims=["sza"]),
+                    vza=xr.DataArray([0.0], dims=["vza"]),
+                    saa=xr.DataArray([0.0], dims=["saa"]),
+                    vaa=xr.DataArray([0.0], dims=["vaa"]),
+                ),
+                remove_rayleigh=False,
+                cache=CacheStore(tmp_path),
+            )
+            return str(sampler._policy(sampler._space()).store)
+
+        assert name("ammonium") != name("blackcar")

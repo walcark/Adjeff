@@ -5,6 +5,14 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.1]
+
+### Fixed
+
+- **The sweep store is named after its statics too.** Two aerosol species
+  sweep the same axes and differ only by a static, so the second landed on
+  the first one's store and xsweep refused it.
+
 ## [1.2.0]
 
 ### Added
