@@ -5,14 +5,15 @@
 3. [Atmosphere and geometry](#3-atmosphere-and-geometry)
 4. [Scene modules and pipelines](#4-scene-modules-and-pipelines)
 5. [Radiative samplers](#5-radiative-samplers)
-6. [PSF models](#6-psf-models)
-7. [Correction](#7-correction)
-8. [Fitting a PSF](#8-fitting-a-psf)
-9. [High-level API](#9-high-level-api)
-10. [Analysis and the `.adjeff` accessor](#10-analysis-and-the-adjeff-accessor)
-11. [Cache](#11-cache)
-12. [Logging](#12-logging)
-13. [Installation details](#13-installation-details)
+6. [Writing a sampler](#6-writing-a-sampler)
+7. [PSF models](#7-psf-models)
+8. [Correction](#8-correction)
+9. [Fitting a PSF](#9-fitting-a-psf)
+10. [High-level API](#10-high-level-api)
+11. [Analysis and the `.adjeff` accessor](#11-analysis-and-the-adjeff-accessor)
+12. [Cache](#12-cache)
+13. [Logging](#13-logging)
+14. [Installation details](#14-installation-details)
 
 ---
 
@@ -180,7 +181,51 @@ data, or Smart-G returns NaN, which the modules turn into an error.
 
 > Worked through in [notebook 03](../notebooks/03-compute-radiative-quantities.ipynb).
 
-## 6. PSF models
+## 6. Writing a sampler
+
+A sampler is a combination of a physics function and a sentence saying how to call it.
+Four declarations are required, and then the base class does the rest: cache, batching,
+deduplication, provenance, and putting the coordinates back.
+
+```python
+class SphAlbSampler(AtmoSampler):
+    _output_vars = ["sph_alb"]
+    contract = "batch(aot, rh, h, href) vec(wl) -> sph_alb(wl)"
+    point_fn = staticmethod(sph_alb)
+    default_n_ph = 20000000
+```
+
+`point_fn` is the physics: it takes one state and returns one result.
+The contract says what a state is.
+
+### The contract
+
+| Word | Meaning |
+|---|---|
+| `vec(...)` | these parameters travel together in one call, the physics gets arrays |
+| `batch(...)` | these parameters are grouped into calls of `batch_size` states |
+| `loop(...)` | one call per value, nothing else is possible |
+| `-> name(dims)` | the variable written, and the dims it comes back with |
+
+### Writing the output
+
+A sampler whose contract carries `wl` is swept once for every band. One
+that reads the scene, like `RhoToaSymSampler`, sweeps per band instead
+and passes the scene to the physics:
+
+```python
+def _compute(self, scene):
+    for band in scene.bands:
+        scene[band][self._slot("rho_toa")] = self._sweep(
+            rho_s=scene[band], band=band
+        )
+    return scene
+```
+
+What is bound this way stays out of the sweep space, so the physics can
+read a map the sweep knows nothing about.
+
+## 7. PSF models
 
 Analytical PSFs are `torch.nn.Module`s with bounded parameters, sampled
 on an odd, square `PSFGrid`.
@@ -213,7 +258,7 @@ psf_params(tree, S2Band.B02)      # {"sigma": DataArray}
 tree.to_zarr("psf.zarr", mode="w")
 ```
 
-## 7. Correction
+## 8. Correction
 
 For a uniform surface, `Unif2Toa` applies the 5S formula and `Toa2Unif`
 inverts it, giving `rho_unif`, the reflectance a uniform surface would
@@ -234,7 +279,7 @@ from adjeff.modules.models import Unif2Surface
 scene = Unif2Surface(kernels=tree)(scene)
 ```
 
-## 8. Fitting a PSF
+## 9. Fitting a PSF
 
 `fit` optimises the PSF of a model over reference scenes, once per
 band and atmospheric state, and returns the frozen tree.
@@ -275,7 +320,7 @@ encircled-energy radii over a list of PSFs, e.g. a parameter grid.
 
 > Worked through in [notebook 05](../notebooks/05-learn-psf.ipynb).
 
-## 9. High-level API
+## 10. High-level API
 
 `adjeff` exports one-call functions for the common paths:
 
@@ -294,7 +339,7 @@ encircled-energy radii over a list of PSFs, e.g. a parameter grid.
 
 > Worked through in [notebook 04](../notebooks/04-simulate-rho-toa.ipynb).
 
-## 10. Analysis and the `.adjeff` accessor
+## 11. Analysis and the `.adjeff` accessor
 
 `adjeff.analysis` quantifies a PSF or a 2-D field:
 
@@ -322,7 +367,7 @@ da.adjeff.untidy()                  # and back, before xr.merge
 
 > Worked through in [notebook 06](../notebooks/06-evaluate-a-psf.ipynb).
 
-## 11. Cache
+## 12. Cache
 
 Every module takes a `CacheStore`. Results are stored in Zarr, keyed by
 the module, its configuration and the provenance of its inputs; an
@@ -340,7 +385,7 @@ scene = pipeline(scene)   # read back, no GPU call
 
 Without a cache, every output stays in RAM.
 
-## 12. Logging
+## 13. Logging
 
 Adjeff prints nothing until asked:
 
@@ -362,7 +407,7 @@ are capped at `warning`, and Python warnings join the stream. Lines are
 Everything is an ordinary `logging` record under `adjeff`, so an
 application's own handlers receive it.
 
-## 13. Installation details
+## 14. Installation details
 
 | Environment | GPU | Contents |
 |---|---|---|
