@@ -5,6 +5,19 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.5]
+
+### Fixed
+
+- **A stray scalar coordinate no longer overwrites a swept axis.** A
+  sweep's dropped coordinates were collected from every coordinate an
+  input array carried, not just the ones indexing its own dimensions.
+  A field read back from a scene that already holds per-wavelength
+  results, e.g. for `fit_psf`'s own forward pass, inherits a scalar
+  `wl` tag from that scene; merged in, it silently replaced the real,
+  one-row-per-band `wl` axis, and the next lookup by wavelength raised
+  `ValueError: dimension 'wl' already exists as a scalar variable`.
+
 ## [1.2.4]
 
 ### Fixed

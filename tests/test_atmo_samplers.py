@@ -334,3 +334,34 @@ class TestSweepPolicy:
         pytest.importorskip("smartg")
         out = run_radiatives_from_scene(scene, n_bins=2)
         assert bool(np.isfinite(out[band]["tdir_down"]).all())
+
+    def test_a_stray_scalar_coordinate_does_not_overwrite_a_real_axis(self):
+        """An array carrying a stray same-named scalar coord keeps the real one."""
+        from adjeff.modules.samplers import TdirDownSampler
+
+        spectral = atmo.SpectralConfig.from_bands([S2Band.B8A])
+        geo = atmo.GeoConfig(
+            sza=xr.DataArray([17.0], dims=["sza"]),
+            vza=xr.DataArray([3.0], dims=["vza"]),
+            saa=xr.DataArray([117.0], dims=["saa"]),
+            vaa=xr.DataArray([207.0], dims=["vaa"]),
+        )
+        # aot carries a stray scalar 'wl' coordinate, as if inherited from
+        # a Dataset that already held per-wl radiative terms.
+        aot = xr.DataArray([0.2], dims=["aot"]).assign_coords(wl=865.0)
+        sampler = TdirDownSampler(
+            atmo_config=atmo.AtmoConfig(
+                aot=aot,
+                rh=xr.DataArray([50.0], dims=["rh"]),
+                h=xr.DataArray([0.1], dims=["h"]),
+                href=xr.DataArray([2.0], dims=["href"]),
+                species={"sulphate": 1.0},
+            ),
+            geo_config=geo,
+            spectral_config=spectral,
+            remove_rayleigh=False,
+        )
+        sampler._space()
+        wl = sampler._dropped["wl"]
+        assert wl.dims == ("wl",)
+        assert float(wl.values[0]) == 865.0

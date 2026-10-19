@@ -88,7 +88,16 @@ class SweepSampler(SceneModule):
         for config in self._get_configs():
             for name, array in config._arrays.items():
                 if name in wanted and name not in arrays:
-                    self._dropped.update({str(d): c for d, c in array.coords.items()})
+                    # Only an array's own dimension coordinates: a scalar
+                    # tag of the same name, picked up from an earlier
+                    # pipeline stage sharing this Dataset, is not one.
+                    self._dropped.update(
+                        {
+                            str(d): array.coords[d]
+                            for d in array.dims
+                            if d in array.coords
+                        }
+                    )
                     arrays[name] = array.drop_vars(list(array.coords), errors="ignore")
         return xr.Dataset(arrays)
 
