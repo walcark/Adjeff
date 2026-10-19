@@ -78,14 +78,17 @@ class SweepSampler(SceneModule):
     def _space(self) -> xr.Dataset:
         """Collect the swept parameters from the configs into one Dataset.
 
-        Coordinates are dropped: two arrays sharing a spatial dim would
-        otherwise claim conflicting labels for it.
+        Coordinates are dropped, two arrays sharing a spatial dim would
+        otherwise claim conflicting labels for it, and kept aside for
+        :meth:`_sweep` to put back.
         """
         wanted = set(self._contract.inputs)
         arrays: dict[str, xr.DataArray] = {}
+        self._dropped: dict[str, xr.DataArray] = {}
         for config in self._get_configs():
             for name, array in config._arrays.items():
                 if name in wanted and name not in arrays:
+                    self._dropped.update({str(d): c for d, c in array.coords.items()})
                     arrays[name] = array.drop_vars(list(array.coords), errors="ignore")
         return xr.Dataset(arrays)
 
@@ -96,19 +99,29 @@ class SweepSampler(SceneModule):
 
         return coerce(type(self).contract)
 
-    @staticmethod
-    def _restore_coords(arr: xr.DataArray, source: xr.Dataset) -> xr.DataArray:
-        """Give *arr* the coordinates *source* holds for its dims.
+    def _restore_coords(
+        self, arr: xr.DataArray, source: xr.Dataset | None = None
+    ) -> xr.DataArray:
+        """Give *arr* back the coordinates the sweep space was stripped of.
 
         xsweep labels the dims it does not sweep (``y``, ``x``) by
         position; assigned as they are, they would misalign with the
-        scene and leave NaN.
+        scene and leave NaN.  *source* names the scene the physics was
+        bound to, whose own dims are not in the space.
         """
         shared = {
-            str(dim): source.coords[dim]
-            for dim in arr.dims
-            if dim in source.coords and dim in source.dims
+            name: coord
+            for name, coord in getattr(self, "_dropped", {}).items()
+            if name in arr.dims
         }
+        if source is not None:
+            shared.update(
+                {
+                    str(dim): source.coords[dim]
+                    for dim in arr.dims
+                    if dim in source.coords and dim in source.dims
+                }
+            )
         return arr.assign_coords(shared) if shared else arr
 
     def _sweep(self, **bound: Any) -> xr.DataArray:
@@ -137,7 +150,7 @@ class SweepSampler(SceneModule):
         self._log.info("sweep.plan", **plan)
         result = sweeper(space, policy=self._policy(space, bound), **statics)
         out: xr.DataArray = result[self._contract.outputs[0]]
-        return out
+        return self._restore_coords(out, bound.get("rho_s"))
 
     _SPATIAL: ClassVar[frozenset[str]] = frozenset({"x", "y", "x_psf", "y_psf"})
 
@@ -214,7 +227,5 @@ class SweepSampler(SceneModule):
         for band in self.spectral_config.bands:  # type: ignore[attr-defined]
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
-            scene[band][self._slot(name)] = self._restore_coords(
-                arr.sel(wl=band.wl_nm), scene[band]
-            )
+            scene[band][self._slot(name)] = arr.sel(wl=band.wl_nm)
         return scene

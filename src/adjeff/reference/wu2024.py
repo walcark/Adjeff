@@ -125,7 +125,6 @@ class WuPsfSampler(SweepSampler):
         for band in scene.bands:
             ds = scene[band]
             arr = self._sweep(rho_s=ds, band=band)
-            arr = self._restore_coords(arr, ds)
             # The store allocates from the contract and labels a dimension
             # it never swept by position, so the grid is put back here.
             grid = PSFGrid(res=ds["rho_s"].adjeff.res, n=ds["rho_s"].adjeff.n)

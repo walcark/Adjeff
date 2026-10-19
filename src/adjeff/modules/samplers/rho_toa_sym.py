@@ -125,6 +125,6 @@ class RhoToaSymSampler(SweepSampler):
         # the two travel together rather than through the sweep space.
         for band in scene.bands:
             arr = self._sweep(rho_s=scene[band], band=band)
-            scene[band][self._slot("rho_toa")] = self._restore_coords(arr, scene[band])
+            scene[band][self._slot("rho_toa")] = arr
 
         return scene

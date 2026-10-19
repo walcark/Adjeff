@@ -126,11 +126,7 @@ class BrdfSampler(AtmoSampler):
         name = self._output_vars[0]
         for band in self.spectral_config.bands:
             ds = scene[band]
-            # Coordinates first: the algebra below aligns by label, and
-            # xsweep numbers a dim it did not sweep from zero, which no
-            # longer matches the scene's own labels.
-            arr = self._restore_coords(raw.sel(wl=band.wl_nm), ds)
-            ds[self._slot(name)] = self._normalise(arr, ds)
+            ds[self._slot(name)] = self._normalise(raw.sel(wl=band.wl_nm), ds)
         return scene
 
     def _t_sun(self, ds: xr.Dataset) -> xr.DataArray:
