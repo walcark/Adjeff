@@ -214,5 +214,7 @@ class SweepSampler(SceneModule):
         for band in self.spectral_config.bands:  # type: ignore[attr-defined]
             if band not in scene.bands:
                 scene[band] = xr.Dataset()
-            scene[band][self._slot(name)] = arr.sel(wl=band.wl_nm)
+            scene[band][self._slot(name)] = self._restore_coords(
+                arr.sel(wl=band.wl_nm), scene[band]
+            )
         return scene

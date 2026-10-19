@@ -305,3 +305,32 @@ class TestSweepPolicy:
             for ds in scenes
         ]
         assert stores[0] != stores[1]
+
+    @pytest.mark.integration
+    def test_a_mapped_sweep_keeps_the_scene_coordinates(self):
+        """Every pixel gets a value, not the few whose index matches a label."""
+        import numpy as np
+
+        from adjeff.api import run_radiatives_from_scene
+        from adjeff.core import gaussian_image_dict
+
+        band, size = S2Band.B02, 5
+        scene = gaussian_image_dict(sigma=1.0, res_km=0.5, bands=[band], n=size)
+        ds = scene[band]
+        rng = np.random.default_rng(0)
+        ds["aot"] = (("y", "x"), rng.uniform(0.05, 0.4, (size, size)))
+        ds["h"] = (("y", "x"), np.zeros((size, size)))
+        for name, value in (
+            ("rh", 50.0),
+            ("href", 2.0),
+            ("sza", 17.0),
+            ("saa", 117.0),
+            ("vza", 3.2),
+            ("vaa", 207.0),
+        ):
+            ds[name] = xr.DataArray([value], dims=[name])
+        scene[band] = ds
+
+        pytest.importorskip("smartg")
+        out = run_radiatives_from_scene(scene, n_bins=2)
+        assert bool(np.isfinite(out[band]["tdir_down"]).all())

@@ -5,6 +5,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.3]
+
+### Fixed
+
+- **A radiative sweep over maps keeps the scene's coordinates.** xsweep
+  labels by position the dims it does not sweep, so a scene whose `aot`
+  and `h` are maps got its terms aligned on those labels: every pixel
+  came back NaN but the handful whose index matched one. `load_maja(...,
+  as_map=True, compute_radiatives=True)` could not produce anything.
+
 ## [1.2.2]
 
 ### Fixed

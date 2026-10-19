@@ -133,6 +133,9 @@ class SceneModule:
 
             outcome["cached"] = False
             scene = self._compute(scene)
+            for band in scene.bands:
+                ds = scene[band]
+                print(ds)
             self._reject_non_finite(scene)
             self._stamp_provenance(scene, key)
             self._cache.save_vars(key, self._role_view(scene), self._output_vars)
@@ -162,6 +165,7 @@ class SceneModule:
                 values = ds[slot]
                 if values.dtype.kind not in "fc":
                     continue
+                print(values)
                 # Reduced rather than materialised: a lazy output is read
                 # back one chunk at a time instead of all at once.
                 bad = int((~np.isfinite(values)).sum())

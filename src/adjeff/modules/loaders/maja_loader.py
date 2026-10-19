@@ -195,6 +195,7 @@ class MajaLoader(
 
         with rasterio.open(glob_mnt[0]) as src:
             arr = src.read(1).astype(float)
+            arr = np.where(arr < 0.0, 0.0, arr)
 
         if self.as_map:
             return xr.DataArray(
