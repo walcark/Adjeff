@@ -135,6 +135,7 @@ def run_radiatives_from_scene(
     afgl_type: str = "afgl_exp_h8km",
     cache: CacheStore | None = None,
     dedup: bool = False,
+    batch_size: int = 64,
 ) -> SceneT:
     """Add the six radiative terms to *scene*, configured from its own fields.
 
@@ -158,6 +159,7 @@ def run_radiatives_from_scene(
                 afgl_type=afgl_type,
                 cache=cache,
                 dedup=dedup,
+                batch_size=batch_size,
             )
             scene_band = radiative(scene_band)
             s[band] = scene_band[band]

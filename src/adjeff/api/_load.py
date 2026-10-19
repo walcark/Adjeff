@@ -33,6 +33,7 @@ def load_scene(
     afgl_type: str = "afgl_exp_h8km",
     cache: CacheStore | None = None,
     dedup: bool = False,
+    batch_size: int = 64,
 ) -> ImageDict:
     """Return the scene *loader* produces, with its aerosol species.
 
@@ -62,6 +63,7 @@ def load_scene(
             afgl_type=afgl_type,
             cache=cache,
             dedup=dedup,
+            batch_size=batch_size,
         )
 
     return scene
@@ -80,6 +82,7 @@ def load_maja(
     remove_rayleigh: bool = False,
     afgl_type: str = "afgl_exp_h8km",
     dedup: bool = False,
+    batch_size: int = 64,
 ) -> ImageDict:
     """Return :func:`load_scene` of a :class:`~adjeff.modules.loaders.MajaLoader`.
 
@@ -110,4 +113,5 @@ def load_maja(
         afgl_type=afgl_type,
         cache=cache,
         dedup=dedup,
+        batch_size=batch_size,
     )

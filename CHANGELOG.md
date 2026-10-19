@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.2.6]
 
+### Added
+
+- **`load_maja`, `load_scene` and `run_radiatives_from_scene` take
+  `batch_size`.** The radiative samplers had no way of hearing it through
+  the high-level API, so a scene with many distinct atmospheric states
+  sent them all to Smart-G in one call: on a map binned into ten levels,
+  some 1.5 billion photons at once, which a 8 GB card cannot hold.
+
 ### Fixed
 
 - **A MAJA loader reads the resolution of its own rasters.** The AOT and
