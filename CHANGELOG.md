@@ -17,11 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `wl` tag from that scene; merged in, it silently replaced the real,
   one-row-per-band `wl` axis, and the next lookup by wavelength raised
   `ValueError: dimension 'wl' already exists as a scalar variable`.
-
-## [1.2.4]
-
-### Fixed
-
 - **A loader's atmosphere and geometry now survive a cache hit.**
   `ProductLoader` declared a dynamic `output_vars` property to aggregate
   what its mixins contribute, but `SceneModule`'s caching reads
