@@ -116,13 +116,19 @@ class ProductLoader(SceneSource, ABC):
     _BASE_OUTPUT_VARS: ClassVar[list[str]] = ["rho_s"]
 
     @property
-    def output_vars(self) -> list[str]:
-        """Aggregate output slots declared by active mixins."""
+    def _output_vars(self) -> list[str]:  # type: ignore[override]
+        """Aggregate output roles declared by active mixins.
+
+        Roles, not slots: ``SceneModule`` turns these into slots itself,
+        for caching, provenance and the public ``output_vars`` it reads
+        them from.  A plain ``ClassVar`` cannot do this, since which
+        mixins are active is only known once this class is built.
+        """
         roles = list(self._BASE_OUTPUT_VARS)
         for cls in type(self).__mro__:
             contrib: list[str] = cls.__dict__.get("_output_vars_contribution", [])
             roles.extend(contrib)
-        return [self._slot(role) for role in roles]
+        return roles
 
     def __init__(
         self,

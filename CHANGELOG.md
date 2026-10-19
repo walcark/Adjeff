@@ -5,6 +5,19 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.4]
+
+### Fixed
+
+- **A loader's atmosphere and geometry now survive a cache hit.**
+  `ProductLoader` declared a dynamic `output_vars` property to aggregate
+  what its mixins contribute, but `SceneModule`'s caching reads
+  `_output_vars`, a different name it never set; a cache write therefore
+  persisted nothing, and the next read restored an empty scene. The first
+  run of a script looked fine, since `_compute` writes straight into the
+  scene; only a second run, or any read of a pre-existing cache, raised
+  `MissingVariableError` on `aot`, `h`, `vza` and the rest.
+
 ## [1.2.3]
 
 ### Fixed

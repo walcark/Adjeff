@@ -79,3 +79,51 @@ class TestMissingInputs:
 
         with pytest.raises(ImageIOError, match="Sun angles"):
             loader._sza_saa()
+
+
+class TestOutputVarsCaching:
+    """A loader's mixin-contributed variables must round-trip through cache."""
+
+    def test_atmosphere_and_geometry_survive_a_cache_hit(self, tmp_path):
+        """The second call, reading the cache, still carries aot, h, vza..."""
+        from adjeff.core import S2Band
+        from adjeff.modules.loaders.product_loader import (
+            AtmosphereMixin,
+            ElevationMixin,
+            GeometryMixin,
+            ProductLoader,
+        )
+        from adjeff.utils import CacheStore
+
+        class FullLoader(GeometryMixin, AtmosphereMixin, ElevationMixin, ProductLoader):
+            def __init__(self, product_path, bands, res, cache=None):
+                AtmosphereMixin.__init__(self)
+                ProductLoader.__init__(self, product_path, bands, res, cache=cache)
+
+            def reflectance(self, band):
+                return _make_ref()
+
+            def _vza_vaa(self, band):
+                return xr.DataArray([3.0]), xr.DataArray([200.0])
+
+            def _sza_saa(self):
+                return xr.DataArray([17.0]), xr.DataArray([117.0])
+
+            def _aot(self, ref):
+                return xr.DataArray([0.2])
+
+            def _rh(self):
+                return xr.DataArray([50.0])
+
+            def _h(self, ref):
+                return xr.DataArray([0.1])
+
+        cache = CacheStore(tmp_path)
+        product_path = tmp_path / "product"
+        product_path.mkdir()
+        bands = [S2Band.B02]
+
+        for _ in range(2):  # first run computes, second reads the cache
+            scene = FullLoader(product_path, bands, res=0.12, cache=cache)()
+            for role in ("rho_s", "aot", "rh", "href", "h", "vza", "vaa", "sza", "saa"):
+                assert role in scene[S2Band.B02], role
