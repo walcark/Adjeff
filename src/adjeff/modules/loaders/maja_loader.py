@@ -173,10 +173,11 @@ class MajaLoader(
         # Band index 2 (1-based) is the AOT layer.
         with rasterio.open(glob_file[0]) as src:
             arr = src.read(2).astype(float)
+            data_res = abs(src.transform.a) / 1000.0
 
         if self.as_map:
             return xr.DataArray(
-                downsample_res(arr, target_res=res, data_res=0.020) / 200,
+                downsample_res(arr, target_res=res, data_res=data_res) / 200,
                 dims=ref.dims,
                 coords=ref.coords,
             )
@@ -196,10 +197,11 @@ class MajaLoader(
         with rasterio.open(glob_mnt[0]) as src:
             arr = src.read(1).astype(float)
             arr = np.where(arr < 0.0, 0.0, arr)
+            data_res = abs(src.transform.a) / 1000.0
 
         if self.as_map:
             return xr.DataArray(
-                downsample_res(arr, target_res=res, data_res=0.020) / 1e3,
+                downsample_res(arr, target_res=res, data_res=data_res) / 1e3,
                 dims=ref.dims,
                 coords=ref.coords,
             )

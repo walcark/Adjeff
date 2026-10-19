@@ -5,6 +5,15 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.6]
+
+### Fixed
+
+- **A MAJA loader reads the resolution of its own rasters.** The AOT and
+  the elevation were downsampled as if their files were always at 20 m,
+  so a product whose rasters are already at the target resolution came
+  back reduced a second time, and the wrong shape.
+
 ## [1.2.5]
 
 ### Fixed
