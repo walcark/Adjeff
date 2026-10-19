@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and `h` are maps got its terms aligned on those labels: every pixel
   came back NaN but the handful whose index matched one. `load_maja(...,
   as_map=True, compute_radiatives=True)` could not produce anything.
+- **A sweep restores its own coordinates.** A sampler used to do it
+  itself, in its own `_compute`, which is what the fix above forgot in
+  one of five places. There is now one place.
 
 ## [1.2.2]
 
