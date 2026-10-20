@@ -202,6 +202,46 @@ class TestChain:
         _finite_in(kernel, 0.0, 1.0)
         assert float(kernel.sum()) == pytest.approx(1.0, rel=1e-3)
 
+    @pytest.mark.physics
+    def test_sampled_psf_sits_on_its_centre_pixel(self):
+        """At nadir the kernel peaks on the centre pixel, centred on it.
+
+        The receiver grid used to span an even number of cells, which put
+        the origin on a cell corner: the peak split over a 2 x 2 block and
+        every label was half a pixel off.
+        """
+        nadir = make_full_config(
+            bands=[BAND],
+            aot=0.4,
+            rh=50.0,
+            h=0.0,
+            href=2.0,
+            sza=0.0,
+            vza=0.0,
+            saa=0.0,
+            vaa=0.0,
+            species={"sulphate": 1.0},
+        )
+        kernel = psf_kernel(
+            sample_psf_atm(
+                bands=[BAND],
+                res_km=RES_KM,
+                n=N,
+                atmo_config=nadir["atmo_config"],
+                geo_config=nadir["geo_config"],
+                n_ph=int(1e4),
+            ),
+            BAND,
+        ).squeeze(drop=True)
+
+        flat = kernel.stack(pixel=("y_psf", "x_psf"))
+        peak = flat.isel(pixel=int(flat.argmax()))
+        assert float(peak.x_psf) == 0.0
+        assert float(peak.y_psf) == 0.0
+        for axis in ("x_psf", "y_psf"):
+            centroid = float((kernel * kernel[axis]).sum())
+            assert abs(centroid) < RES_KM / 10, f"{axis} centroid {centroid}"
+
     def test_wu_sampler_writes_into_the_scene(self, config, surface):
         """WuPsfSampler enriches the scene rather than replacing it."""
         scene = WuPsfSampler(

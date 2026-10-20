@@ -5,6 +5,24 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.7]
+
+### Fixed
+
+- **The sampled PSF sits on its centre pixel.** `psf_atm` asked Smart-G
+  for `n + 1` cells per axis, from a stale belief that an odd count was
+  rounded down, and trimmed the extra row and column afterwards. An even
+  count puts the origin on a cell corner: the core of the kernel came
+  back as a 2 x 2 block, every label was half a pixel off, and the
+  adjacency correction over-corrected one side of a bright edge (radii of
+  1.40 and 2.28 km either side of a symmetric scene at nadir). The
+  receiver now spans `n` cells, so a cell is centred on the origin.
+- **The sampled PSF is no longer mirrored.** Smart-G numbers the cells of
+  a receiver from `+half_size` down to `-half_size` along both axes,
+  while a `PSFGrid` runs the other way: the kernel was labelled with the
+  opposite of its own coordinates. Invisible at nadir, where the kernel is
+  symmetric; off nadir it turned the tail away from the viewing direction.
+
 ## [1.2.6]
 
 ### Added

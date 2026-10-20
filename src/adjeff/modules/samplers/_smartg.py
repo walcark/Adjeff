@@ -726,10 +726,9 @@ def psf_atm(
             f"Image grid size n must be odd (got {n}): a PSF kernel requires "
             "a well-defined centre pixel."
         )
-    # SmartG computes cells per half-axis as floor(half_size / tc) then
-    # doubles, so an odd n would yield n-1 cells. Use n+1 (even) for the
-    # Entity and trim the extra edge row/col afterwards.
-    half_size = res * (n + 1) / 2
+    # Smart-G bins the hits on size / tc cells per axis, so an odd n puts
+    # a cell centre on the origin: the centre tap of the kernel.
+    half_size = res * n / 2
 
     sampling_grid = Entity(
         name="receiver",
@@ -742,7 +741,7 @@ def psf_atm(
         ),
         transformation=Transformation(
             rotation=np.array([0.0, 0.0, 0.0]),
-            translation=np.array([1e-5, 1e-5, 1e-5]),
+            translation=np.array([0.0, 0.0, 1e-5]),
         ),
     )
 
@@ -775,7 +774,10 @@ def psf_atm(
         squeeze=["Categories"],
     )
 
-    result = result.isel(x=slice(None, n), y=slice(None, n))
+    # Smart-G numbers the cells of a receiver from +half_size down to
+    # -half_size along both axes (`countPhotonObj3D` bins on -p / tc);
+    # a PSF grid runs the other way.
+    result = result.isel(x=slice(None, None, -1), y=slice(None, None, -1))
 
     # On the PSF grid's own axes, not the scene's: a kernel is a kernel,
     # and `apply_psf` convolves a scene with it.  `kind` is `arbitrary`
